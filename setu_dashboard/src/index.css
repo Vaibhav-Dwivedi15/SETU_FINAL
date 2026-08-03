@@ -1,0 +1,18 @@
+/* Minimal global reset — replaces the leftover Vite starter-template
+   stylesheet that used to live here. That template set #root to a fixed
+   1126px centered, text-align:center width, and gave all <h1>/<h2>
+   elements a --text-h color that flips to near-white under
+   prefers-color-scheme: dark. Since this dashboard's own layout and
+   colors are fully owned by App.css, those leftover rules were fighting
+   it: squeezing the full-width dashboard into a centered column, and
+   making risk-card/resource-card numbers invisible on dark-mode
+   browsers/OSes (they had no color override of their own, so they
+   inherited the near-white heading color from the old template). */
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+}

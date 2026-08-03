@@ -1,0 +1,61 @@
+﻿{
+  "_note": "Reference/display metadata only - e.g. for the Dashboard (Vanshika) to render human-readable incident labels. This is NOT read by the classifier at runtime. The actual keyword rules live in models/incident_classifier.py and models/baseline_rules.py; the actual priority boosts live in models/priority_adjuster.py. If those change, update this file to match by hand - it is not auto-generated.",
+  "incident_types": [
+    {
+      "type": "Fire",
+      "label_en": "Fire",
+      "label_hi_roman": "Aag",
+      "priority_boost": 0.30,
+      "hinglish_supported": true
+    },
+    {
+      "type": "Medical",
+      "label_en": "Medical Emergency",
+      "label_hi_roman": "Medical Emergency",
+      "priority_boost": 0.20,
+      "hinglish_supported": true
+    },
+    {
+      "type": "Accident",
+      "label_en": "Accident",
+      "label_hi_roman": "Durghatna",
+      "priority_boost": 0.20,
+      "hinglish_supported": true
+    },
+    {
+      "type": "Flood",
+      "label_en": "Flood",
+      "label_hi_roman": "Baadh",
+      "priority_boost": 0.40,
+      "hinglish_supported": true
+    },
+    {
+      "type": "Building Collapse",
+      "label_en": "Building Collapse",
+      "label_hi_roman": "Imarat Girna",
+      "priority_boost": 0.50,
+      "hinglish_supported": true
+    },
+    {
+      "type": "Earthquake",
+      "label_en": "Earthquake",
+      "label_hi_roman": "Bhukamp",
+      "priority_boost": 0.45,
+      "hinglish_supported": true
+    },
+    {
+      "type": "Women Safety",
+      "label_en": "Women's Safety",
+      "label_hi_roman": "Mahila Suraksha",
+      "priority_boost": 0.45,
+      "hinglish_supported": true
+    },
+    {
+      "type": "Unknown",
+      "label_en": "Unclassified",
+      "label_hi_roman": "Ajnaat",
+      "priority_boost": 0.00,
+      "hinglish_supported": false
+    }
+  ]
+}
