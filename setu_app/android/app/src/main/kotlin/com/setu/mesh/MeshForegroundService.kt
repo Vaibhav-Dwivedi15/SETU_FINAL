@@ -8,7 +8,10 @@ import android.content.Intent
 import android.content.pm.ServiceInfo
 import android.os.Binder
 import android.os.Build
+import android.os.Handler
 import android.os.IBinder
+import android.os.Looper
+import android.util.Log
 import androidx.core.app.NotificationCompat
 
 /**
@@ -37,8 +40,7 @@ class MeshForegroundService : Service(), NearbyConnectionsManager.Listener {
         connectionsManager = NearbyConnectionsManager(applicationContext, this)
         relayEngine = PacketRelayEngine()
         startForegroundWithNotification()
-        connectionsManager.startAdvertising()
-        connectionsManager.startDiscovery()
+        startDutyCycle()
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int = START_STICKY
@@ -84,6 +86,88 @@ class MeshForegroundService : Service(), NearbyConnectionsManager.Listener {
         lastKnownLon = lon
     }
 
+    // =====================================================
+    // MARK II — battery-tiered duty cycling
+    // =====================================================
+    //
+    // Nearby Connections (the underlying Android API) does NOT expose a
+    // "use BLE only" vs "use Wi-Fi Direct" switch -- Strategy controls
+    // connection TOPOLOGY, not which radio gets used, and the library
+    // picks the radio internally. That means there is no code-level way
+    // to force a bystander's phone to stay on cheap BLE-only scanning.
+    //
+    // The real, honest lever available here is DUTY CYCLING: how much of
+    // the time advertising+discovery are actually running vs stopped.
+    // This mirrors what MeshPolicy already expresses in Dart
+    // (scanInterval/discoveryInterval: 5s full, 15s balanced, 30s power
+    // saver) but which, before this change, was never actually consumed
+    // natively -- advertising/discovery just ran continuously regardless
+    // of battery level.
+    //
+    // Trade-off, stated plainly for docs/pitch: in power-saver mode a
+    // relay-only device is only discoverable for a fraction of each
+    // cycle, which increases the latency for it to pick up a nearby SOS
+    // (worst case, up to one full off-window). This is the correct
+    // trade for extending a bystander's battery life, and should be
+    // described as "reduced discovery duty cycle under low battery",
+    // not "radios turn off" -- the notification/foreground service stays
+    // running throughout; only the advertise/discover burst timing
+    // changes.
+    private val dutyCycleHandler = Handler(Looper.getMainLooper())
+    private var dutyCycleRunnable: Runnable? = null
+
+    /** How long each advertising/discovery burst stays on, regardless of
+     * tier. Kept short and fixed so connection handshakes (which need
+     * both sides advertising+discovering at the same moment) still have
+     * a real chance to overlap even in power saver mode. */
+    private val burstOnMs = 5_000L
+
+    private var currentDiscoveryIntervalMs = 5_000L
+    private var currentAllowRelay = true
+
+    /** Called from MeshChannelHandler's "updateMeshPolicy" case whenever
+     * Dart's PowerMode changes. Restarts the duty cycle with the new
+     * timing immediately rather than waiting for the current cycle to
+     * finish, so a battery drop is reflected right away. */
+    fun updateMeshPolicy(scanIntervalMs: Long, discoveryIntervalMs: Long, allowRelay: Boolean) {
+        currentDiscoveryIntervalMs = discoveryIntervalMs
+        currentAllowRelay = allowRelay
+        Log.i(TAG, "Mesh policy updated: discoveryIntervalMs=$discoveryIntervalMs allowRelay=$allowRelay")
+        startDutyCycle()
+    }
+
+    private fun startDutyCycle() {
+        dutyCycleRunnable?.let { dutyCycleHandler.removeCallbacks(it) }
+
+        val offMs = (currentDiscoveryIntervalMs - burstOnMs).coerceAtLeast(0L)
+
+        val runnable = object : Runnable {
+            var burstIsOn = true
+
+            override fun run() {
+                if (burstIsOn) {
+                    connectionsManager.startAdvertising()
+                    connectionsManager.startDiscovery()
+                    burstIsOn = false
+                    dutyCycleHandler.postDelayed(this, burstOnMs)
+                } else {
+                    // If offMs is 0 (full-power tier where discoveryInterval
+                    // <= burstOnMs), this just re-bursts immediately --
+                    // equivalent to continuous advertising/discovery, which
+                    // matches the old always-on behavior for full battery.
+                    if (offMs > 0) {
+                        connectionsManager.stopAdvertisingAndDiscovery()
+                    }
+                    burstIsOn = true
+                    dutyCycleHandler.postDelayed(this, offMs)
+                }
+            }
+        }
+
+        dutyCycleRunnable = runnable
+        dutyCycleHandler.post(runnable)
+    }
+
     override fun onPeerConnected(endpointId: String) {
         eventForwarder?.invoke(mapOf("type" to "peer_connected", "endpointId" to endpointId))
     }
@@ -99,11 +183,25 @@ class MeshForegroundService : Service(), NearbyConnectionsManager.Listener {
         // Hand the packet to Dart/UI for display + eventual backend upload.
         eventForwarder?.invoke(mapOf("type" to "payload_received", "endpointId" to endpointId, "bytes" to bytes))
 
+        // Battery-aware relay guard, native side: mirrors
+        // MeshService._relayPacket's allowRelay check in Dart. Only
+        // gates RELAYING OTHER DEVICES' traffic onward -- this device's
+        // own SOS still always goes out via originate(), unaffected.
+        if (!currentAllowRelay) {
+            Log.i(TAG, "Relay skipped — power saver mode active (native duty-cycle guard)")
+            return
+        }
+
         result.relayBytes?.let { connectionsManager.broadcastBytes(it) }
     }
 
     override fun onDestroy() {
+        dutyCycleRunnable?.let { dutyCycleHandler.removeCallbacks(it) }
         connectionsManager.stopAll()
         super.onDestroy()
+    }
+
+    companion object {
+        private const val TAG = "MeshForegroundService"
     }
 }

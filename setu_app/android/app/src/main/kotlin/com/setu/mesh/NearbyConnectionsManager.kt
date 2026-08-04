@@ -38,6 +38,17 @@ class NearbyConnectionsManager(
             .addOnFailureListener { e -> Log.e(TAG, "Discovery failed", e) }
     }
 
+    /** Added for MARK II battery-tiered duty cycling. Pauses advertising
+     * and discovery for the "off" portion of a duty cycle WITHOUT calling
+     * stopAllEndpoints() -- devices already connected as active relay
+     * peers stay connected; we're just not looking for NEW peers during
+     * this window. This is the key difference from stopAll(), which is
+     * only for full service shutdown (onDestroy). */
+    fun stopAdvertisingAndDiscovery() {
+        connectionsClient.stopAdvertising()
+        connectionsClient.stopDiscovery()
+    }
+
     fun stopAll() {
         connectionsClient.stopAdvertising()
         connectionsClient.stopDiscovery()

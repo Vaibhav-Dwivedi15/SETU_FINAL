@@ -26,6 +26,21 @@ abstract class NearbyService {
   /// them directly anymore.
   Future<void> originate(Uint8List bytes, String packetId);
   Stream<NearbyEvent> get events;
+
+  /// Added for MARK II battery-tiered duty cycling. Nearby Connections
+  /// (the underlying Android API) does NOT expose a "BLE-only vs Wi-Fi
+  /// Direct" switch — Strategy controls connection topology, not radio
+  /// choice, and the library picks the radio internally. The real,
+  /// honest battery lever is duty-cycling: how often the native layer
+  /// bursts advertising/discovery on, then sleeps. This pushes
+  /// MeshPolicy's existing scanInterval/discoveryInterval down to the
+  /// native Foreground Service so power-saver mode actually reduces
+  /// radio-on time instead of just gating relay/upload in Dart.
+  Future<void> updatePolicy({
+    required Duration scanInterval,
+    required Duration discoveryInterval,
+    required bool allowRelay,
+  });
 }
 
 class PlatformNearbyService implements NearbyService {
@@ -35,6 +50,18 @@ class PlatformNearbyService implements NearbyService {
   @override
   Future<void> originate(Uint8List bytes, String packetId) =>
       _methodChannel.invokeMethod('originate', {'bytes': bytes, 'packetId': packetId});
+
+  @override
+  Future<void> updatePolicy({
+    required Duration scanInterval,
+    required Duration discoveryInterval,
+    required bool allowRelay,
+  }) =>
+      _methodChannel.invokeMethod('updateMeshPolicy', {
+        'scanIntervalMs': scanInterval.inMilliseconds,
+        'discoveryIntervalMs': discoveryInterval.inMilliseconds,
+        'allowRelay': allowRelay,
+      });
 
   @override
   Stream<NearbyEvent> get events {

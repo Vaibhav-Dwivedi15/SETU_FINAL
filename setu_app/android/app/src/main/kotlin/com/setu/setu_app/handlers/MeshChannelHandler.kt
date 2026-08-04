@@ -96,6 +96,31 @@ class MeshChannelHandler(
                         result.error("BAD_ARGS", "Missing latitude or longitude", null)
                     }
                 }
+                // Added for MARK II battery-tiered duty cycling. Nearby
+                // Connections doesn't expose a BLE-vs-WiFi-Direct radio
+                // switch -- the real lever is HOW OFTEN advertising and
+                // discovery burst on. scanIntervalMs/discoveryIntervalMs
+                // come straight from Dart's MeshPolicy (5s full / 15s
+                // balanced / 30s power saver). allowRelay is passed through
+                // too so native can skip re-broadcasting relayed packets
+                // in power saver, matching the Dart-side guard in
+                // MeshService._relayPacket -- this device's OWN SOS still
+                // always goes out via originate(), regardless of this flag.
+                "updateMeshPolicy" -> {
+                    val scanIntervalMs = call.argument<Int>("scanIntervalMs")
+                    val discoveryIntervalMs = call.argument<Int>("discoveryIntervalMs")
+                    val allowRelay = call.argument<Boolean>("allowRelay")
+                    if (scanIntervalMs != null && discoveryIntervalMs != null && allowRelay != null) {
+                        meshService?.updateMeshPolicy(
+                            scanIntervalMs.toLong(),
+                            discoveryIntervalMs.toLong(),
+                            allowRelay
+                        )
+                        result.success(null)
+                    } else {
+                        result.error("BAD_ARGS", "Missing scanIntervalMs, discoveryIntervalMs, or allowRelay", null)
+                    }
+                }
                 else -> result.notImplemented()
             }
         }
