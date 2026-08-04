@@ -11,6 +11,15 @@
 // larger, separate piece of work. Selecting a language here
 // doesn't yet retranslate the UI — flagging that honestly
 // rather than faking it silently.
+//
+// Aug 4 2026 dark-mode fix: nativeLabel used AppTypography.subtitle
+// with no explicit color, so it inherited the theme's default text
+// color. On a selected card, the background is the FIXED light
+// primaryContainer -- theme-driven light text (dark mode) on a fixed
+// light background was invisible. englishLabel below it was already
+// fine (fixed neutral500 color). Fix: explicit AppColors.primary text
+// only when selected; unselected cards keep the normal theme-inherited
+// color (null falls through), since that case was never broken.
 
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
@@ -131,7 +140,12 @@ class _LanguageSelectionScreenState extends State<LanguageSelectionScreen> {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        Text(lang.nativeLabel, style: AppTypography.subtitle),
+                        Text(
+                          lang.nativeLabel,
+                          style: AppTypography.subtitle.copyWith(
+                            color: isSelected ? AppColors.primary : null,
+                          ),
+                        ),
                         Text(
                           lang.englishLabel,
                           style: AppTypography.caption.copyWith(

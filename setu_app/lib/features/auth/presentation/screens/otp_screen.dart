@@ -10,6 +10,15 @@
 // later by replacing _verify()'s comparison with a backend/
 // Firebase call — the rest of this screen doesn't need to
 // change.
+//
+// Aug 4 2026 dark-mode fix: warningContainer is a fixed light
+// beige (see app_colors.dart) that does NOT change between
+// light/dark theme. The text/icon inside it was previously
+// inheriting AppTypography's theme-driven color, which goes
+// light-colored in dark mode -- light text on a light beige
+// box was effectively invisible. Since the container color
+// itself is fixed, the text/icon color inside it must also be
+// fixed (explicitly dark), not theme-inherited.
 
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
@@ -88,7 +97,10 @@ class _OtpScreenState extends State<OtpScreen> {
               const SizedBox(height: AppSpacing.md),
 
               // DEMO MODE BANNER — remove once real SMS/Firebase
-              // verification is wired up.
+              // verification is wired up. warningContainer is a fixed
+              // light beige regardless of theme, so text/icon color
+              // here is explicitly fixed too (neutral900 = dark),
+              // not inherited from AppTypography's theme-driven color.
               Container(
                 width: double.infinity,
                 padding: const EdgeInsets.all(AppSpacing.sm),
@@ -103,7 +115,7 @@ class _OtpScreenState extends State<OtpScreen> {
                     Expanded(
                       child: Text(
                         'Demo mode — no SMS was actually sent. Your code is: ${widget.otp}',
-                        style: AppTypography.caption,
+                        style: AppTypography.caption.copyWith(color: AppColors.neutral900),
                       ),
                     ),
                   ],

@@ -8,6 +8,17 @@
 // stealth-mode / home redirect in app_router.dart. If the user already
 // granted everything on a previous run, app_router.dart's redirect
 // skips this screen entirely -- it's not shown on every launch.
+//
+// Aug 4 2026 dark-mode fix (two separate bugs found here):
+// 1. Scaffold backgroundColor was hardcoded to AppColors.lightBackground
+//    -- this screen never respected dark mode at all, unlike the rest
+//    of the app which correctly uses Theme.of(context).scaffoldBackgroundColor.
+// 2. The "permanently denied" banner uses emergencyContainer, a FIXED
+//    light pink that never changes with theme -- its text was inheriting
+//    theme-driven color (light in dark mode), making it invisible
+//    against the fixed light pink box. Same root cause as the OTP
+//    screen's demo banner bug. Fix: explicit dark text color on that
+//    banner specifically, since its background is intentionally fixed.
 
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
@@ -54,7 +65,7 @@ class _PermissionGateScreenState extends State<PermissionGateScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: AppColors.lightBackground,
+      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
       body: SafeArea(
         child: Padding(
           padding: const EdgeInsets.all(AppSpacing.lg),
@@ -89,7 +100,7 @@ class _PermissionGateScreenState extends State<PermissionGateScreen> {
                   child: Text(
                     'Some permissions were permanently denied. Open '
                     'settings to turn them on manually.',
-                    style: AppTypography.body,
+                    style: AppTypography.body.copyWith(color: AppColors.neutral900),
                     textAlign: TextAlign.center,
                   ),
                 ),
