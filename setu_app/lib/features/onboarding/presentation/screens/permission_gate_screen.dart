@@ -3,26 +3,12 @@
 // Module : Onboarding / Mesh Permission Gate
 // =====================================================
 //
-// Added Aug 4 2026 -- see mesh_permission_service.dart docstring for
-// why this needs to exist. Shown once, right after login, before the
-// stealth-mode / home redirect in app_router.dart. If the user already
-// granted everything on a previous run, app_router.dart's redirect
-// skips this screen entirely -- it's not shown on every launch.
-//
-// Aug 4 2026 dark-mode fix (two separate bugs found here):
-// 1. Scaffold backgroundColor was hardcoded to AppColors.lightBackground
-//    -- this screen never respected dark mode at all, unlike the rest
-//    of the app which correctly uses Theme.of(context).scaffoldBackgroundColor.
-// 2. The "permanently denied" banner uses emergencyContainer, a FIXED
-//    light pink that never changes with theme -- its text was inheriting
-//    theme-driven color (light in dark mode), making it invisible
-//    against the fixed light pink box. Fix: explicit dark text color on
-//    that banner specifically, since its background is intentionally fixed.
-//
-// Aug 5 2026: added developer.log calls around the request flow to
-// diagnose a stuck-on-this-screen report on a real device (Redmi 8A,
-// Android 9) -- see mesh_permission_service.dart for the matching
-// per-permission logging. Watch with `adb logcat -s MeshPermission`.
+// Added Aug 4 2026. Aug 5 2026: added radio-state checks (Bluetooth/
+// Wi-Fi actually ON) after standard permission grants -- these run on
+// EVERY Android version identically, unlike the runtime permission
+// dialogs which only exist as a concept on certain API levels. This
+// is what makes the gate screen's behavior consistent regardless of
+// which Android version a future user's device happens to run.
 
 import 'dart:async';
 import 'dart:developer' as developer;
@@ -50,10 +36,14 @@ class _PermissionGateScreenState extends State<PermissionGateScreen> {
 
   bool _isRequesting = false;
   bool _permanentlyDenied = false;
+  String? _radioWarning;
 
   Future<void> _requestPermissions() async {
     developer.log('Allow permissions button tapped', name: 'MeshPermission');
-    setState(() => _isRequesting = true);
+    setState(() {
+      _isRequesting = true;
+      _radioWarning = null;
+    });
 
     final stillMissing = await _permissionService.requestAll();
     final permanentlyDenied = await _permissionService.anyPermanentlyDenied();
@@ -63,31 +53,50 @@ class _PermissionGateScreenState extends State<PermissionGateScreen> {
       name: 'MeshPermission',
     );
 
-    if (!mounted) {
-      developer.log('Widget unmounted before request completed -- aborting', name: 'MeshPermission');
+    if (!mounted) return;
+
+    if (stillMissing.isNotEmpty) {
+      developer.log(
+        'Still missing ${stillMissing.length} permission(s) -- staying on gate screen',
+        name: 'MeshPermission',
+      );
+      setState(() {
+        _isRequesting = false;
+        _permanentlyDenied = permanentlyDenied;
+      });
       return;
     }
 
-    if (stillMissing.isEmpty) {
-      developer.log('All permissions granted -- starting connectivity-reactive mesh, navigating to /', name: 'MeshPermission');
-      // Aug 5 2026: this is the first-run case -- main.dart's own
-      // hasMeshPermissions() check is false at boot (nothing granted
-      // yet), so it deliberately skips enableAutoMode(). This is the
-      // moment permissions actually become true, so this is the
-      // correct place to start it for a fresh install.
-      unawaited(ConnectivityMeshController.instance.enableAutoMode());
-      context.go('/');
-      return;
+    // Aug 5 2026: standard permissions are all granted -- now check
+    // the ACTUAL radio state, which behaves the same way regardless of
+    // Android version. If Bluetooth is off, prompt the system "Turn on
+    // Bluetooth?" dialog (available on every Android version SETU
+    // supports). If the user declines, don't hard-block navigation --
+    // the mesh simply won't discover peers until they turn it on
+    // manually later, same as any BLE app.
+    final bluetoothOn = await _permissionService.isBluetoothEnabled();
+    if (!bluetoothOn) {
+      developer.log('Bluetooth is off -- prompting to enable', name: 'MeshPermission');
+      await _permissionService.promptEnableBluetooth();
     }
 
-    developer.log(
-      'Still missing ${stillMissing.length} permission(s) -- staying on gate screen',
-      name: 'MeshPermission',
-    );
-    setState(() {
-      _isRequesting = false;
-      _permanentlyDenied = permanentlyDenied;
-    });
+    final wifiOn = await _permissionService.isWifiEnabled();
+    if (!mounted) return;
+
+    if (!wifiOn) {
+      // Wi-Fi can't be toggled programmatically on Android 10+ --
+      // surface a clear message and a button to open system settings,
+      // rather than silently proceeding with Wi-Fi off.
+      setState(() {
+        _isRequesting = false;
+        _radioWarning = 'Wi-Fi is off. Turn it on for the best mesh range '
+            '(Bluetooth alone still works, just at shorter range).';
+      });
+    }
+
+    developer.log('Proceeding to home', name: 'MeshPermission');
+    unawaited(ConnectivityMeshController.instance.enableAutoMode());
+    context.go('/');
   }
 
   @override
@@ -118,6 +127,26 @@ class _PermissionGateScreenState extends State<PermissionGateScreen> {
                 textAlign: TextAlign.center,
               ),
               const SizedBox(height: AppSpacing.xl),
+              if (_radioWarning != null) ...[
+                Container(
+                  padding: const EdgeInsets.all(AppSpacing.md),
+                  decoration: BoxDecoration(
+                    color: AppColors.warningContainer,
+                    borderRadius: AppRadius.mdRadius,
+                  ),
+                  child: Text(
+                    _radioWarning!,
+                    style: AppTypography.body.copyWith(color: AppColors.neutral900),
+                    textAlign: TextAlign.center,
+                  ),
+                ),
+                const SizedBox(height: AppSpacing.md),
+                AppButton(
+                  label: 'Open Wi-Fi settings',
+                  onPressed: () => _permissionService.openWifiSettings(),
+                ),
+                const SizedBox(height: AppSpacing.sm),
+              ],
               if (_permanentlyDenied) ...[
                 Container(
                   padding: const EdgeInsets.all(AppSpacing.md),
@@ -137,7 +166,7 @@ class _PermissionGateScreenState extends State<PermissionGateScreen> {
                   label: 'Open settings',
                   onPressed: () => _permissionService.openSettings(),
                 ),
-              ] else
+              ] else if (_radioWarning == null)
                 AppButton(
                   label: _isRequesting ? 'Requesting...' : 'Allow permissions',
                   onPressed: _isRequesting ? null : _requestPermissions,

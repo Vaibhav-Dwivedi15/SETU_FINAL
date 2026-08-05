@@ -141,6 +141,18 @@ class MeshForegroundService : Service(), NearbyConnectionsManager.Listener {
 
         val offMs = (currentDiscoveryIntervalMs - burstOnMs).coerceAtLeast(0L)
 
+        // Full-power tier (discoveryInterval <= burstOnMs, offMs == 0):
+        // no duty cycling at all -- start once and leave it running
+        // continuously, matching the old always-on behavior. Calling
+        // startAdvertising()/startDiscovery() again on an already-running
+        // session throws STATUS_ALREADY_ADVERTISING -- this was the bug.
+        if (offMs == 0L) {
+            connectionsManager.startAdvertising()
+            connectionsManager.startDiscovery()
+            dutyCycleRunnable = null
+            return
+        }
+
         val runnable = object : Runnable {
             var burstIsOn = true
 
@@ -151,13 +163,7 @@ class MeshForegroundService : Service(), NearbyConnectionsManager.Listener {
                     burstIsOn = false
                     dutyCycleHandler.postDelayed(this, burstOnMs)
                 } else {
-                    // If offMs is 0 (full-power tier where discoveryInterval
-                    // <= burstOnMs), this just re-bursts immediately --
-                    // equivalent to continuous advertising/discovery, which
-                    // matches the old always-on behavior for full battery.
-                    if (offMs > 0) {
-                        connectionsManager.stopAdvertisingAndDiscovery()
-                    }
+                    connectionsManager.stopAdvertisingAndDiscovery()
                     burstIsOn = true
                     dutyCycleHandler.postDelayed(this, offMs)
                 }

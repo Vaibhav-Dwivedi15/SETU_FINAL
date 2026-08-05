@@ -2,37 +2,40 @@ import 'dart:developer' as developer;
 import 'dart:io' show Platform;
 
 import 'package:device_info_plus/device_info_plus.dart';
+import 'package:flutter/services.dart';
 import 'package:permission_handler/permission_handler.dart';
 
 /// Requests every permission the mesh layer needs to actually run.
 ///
 /// WHY THIS EXISTS (Aug 4 2026 gap analysis): the app declares all the
-/// right permissions in AndroidManifest.xml (BLUETOOTH_SCAN,
-/// BLUETOOTH_ADVERTISE, BLUETOOTH_CONNECT, NEARBY_WIFI_DEVICES,
-/// ACCESS_FINE_LOCATION), but nothing in the Dart layer ever actually
-/// requested them at runtime except plain GPS (via LocationService for
-/// packet coordinates).
+/// right permissions in AndroidManifest.xml, but nothing in the Dart
+/// layer ever actually requested them at runtime.
 ///
 /// Aug 5 2026 CRITICAL FIX (Redmi 8A / Android 9 stuck-on-permission-
-/// screen bug): the required-permission list was FIXED regardless of
-/// Android version, and included Permission.nearbyWifiDevices. That
-/// permission (NEARBY_WIFI_DEVICES) only EXISTS on Android 13 (API 33)
-/// and up. On older devices (like the Redmi 8A running Android 9),
-/// permission_handler reports it as permanently denied/restricted
-/// because the OS has no such permission to grant -- so hasAll() could
-/// NEVER return true, requestAll() could never clear it, and the
-/// permission gate screen looped forever. On Android <13, nearby-Wi-Fi
-/// discovery is covered by ACCESS_FINE_LOCATION instead. The fix: build
-/// the required list based on the actual Android SDK version, only
-/// including nearbyWifiDevices on API 33+.
+/// screen bug): Permission.nearbyWifiDevices only EXISTS on Android 13
+/// (API 33) and up. On older devices, permission_handler reports it as
+/// permanently denied/restricted, so the required-permission list is
+/// now built per Android SDK version.
 ///
-/// `permission_handler` was already a pubspec dependency.
-/// `device_info_plus` is needed to read the SDK version -- if it isn't
-/// already in pubspec.yaml, add it (`flutter pub add device_info_plus`).
+/// Aug 5 2026 ALSO ADDED: radio-state checks (Bluetooth/Wi-Fi actually
+/// ON, not just "permission granted"). On Android <12, Bluetooth
+/// runtime permissions don't exist at all -- the OS silently
+/// auto-grants the old install-time BLUETOOTH/BLUETOOTH_ADMIN
+/// permissions with NO dialog ever shown. That's correct Android
+/// behavior, but it means "permission granted" alone tells you nothing
+/// about whether the user's Bluetooth radio is actually switched on --
+/// and that gap exists on EVERY Android version, not just old ones.
+/// hasRadiosReady()/promptEnableRadios() check/prompt the actual radio
+/// state via the native `setu/radio_state` channel (see
+/// RadioStateChannelHandler.kt), so behavior is identical regardless
+/// of which Android version a given user's phone happens to run --
+/// the team doesn't need to know in advance which OS version any
+/// future user has.
 class MeshPermissionService {
   const MeshPermissionService();
 
-  /// Permissions needed on EVERY supported Android version.
+  static const MethodChannel _radioChannel = MethodChannel('setu/radio_state');
+
   static const List<Permission> _base = [
     Permission.bluetoothScan,
     Permission.bluetoothAdvertise,
@@ -40,11 +43,6 @@ class MeshPermissionService {
     Permission.locationWhenInUse,
   ];
 
-  /// Resolves the actual required list for THIS device's Android version.
-  /// nearbyWifiDevices is appended only on API 33+ (Android 13+), where
-  /// it actually exists and can be granted. On older versions it's
-  /// deliberately omitted -- requesting it there is what caused the
-  /// permanent-denied loop.
   Future<List<Permission>> _requiredForThisDevice() async {
     final required = List<Permission>.from(_base);
 
@@ -62,10 +60,6 @@ class MeshPermissionService {
           );
         }
       } catch (e) {
-        // If we somehow can't read the SDK version, err on the side of
-        // NOT requiring nearbyWifiDevices -- a device that's missing it
-        // being wrongly blocked (the original bug) is worse than one
-        // that's on API 33+ but skips it (mesh still works via location).
         developer.log('Could not read Android SDK version: $e', name: 'MeshPermission');
       }
     }
@@ -73,8 +67,6 @@ class MeshPermissionService {
     return required;
   }
 
-  /// True only if every required permission (for this device's Android
-  /// version) is currently granted.
   Future<bool> hasAll() async {
     final required = await _requiredForThisDevice();
     for (final permission in required) {
@@ -85,12 +77,6 @@ class MeshPermissionService {
     return true;
   }
 
-  /// Requests every missing permission, in order, and returns whichever
-  /// ones are STILL not granted afterward (empty list = all granted).
-  ///
-  /// Requesting sequentially (not Future.wait in parallel) is deliberate:
-  /// Android's permission dialogs queue and can behave inconsistently if
-  /// several system dialogs are triggered at once from a single frame.
   Future<List<Permission>> requestAll() async {
     final required = await _requiredForThisDevice();
     final stillMissing = <Permission>[];
@@ -125,9 +111,6 @@ class MeshPermissionService {
     return stillMissing;
   }
 
-  /// True if any required permission was permanently denied ("don't ask
-  /// again"). Uses the version-aware list, so a non-existent permission
-  /// on an older OS can no longer wrongly count as "permanently denied".
   Future<bool> anyPermanentlyDenied() async {
     final required = await _requiredForThisDevice();
     for (final permission in required) {
@@ -143,4 +126,63 @@ class MeshPermissionService {
   }
 
   Future<void> openSettings() => openAppSettings();
+
+  /// True only if Bluetooth is actually switched ON. Version-proof --
+  /// works identically on Android 9 through the latest release, unlike
+  /// the permission_handler Bluetooth permissions which only exist as
+  /// a runtime concept on API 31+.
+  Future<bool> isBluetoothEnabled() async {
+    if (!Platform.isAndroid) return true;
+    try {
+      final enabled = await _radioChannel.invokeMethod<bool>('isBluetoothEnabled');
+      developer.log('isBluetoothEnabled() -> $enabled', name: 'MeshPermission');
+      return enabled ?? false;
+    } catch (e) {
+      developer.log('isBluetoothEnabled() failed: $e', name: 'MeshPermission');
+      return false;
+    }
+  }
+
+  /// Shows the system "Turn on Bluetooth?" dialog if it's off. Returns
+  /// true if it's on afterward (either it already was, or the user
+  /// tapped Allow). This dialog is available on every Android version
+  /// SETU supports -- unlike runtime BLUETOOTH_SCAN etc., which is an
+  /// Android 12+-only concept.
+  Future<bool> promptEnableBluetooth() async {
+    if (!Platform.isAndroid) return true;
+    try {
+      final enabled = await _radioChannel.invokeMethod<bool>('requestEnableBluetooth');
+      developer.log('promptEnableBluetooth() -> $enabled', name: 'MeshPermission');
+      return enabled ?? false;
+    } catch (e) {
+      developer.log('promptEnableBluetooth() failed: $e', name: 'MeshPermission');
+      return false;
+    }
+  }
+
+  Future<bool> isWifiEnabled() async {
+    if (!Platform.isAndroid) return true;
+    try {
+      final enabled = await _radioChannel.invokeMethod<bool>('isWifiEnabled');
+      developer.log('isWifiEnabled() -> $enabled', name: 'MeshPermission');
+      return enabled ?? false;
+    } catch (e) {
+      developer.log('isWifiEnabled() failed: $e', name: 'MeshPermission');
+      return false;
+    }
+  }
+
+  /// Opens the system Wi-Fi settings panel. Android 10+ blocks apps
+  /// from directly toggling Wi-Fi programmatically (WifiManager's
+  /// setEnabled() silently no-ops there) -- opening system settings is
+  /// the correct, version-safe action so the user can turn it on
+  /// themselves, on any Android version.
+  Future<void> openWifiSettings() async {
+    if (!Platform.isAndroid) return;
+    try {
+      await _radioChannel.invokeMethod('openWifiSettings');
+    } catch (e) {
+      developer.log('openWifiSettings() failed: $e', name: 'MeshPermission');
+    }
+  }
 }

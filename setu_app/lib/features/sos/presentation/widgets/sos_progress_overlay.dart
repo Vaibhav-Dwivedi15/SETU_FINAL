@@ -4,23 +4,15 @@
 // =====================================================
 //
 // Aug 5 2026: built to satisfy the product vision's explicit request
-// for a "beautiful reassuring animation" during SOS transmission,
-// instead of the user staring at a plain "Sending..." button label
-// with no feedback about what's actually happening. Listens to
-// SosRepository.progressStream (added alongside this) and shows the
-// exact message sequence from the ideation doc:
-//   "Network unavailable." -> "Activating SETU Mesh..." ->
-//   "Searching nearby relay devices..." -> "Your emergency message
-//   is being forwarded." (offline path)
-// or a shorter online-path sequence. Purely a display layer -- does
-// NOT change what triggerSOS() actually does, only what the user sees
-// while it happens.
+// for a "beautiful reassuring animation" during SOS transmission.
+// Listens to SosRepository.progressStream. Purely a display layer --
+// does NOT change what triggerSOS() actually does, only what the user
+// sees while it happens.
 //
-// Pushed as a full-screen, non-dismissible route from
-// confirmation_screen.dart right before calling triggerSOS(), popped
-// right after it resolves (success or failure) -- the caller owns the
-// lifecycle, this widget just renders whatever state arrives on the
-// stream until it's removed.
+// Aug 5 2026 update: added SosProgress.backendConfirmed (new state
+// from the online-path awaited-upload fix in sos_repository.dart) --
+// every enum value MUST have an entry here or the map lookup below
+// throws a null-check error the first time that state fires.
 
 import 'package:flutter/material.dart';
 
@@ -59,6 +51,10 @@ const _stepsByProgress = <SosProgress, _ProgressStep>{
   SosProgress.onlineSending: _ProgressStep(
     Icons.wifi_rounded,
     'Connected — sending your alert...',
+  ),
+  SosProgress.backendConfirmed: _ProgressStep(
+    Icons.cloud_done_rounded,
+    'Backend confirmed — help is being notified.',
   ),
   SosProgress.notifyingContacts: _ProgressStep(
     Icons.contact_phone_rounded,
@@ -116,7 +112,7 @@ class _SosProgressOverlayState extends State<SosProgressOverlay>
         : (isDelivered ? AppColors.success : AppColors.primary);
 
     return PopScope(
-      canPop: false, // caller (confirmation_screen) owns when this closes
+      canPop: false,
       child: Scaffold(
         backgroundColor: Theme.of(context).scaffoldBackgroundColor,
         body: SafeArea(
@@ -129,9 +125,6 @@ class _SosProgressOverlayState extends State<SosProgressOverlay>
                   AnimatedBuilder(
                     animation: _pulseController,
                     builder: (context, child) {
-                      // Pulse only while actively working -- a settled
-                      // success/failure state shouldn't keep animating,
-                      // it should read as final.
                       final animate = !isFailed && !isDelivered;
                       final scale = animate ? 1 + (_pulseController.value * 0.15) : 1.0;
                       return Transform.scale(scale: scale, child: child);
