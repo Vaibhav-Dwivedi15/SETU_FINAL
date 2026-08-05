@@ -9,6 +9,9 @@ import '../../security/security_exceptions.dart';
 import '../../services/backend_service.dart';
 import '../../services/power_mode.dart';
 import '../../services/power_mode_controller.dart';
+import '../../features/sos/data/services/ack_packet_builder.dart';
+import '../models/ack_packet.dart';
+import '../models/alert_packet.dart';
 import '../models/emergency_packet.dart';
 import '../models/mesh_packet.dart';
 import '../models/packet_factory.dart';
@@ -23,6 +26,15 @@ import 'signing_service.dart';
 abstract class MeshService {
   Future<void> originate(MeshPacket packet);
   Stream<MeshPacket> get incomingPackets;
+
+  /// Added Aug 4 2026: real delivery confirmations for packets THIS
+  /// device originated -- fires when an AckPacket arrives whose
+  /// emergencyId matches something this device sent. Replaces the
+  /// optimistic "Delivered" status sos_repository.dart currently shows
+  /// immediately on send with an actual confirmed-reached-the-backend
+  /// signal. See ack_packet.dart for the full flow.
+  Stream<AckPacket> get acknowledgments;
+
   void dispose();
 }
 
@@ -38,13 +50,24 @@ class MeshServiceImpl implements MeshService {
         _queue = queueService {
     _subscription = _nearby.events.listen(_handleNearbyEvent);
     _retryTimer = Timer.periodic(const Duration(seconds: 30), (_) => _retryPendingUploads());
+    // Responder registry sync: closes the termination-authorization gap
+    // documented in responder_registry.dart. Every 5 minutes (and once at
+    // startup), pull the trusted-responder public key list from the
+    // backend so ResponderRegistry stops fail-open-accepting terminations
+    // from any valid keypair. 5 minutes, not more frequent — this list
+    // changes rarely (responder onboarding/offboarding), and each sync is
+    // a network call gated on real internet, same as upload retries.
+    _registryTimer = Timer.periodic(const Duration(minutes: 5), (_) => _syncResponderRegistry());
     unawaited(PowerModeController.instance.initialize());
     _policySub = PowerModeController.instance.stream.listen((mode) {
       _currentPolicy = MeshPolicy.fromPowerMode(mode);
       developer.log('Power mode changed -> ${mode.name}', name: 'MeshService');
+      unawaited(_pushPolicyToNative());
     });
     _currentPolicy = MeshPolicy.fromPowerMode(PowerModeController.instance.currentMode);
+    unawaited(_pushPolicyToNative());
     unawaited(_retryPendingUploads());
+    unawaited(_syncResponderRegistry());
   }
 
   final NearbyService _nearby;
@@ -54,13 +77,44 @@ class MeshServiceImpl implements MeshService {
   final PacketValidator _validator = PacketValidator(); // Security Lead's module
   final _incomingController = StreamController<MeshPacket>.broadcast();
   final Set<String> _closedEmergencyIds = {};
+
+  // Added Aug 4 2026 -- see AckPacket docstring for the full flow.
+  final AckPacketBuilder _ackBuilder = AckPacketBuilder();
+  final Set<String> _originatedEmergencyIds = {};
+  final _acknowledgmentsController = StreamController<AckPacket>.broadcast();
   late final StreamSubscription<NearbyEvent> _subscription;
   late final StreamSubscription<PowerMode> _policySub;
   late final Timer _retryTimer;
+  late final Timer _registryTimer;
   MeshPolicy _currentPolicy = MeshPolicy.fromPowerMode(PowerMode.full);
 
   @override
   Stream<MeshPacket> get incomingPackets => _incomingController.stream;
+
+  @override
+  Stream<AckPacket> get acknowledgments => _acknowledgmentsController.stream;
+
+  /// MARK II battery-tiered duty cycling: pushes the current policy's
+  /// scan/discovery intervals + relay flag down to the native Foreground
+  /// Service so power-saver mode actually reduces radio-on time, not
+  /// just gates relay/upload here in Dart. Fire-and-forget: if this
+  /// fails (e.g. native side not bound yet), native keeps whatever duty
+  /// cycle it already had -- never blocks mesh startup on this.
+  Future<void> _pushPolicyToNative() async {
+    try {
+      await _nearby.updatePolicy(
+        scanInterval: _currentPolicy.scanInterval,
+        discoveryInterval: _currentPolicy.discoveryInterval,
+        allowRelay: _currentPolicy.allowRelay,
+      );
+      developer.log(
+        'Pushed mesh policy to native: scan=${_currentPolicy.scanInterval} discovery=${_currentPolicy.discoveryInterval} allowRelay=${_currentPolicy.allowRelay}',
+        name: 'MeshService',
+      );
+    } catch (e) {
+      developer.log('Failed to push mesh policy to native: $e', name: 'MeshService');
+    }
+  }
 
   @override
   Future<void> originate(MeshPacket packet) async {
@@ -72,11 +126,16 @@ class MeshServiceImpl implements MeshService {
       'Originating packet: ${packet.packetId} type=${packet.type} ttl=${packet.ttl} sender=${packet.senderId.substring(0, 8)}...',
       name: 'MeshService',
     );
+    if (packet is EmergencyPacket) {
+      _originatedEmergencyIds.add(packet.emergencyId);
+    }
+
     await _queue.enqueue(packet);
     final bytes = Uint8List.fromList(utf8.encode(jsonEncode(packet.toJson())));
     await _nearby.originate(bytes, packet.packetId);
     developer.log('Packet handed to NearbyService.originate: ${packet.packetId} (${bytes.length} bytes)', name: 'MeshService');
     MeshMetrics.instance.sent++;
+    MeshMetrics.instance.notify();
     _tryUpload(packet);
   }
 
@@ -100,6 +159,7 @@ class MeshServiceImpl implements MeshService {
     } catch (e) {
       developer.log('Dropped malformed packet: $e', name: 'MeshService');
       MeshMetrics.instance.dropped++;
+      MeshMetrics.instance.notify();
       return;
     }
 
@@ -126,6 +186,7 @@ class MeshServiceImpl implements MeshService {
     } on SecurityException catch (e) {
       developer.log('Dropped packet failing security validation: $e (${packet.packetId})', name: 'MeshService');
       MeshMetrics.instance.dropped++;
+      MeshMetrics.instance.notify();
       return;
     }
     developer.log('Packet passed PacketValidator: ${packet.packetId}', name: 'MeshService');
@@ -134,6 +195,7 @@ class MeshServiceImpl implements MeshService {
     if (!isValid) {
       developer.log('Dropped packet with invalid signature: ${packet.packetId}', name: 'MeshService');
       MeshMetrics.instance.dropped++;
+      MeshMetrics.instance.notify();
       return;
     }
     developer.log('Packet signature VERIFIED: ${packet.packetId}', name: 'MeshService');
@@ -143,6 +205,7 @@ class MeshServiceImpl implements MeshService {
       if (!authorized) {
         developer.log('Dropped termination from unauthorized responder: ${packet.senderId}', name: 'MeshService');
         MeshMetrics.instance.dropped++;
+        MeshMetrics.instance.notify();
         return;
       }
       if (!enforced) {
@@ -156,10 +219,12 @@ class MeshServiceImpl implements MeshService {
     if (packet is EmergencyPacket && _closedEmergencyIds.contains(packet.emergencyId)) {
       developer.log('Dropped packet for closed emergency: ${packet.emergencyId}', name: 'MeshService');
       MeshMetrics.instance.dropped++;
+      MeshMetrics.instance.notify();
       return;
     }
 
     MeshMetrics.instance.received++;
+    MeshMetrics.instance.notify();
     await _queue.enqueue(packet);
     _incomingController.add(packet);
     developer.log('Packet ACCEPTED and queued: ${packet.packetId} (total received=${MeshMetrics.instance.received})', name: 'MeshService');
@@ -177,6 +242,22 @@ class MeshServiceImpl implements MeshService {
     // for this emergency_id.
     _relayPacket(packet);
 
+    // Added Aug 4 2026: AckPacket and AlertPacket are mesh-only —
+    // backend's /ingest schema only understands emergency/termination
+    // packets today, so uploading these would just be rejected. They
+    // still relay (above) so they keep propagating through the mesh
+    // toward whoever they're meant for, they just never hit _tryUpload.
+    if (packet is AckPacket) {
+      if (_originatedEmergencyIds.contains(packet.emergencyId)) {
+        developer.log('Ack received for own emergency: ${packet.emergencyId}', name: 'MeshService');
+        _acknowledgmentsController.add(packet);
+      }
+      return;
+    }
+    if (packet is AlertPacket) {
+      return;
+    }
+
     if (!_currentPolicy.allowUpload) {
       developer.log('Upload skipped — power saver mode active', name: 'MeshService');
       return;
@@ -190,12 +271,21 @@ class MeshServiceImpl implements MeshService {
   /// this hop's own copy in _handlePayload. This only puts a
   /// TTL-decremented, hop-incremented copy back out over the mesh.
   ///
-  /// NOTE: battery-aware relay-skip (documented in Mesh_Protocol.md —
-  /// "devices below a battery threshold back off from relaying other
-  /// people's traffic") is not yet wired in here; this device currently
-  /// always relays regardless of its own battery level. Flagged as a
-  /// known follow-up, not silently assumed done.
+  /// Battery-aware relay guard: gated on MeshPolicy.allowRelay, which
+  /// BatteryService already drives to false below 20% battery (see
+  /// mesh_policy.dart / battery_service.dart — PowerMode.powerSaver).
+  /// This only gates RELAYING OTHER DEVICES' traffic. A device's own SOS
+  /// always goes out regardless of battery — originate() never checks
+  /// _currentPolicy at all, by design.
   void _relayPacket(MeshPacket packet) {
+    if (!_currentPolicy.allowRelay) {
+      developer.log(
+        'Relay skipped — power saver mode active (battery-aware guard): ${packet.packetId}',
+        name: 'MeshService',
+      );
+      return;
+    }
+
     final MeshPacket relayed;
     try {
       relayed = packet.withRelayHop();
@@ -215,9 +305,17 @@ class MeshServiceImpl implements MeshService {
       'Relayed packet to next hop: ${relayed.packetId} ttl=${relayed.ttl} hop=${relayed.hopCount}',
       name: 'MeshService',
     );
+    MeshMetrics.instance.relayed++;
+    MeshMetrics.instance.notify();
   }
 
   void _tryUpload(MeshPacket packet) {
+    // Ack/Alert packets are mesh-only -- see the comment in
+    // _handlePayload's AckPacket/AlertPacket branch for why. Guarding
+    // here too covers the self-originate path (originate() always
+    // calls _tryUpload at the end), not just incoming relayed packets.
+    if (packet is AckPacket || packet is AlertPacket) return;
+
     unawaited(() async {
       final online = await _backend.hasRealInternet();
       if (!online) return;
@@ -225,8 +323,54 @@ class MeshServiceImpl implements MeshService {
       if (ok) {
         await _queue.markUploaded(packet.packetId);
         MeshMetrics.instance.uploaded++;
+        MeshMetrics.instance.notify();
+        if (packet is EmergencyPacket) {
+          unawaited(_originateAck(packet));
+        }
       }
     }());
+  }
+
+  /// Added Aug 4 2026: fires the moment THIS device (acting as the
+  /// exit node, "Pn") successfully hands a packet to the backend --
+  /// whether that's this device's own SOS (internet was available the
+  /// whole time) or a packet relayed in from someone else's mesh. The
+  /// ack travels back through the mesh the same way any packet does;
+  /// only the device whose _originatedEmergencyIds contains this
+  /// emergencyId will actually surface it (see the AckPacket branch in
+  /// _handlePayload above) -- everyone else just relays it onward.
+  Future<void> _originateAck(EmergencyPacket packet) async {
+    try {
+      final ack = await _ackBuilder.buildAckPacket(
+        originalPacketId: packet.packetId,
+        emergencyId: packet.emergencyId,
+      );
+      await originate(ack);
+      developer.log('Ack originated for emergency: ${packet.emergencyId}', name: 'MeshService');
+    } catch (e) {
+      developer.log('Failed to originate ack for ${packet.emergencyId}: $e', name: 'MeshService');
+    }
+  }
+
+  /// Pulls the current trusted-responder public key list from the backend
+  /// and pushes it into ResponderRegistry. Skips silently (retries next
+  /// cycle) if offline or the fetch fails — never clears an existing,
+  /// previously-synced registry just because one sync attempt failed.
+  Future<void> _syncResponderRegistry() async {
+    final online = await _backend.hasRealInternet();
+    if (!online) return;
+
+    final keys = await _backend.fetchResponderKeys();
+    if (keys == null) {
+      developer.log('Responder registry sync skipped — fetch failed', name: 'MeshService');
+      return;
+    }
+
+    ResponderRegistry.instance.syncFromBackend(keys);
+    developer.log(
+      'Responder registry synced: ${keys.length} trusted responder key(s)',
+      name: 'MeshService',
+    );
   }
 
   Future<void> _retryPendingUploads() async {
@@ -240,6 +384,7 @@ class MeshServiceImpl implements MeshService {
       if (ok) {
         await _queue.markUploaded(packet.packetId);
         MeshMetrics.instance.uploaded++;
+        MeshMetrics.instance.notify();
       }
     }
   }
@@ -249,6 +394,8 @@ class MeshServiceImpl implements MeshService {
     _subscription.cancel();
     _policySub.cancel();
     _retryTimer.cancel();
+    _registryTimer.cancel();
+    _acknowledgmentsController.close();
     PowerModeController.instance.dispose();
   }
 }

@@ -1,5 +1,5 @@
 import 'package:go_router/go_router.dart';
-
+import 'package:setu_app/features/relay/presentation/screens/relay_status_screen.dart';
 import 'package:setu_app/features/home/presentation/screens/home_screen.dart';
 import 'package:setu_app/features/stealth/presentation/screens/stealth_screen.dart';
 import 'package:setu_app/features/confirmation/presentation/screens/confirmation_screen.dart';
@@ -153,6 +153,10 @@ final GoRouter appRouter = GoRouter(
     GoRoute(
       path: '/lost-child/broadcast',
       builder: (context, state) => const LostChildBroadcastScreen(),
+    ),
+  GoRoute(
+      path: '/relay',
+      builder: (context, state) => const RelayStatusScreen(),
     ),
   ],
 );

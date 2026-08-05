@@ -1,5 +1,7 @@
 import 'dart:developer' as developer;
+import 'dart:io' show Platform;
 
+import 'package:device_info_plus/device_info_plus.dart';
 import 'package:permission_handler/permission_handler.dart';
 
 /// Requests every permission the mesh layer needs to actually run.
@@ -9,38 +11,73 @@ import 'package:permission_handler/permission_handler.dart';
 /// BLUETOOTH_ADVERTISE, BLUETOOTH_CONNECT, NEARBY_WIFI_DEVICES,
 /// ACCESS_FINE_LOCATION), but nothing in the Dart layer ever actually
 /// requested them at runtime except plain GPS (via LocationService for
-/// packet coordinates). On a real Android 12+ device that means the
-/// mesh layer silently can't advertise/discover/connect until the OS
-/// permission dialogs are triggered from somewhere -- and nothing did.
+/// packet coordinates).
 ///
-/// `permission_handler` was already a pubspec dependency, just unused
-/// for this. No new package needed.
+/// Aug 5 2026 CRITICAL FIX (Redmi 8A / Android 9 stuck-on-permission-
+/// screen bug): the required-permission list was FIXED regardless of
+/// Android version, and included Permission.nearbyWifiDevices. That
+/// permission (NEARBY_WIFI_DEVICES) only EXISTS on Android 13 (API 33)
+/// and up. On older devices (like the Redmi 8A running Android 9),
+/// permission_handler reports it as permanently denied/restricted
+/// because the OS has no such permission to grant -- so hasAll() could
+/// NEVER return true, requestAll() could never clear it, and the
+/// permission gate screen looped forever. On Android <13, nearby-Wi-Fi
+/// discovery is covered by ACCESS_FINE_LOCATION instead. The fix: build
+/// the required list based on the actual Android SDK version, only
+/// including nearbyWifiDevices on API 33+.
 ///
-/// Aug 5 2026: added explicit per-permission logging (developer.log)
-/// throughout, because the plugin's own logcat output ("No permissions
-/// found in manifest for: []") gives zero indication of WHICH permission
-/// is involved or what its actual status/result is -- not enough to
-/// diagnose a stuck permission gate on a real device (Redmi 8A, Android
-/// 9). This makes every step visible in `adb logcat -s MeshPermission`.
+/// `permission_handler` was already a pubspec dependency.
+/// `device_info_plus` is needed to read the SDK version -- if it isn't
+/// already in pubspec.yaml, add it (`flutter pub add device_info_plus`).
 class MeshPermissionService {
   const MeshPermissionService();
 
-  /// Every permission the mesh + location layers need together.
-  /// Kept as one list (not split per-feature) because a phone that's
-  /// missing any one of these can't function as a relay node at all --
-  /// there's no useful partial-permission state for this app's core
-  /// purpose.
-  static const List<Permission> _required = [
+  /// Permissions needed on EVERY supported Android version.
+  static const List<Permission> _base = [
     Permission.bluetoothScan,
     Permission.bluetoothAdvertise,
     Permission.bluetoothConnect,
-    Permission.nearbyWifiDevices,
     Permission.locationWhenInUse,
   ];
 
-  /// True only if every required permission is currently granted.
+  /// Resolves the actual required list for THIS device's Android version.
+  /// nearbyWifiDevices is appended only on API 33+ (Android 13+), where
+  /// it actually exists and can be granted. On older versions it's
+  /// deliberately omitted -- requesting it there is what caused the
+  /// permanent-denied loop.
+  Future<List<Permission>> _requiredForThisDevice() async {
+    final required = List<Permission>.from(_base);
+
+    if (Platform.isAndroid) {
+      try {
+        final info = await DeviceInfoPlugin().androidInfo;
+        final sdkInt = info.version.sdkInt;
+        developer.log('Android SDK version: $sdkInt', name: 'MeshPermission');
+        if (sdkInt >= 33) {
+          required.add(Permission.nearbyWifiDevices);
+        } else {
+          developer.log(
+            'Skipping nearbyWifiDevices (Android <13, covered by location)',
+            name: 'MeshPermission',
+          );
+        }
+      } catch (e) {
+        // If we somehow can't read the SDK version, err on the side of
+        // NOT requiring nearbyWifiDevices -- a device that's missing it
+        // being wrongly blocked (the original bug) is worse than one
+        // that's on API 33+ but skips it (mesh still works via location).
+        developer.log('Could not read Android SDK version: $e', name: 'MeshPermission');
+      }
+    }
+
+    return required;
+  }
+
+  /// True only if every required permission (for this device's Android
+  /// version) is currently granted.
   Future<bool> hasAll() async {
-    for (final permission in _required) {
+    final required = await _requiredForThisDevice();
+    for (final permission in required) {
       final status = await permission.status;
       developer.log('hasAll() check: $permission -> $status', name: 'MeshPermission');
       if (!status.isGranted) return false;
@@ -55,8 +92,9 @@ class MeshPermissionService {
   /// Android's permission dialogs queue and can behave inconsistently if
   /// several system dialogs are triggered at once from a single frame.
   Future<List<Permission>> requestAll() async {
+    final required = await _requiredForThisDevice();
     final stillMissing = <Permission>[];
-    for (final permission in _required) {
+    for (final permission in required) {
       try {
         final currentStatus = await permission.status;
         developer.log('requestAll() pre-check: $permission -> $currentStatus', name: 'MeshPermission');
@@ -74,11 +112,6 @@ class MeshPermissionService {
           stillMissing.add(permission);
         }
       } catch (e, stack) {
-        // A permission_handler call throwing on a specific OS version/
-        // permission combo would previously have been silently lost --
-        // no try/catch existed here before. Treat any exception as
-        // "still missing" rather than letting it crash requestAll()
-        // partway through and leave later permissions unrequested.
         developer.log(
           'requestAll() EXCEPTION for $permission: $e',
           name: 'MeshPermission',
@@ -92,11 +125,12 @@ class MeshPermissionService {
     return stillMissing;
   }
 
-  /// True if any missing permission was permanently denied ("don't ask
-  /// again") -- at that point re-requesting does nothing and the only
-  /// path forward is the OS app settings screen.
+  /// True if any required permission was permanently denied ("don't ask
+  /// again"). Uses the version-aware list, so a non-existent permission
+  /// on an older OS can no longer wrongly count as "permanently denied".
   Future<bool> anyPermanentlyDenied() async {
-    for (final permission in _required) {
+    final required = await _requiredForThisDevice();
+    for (final permission in required) {
       final status = await permission.status;
       final permanentlyDenied = status.isPermanentlyDenied;
       developer.log(
