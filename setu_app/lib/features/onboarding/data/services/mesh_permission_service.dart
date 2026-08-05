@@ -1,3 +1,5 @@
+import 'dart:developer' as developer;
+
 import 'package:permission_handler/permission_handler.dart';
 
 /// Requests every permission the mesh layer needs to actually run.
@@ -13,6 +15,13 @@ import 'package:permission_handler/permission_handler.dart';
 ///
 /// `permission_handler` was already a pubspec dependency, just unused
 /// for this. No new package needed.
+///
+/// Aug 5 2026: added explicit per-permission logging (developer.log)
+/// throughout, because the plugin's own logcat output ("No permissions
+/// found in manifest for: []") gives zero indication of WHICH permission
+/// is involved or what its actual status/result is -- not enough to
+/// diagnose a stuck permission gate on a real device (Redmi 8A, Android
+/// 9). This makes every step visible in `adb logcat -s MeshPermission`.
 class MeshPermissionService {
   const MeshPermissionService();
 
@@ -32,7 +41,9 @@ class MeshPermissionService {
   /// True only if every required permission is currently granted.
   Future<bool> hasAll() async {
     for (final permission in _required) {
-      if (!await permission.status.isGranted) return false;
+      final status = await permission.status;
+      developer.log('hasAll() check: $permission -> $status', name: 'MeshPermission');
+      if (!status.isGranted) return false;
     }
     return true;
   }
@@ -45,16 +56,39 @@ class MeshPermissionService {
   /// several system dialogs are triggered at once from a single frame.
   Future<List<Permission>> requestAll() async {
     final stillMissing = <Permission>[];
-
     for (final permission in _required) {
-      if (await permission.status.isGranted) continue;
+      try {
+        final currentStatus = await permission.status;
+        developer.log('requestAll() pre-check: $permission -> $currentStatus', name: 'MeshPermission');
 
-      final result = await permission.request();
-      if (!result.isGranted) {
+        if (currentStatus.isGranted) {
+          developer.log('requestAll() skip (already granted): $permission', name: 'MeshPermission');
+          continue;
+        }
+
+        developer.log('requestAll() requesting: $permission', name: 'MeshPermission');
+        final result = await permission.request();
+        developer.log('requestAll() result: $permission -> $result', name: 'MeshPermission');
+
+        if (!result.isGranted) {
+          stillMissing.add(permission);
+        }
+      } catch (e, stack) {
+        // A permission_handler call throwing on a specific OS version/
+        // permission combo would previously have been silently lost --
+        // no try/catch existed here before. Treat any exception as
+        // "still missing" rather than letting it crash requestAll()
+        // partway through and leave later permissions unrequested.
+        developer.log(
+          'requestAll() EXCEPTION for $permission: $e',
+          name: 'MeshPermission',
+          error: e,
+          stackTrace: stack,
+        );
         stillMissing.add(permission);
       }
     }
-
+    developer.log('requestAll() final stillMissing: $stillMissing', name: 'MeshPermission');
     return stillMissing;
   }
 
@@ -63,7 +97,13 @@ class MeshPermissionService {
   /// path forward is the OS app settings screen.
   Future<bool> anyPermanentlyDenied() async {
     for (final permission in _required) {
-      if (await permission.status.isPermanentlyDenied) return true;
+      final status = await permission.status;
+      final permanentlyDenied = status.isPermanentlyDenied;
+      developer.log(
+        'anyPermanentlyDenied() check: $permission -> $status (permanentlyDenied=$permanentlyDenied)',
+        name: 'MeshPermission',
+      );
+      if (permanentlyDenied) return true;
     }
     return false;
   }

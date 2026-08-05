@@ -4,6 +4,10 @@ import 'dart:developer' as developer;
 import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:flutter/services.dart';
 
+/// Whether THIS device currently has its own internet connectivity.
+/// Not about mesh state -- purely "can I reach the internet directly."
+enum NetworkStatus { online, offline }
+
 /// Starts/stops the native mesh foreground service based on real
 /// connectivity changes, instead of the mesh service running
 /// unconditionally for the whole lifetime of the app process.
@@ -18,20 +22,15 @@ import 'package:flutter/services.dart';
 /// anything, which was the specific behaviour asked for: react to
 /// this device going offline, not just "always be on".
 ///
-/// This controller adds that reactive layer WITHOUT removing the
-/// always-on default -- see USAGE below. `connectivity_plus` was
-/// already a pubspec dependency; no new package needed. The native
-/// side needs two small additions to MeshChannelHandler.kt
-/// ("startMesh" / "stopMesh" method channel cases) since nothing
-/// currently exposes stop control from Dart at all -- see the paired
-/// Kotlin diff in this same changeset.
-///
-/// USAGE: call `ConnectivityMeshController.instance.enableAutoMode()`
-/// once (e.g. from main.dart or a settings toggle) to switch the app
-/// from "mesh always on" to "mesh reacts to connectivity" -- ties
-/// relay activity to exactly the moments this phone doesn't have its
-/// own internet, which is the real-world case where being a relay
-/// node actually matters and costs the least extra battery.
+/// Aug 5 2026: this was found NOT actually wired up anywhere --
+/// enableAutoMode() was never called from main.dart, and even when
+/// called, both branches of _applyConnectivity did the exact same
+/// thing (mesh always ensured running either way), so the app never
+/// actually surfaced "online" vs "offline" to anything. Fixed to
+/// track real NetworkStatus and expose it as a stream so the home
+/// screen / SOS flow can show the user their actual connectivity
+/// state, and so triggerSOS() can react differently for the online
+/// vs offline case per the product vision.
 class ConnectivityMeshController {
   ConnectivityMeshController._();
 
@@ -42,6 +41,15 @@ class ConnectivityMeshController {
   final Connectivity _connectivity = Connectivity();
   StreamSubscription<List<ConnectivityResult>>? _subscription;
   bool _meshCurrentlyRunning = true; // MeshChannelHandler.start() already ran it at launch.
+
+  final _statusController = StreamController<NetworkStatus>.broadcast();
+  NetworkStatus _currentStatus = NetworkStatus.online; // optimistic default until first real check
+
+  /// Live connectivity state. Home screen / SOS flow subscribe to this
+  /// to show "Online" / "Offline -- Mesh active" without polling.
+  Stream<NetworkStatus> get statusStream => _statusController.stream;
+
+  NetworkStatus get currentStatus => _currentStatus;
 
   Future<void> enableAutoMode() async {
     if (_subscription != null) return; // idempotent
@@ -60,18 +68,20 @@ class ConnectivityMeshController {
 
   Future<void> _applyConnectivity(List<ConnectivityResult> results) async {
     final isOffline = results.isEmpty || results.every((r) => r == ConnectivityResult.none);
+    final newStatus = isOffline ? NetworkStatus.offline : NetworkStatus.online;
 
-    // Mesh stays on when offline (that's the whole point) AND stays on
-    // when online too, by default -- a phone with signal is still a
-    // useful relay for a neighbour without any. Auto mode only ever
-    // turns mesh OFF if a future battery-driven policy decides to; for
-    // now this just guarantees it's ON, covering the "did the radios
-    // silently die" case, not adding a new OFF condition.
-    if (isOffline) {
-      await _ensureMeshRunning();
-    } else {
-      await _ensureMeshRunning();
+    if (newStatus != _currentStatus) {
+      _currentStatus = newStatus;
+      _statusController.add(newStatus);
+      developer.log('Network status changed -> ${newStatus.name}', name: 'ConnectivityMeshController');
     }
+
+    // Mesh stays on regardless of online/offline -- a phone with signal
+    // is still a useful relay for a neighbour without any. This
+    // guarantees the radios/foreground service are alive; the
+    // online/offline distinction above is purely informational for the
+    // UI and for triggerSOS()'s branching, not a mesh on/off switch.
+    await _ensureMeshRunning();
   }
 
   Future<void> _ensureMeshRunning() async {
@@ -99,5 +109,6 @@ class ConnectivityMeshController {
 
   void dispose() {
     _subscription?.cancel();
+    _statusController.close();
   }
 }

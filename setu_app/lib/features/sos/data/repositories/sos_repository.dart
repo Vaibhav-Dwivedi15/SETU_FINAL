@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/services.dart';
 
 import 'package:setu_app/core/services/mesh_locator.dart';
@@ -14,6 +16,35 @@ import '../models/alert_mode.dart';
 import '../models/emergency_category.dart';
 import '../services/alert_packet_builder.dart';
 import '../services/emergency_packet_builder.dart';
+import 'package:setu_app/services/backend_service.dart';
+
+/// Aug 5 2026: progress states for the reassuring SOS UI from the
+/// product vision -- "Network unavailable... Activating SETU Mesh...
+/// Searching nearby relay devices... Your emergency message is being
+/// forwarded." triggerSOS() previously gave the caller nothing to
+/// react to until it either completed or threw; the UI had no way to
+/// show any of this. This is purely observational -- it does NOT
+/// change what triggerSOS() actually does, only what it reports while
+/// doing it.
+///
+/// HONEST SCOPE NOTE: [forwarded] and [delivered] mean "handed off to
+/// the mesh/SMS layer", not "confirmed received" -- same distinction
+/// as the "Delivered" history status documented below. Real
+/// backend-confirmed delivery is what MeshService.acknowledgments
+/// already provides separately (the ack packet flow); wiring that into
+/// this progress stream too is a further step, not done here to avoid
+/// conflating two different confirmation levels in one enum.
+enum SosProgress {
+  checkingNetwork,
+  networkUnavailable, // offline path: "Network unavailable."
+  activatingMesh, // offline path: "Activating SETU Mesh..."
+  searchingRelayDevices, // offline path: "Searching nearby relay devices..."
+  forwarding, // offline path: "Your emergency message is being forwarded."
+  onlineSending, // online path: has internet, sending directly
+  notifyingContacts, // online path: SMS going out
+  delivered, // both paths: handed off successfully (see scope note above)
+  failed,
+}
 
 class SosRepository {
   final ContactRepository _contactRepository = ContactRepository();
@@ -24,8 +55,15 @@ class SosRepository {
   final MeshPermissionService _permissionService = const MeshPermissionService();
   final EmergencyPacketBuilder _emergencyPacketBuilder = EmergencyPacketBuilder();
   final AlertPacketBuilder _alertPacketBuilder = AlertPacketBuilder();
+  final BackendService _backendService = BackendService();
 
   static const MethodChannel _meshChannel = MethodChannel('com.setu.mesh/methods');
+
+  /// Broadcast so the SOS button/animation widget can listen without
+  /// SosRepository needing to be a singleton -- multiple widgets could
+  /// listen to the same in-flight SOS if ever needed.
+  static final _progressController = StreamController<SosProgress>.broadcast();
+  static Stream<SosProgress> get progressStream => _progressController.stream;
 
   Future<void> triggerSOS({
     required AlertMode alertMode,
@@ -43,6 +81,7 @@ class SosRepository {
     if (!await _permissionService.hasAll()) {
       final stillMissing = await _permissionService.requestAll();
       if (stillMissing.isNotEmpty) {
+        _progressController.add(SosProgress.failed);
         throw Exception(
           "SETU needs Bluetooth, Wi-Fi and location permissions to relay "
           "your SOS without internet. Please allow them and try again.",
@@ -54,6 +93,7 @@ class SosRepository {
     final contacts = await _contactRepository.getContacts();
 
     if (contacts.isEmpty) {
+      _progressController.add(SosProgress.failed);
       throw Exception(
         "No emergency contacts found. Please add at least one contact.",
       );
@@ -105,6 +145,25 @@ $mapsLink
     String errorReason = "";
 
     try {
+      // Aug 5 2026: real online/offline branch for the progress UI.
+      // hasRealInternet() is the same reachability check MeshService
+      // uses internally for upload decisions -- calling it here too is
+      // a second, independent probe (not shared state), which is
+      // deliberate: this is purely for what the USER sees, and must
+      // not create a dependency on MeshService's internal timing.
+      _progressController.add(SosProgress.checkingNetwork);
+      final hasInternet = await _backendService.hasRealInternet();
+
+      if (!hasInternet) {
+        _progressController.add(SosProgress.networkUnavailable);
+        await Future<void>.delayed(const Duration(milliseconds: 600));
+        _progressController.add(SosProgress.activatingMesh);
+        await Future<void>.delayed(const Duration(milliseconds: 600));
+        _progressController.add(SosProgress.searchingRelayDevices);
+      } else {
+        _progressController.add(SosProgress.onlineSending);
+      }
+
       // Added Aug 4 2026 -- THE critical missing piece found in the gap
       // analysis: until this line existed, triggerSOS() never actually
       // used the mesh layer at all, despite it being fully built and
@@ -114,7 +173,10 @@ $mapsLink
       //
       // Runs regardless of alertMode (private vs public only changes
       // whether a community AlertPacket ALSO goes out below) -- every
-      // SOS, private or public, must go over the mesh.
+      // SOS, private or public, must go over the mesh. Also runs
+      // regardless of hasInternet -- a device WITH internet still
+      // originates onto the mesh (so it can help relay for others,
+      // and so upload happens via the same MeshService path either way).
       final emergencyPacket = await _emergencyPacketBuilder.buildEmergencyPacket(
         latitude: location.latitude,
         longitude: location.longitude,
@@ -122,6 +184,10 @@ $mapsLink
         category: category,
       );
       await MeshLocator.instance.meshService.originate(emergencyPacket);
+
+      if (!hasInternet) {
+        _progressController.add(SosProgress.forwarding);
+      }
 
       // Feeds this device's just-fetched GPS reading to the native
       // relay engine (see PacketRelayEngine.kt's location-aware
@@ -137,6 +203,9 @@ $mapsLink
         // behavior for this device until the next successful update.
       }
 
+      if (hasInternet) {
+        _progressController.add(SosProgress.notifyingContacts);
+      }
       await _smsRepository.sendBulkSMS(
         message: message,
         phoneNumbers: phoneNumbers,
@@ -170,11 +239,14 @@ $mapsLink
       // this packet (or a relayed copy of it) reaches any device with
       // real internet -- see MeshServiceImpl._tryUpload. Nothing further
       // needed here.
+
+      _progressController.add(SosProgress.delivered);
     } catch (e) {
       status = "Failed";
       retryCount = 3;
       errorReason = e.toString();
 
+      _progressController.add(SosProgress.failed);
       rethrow;
     } finally {
       await _historyRepository.addHistory(

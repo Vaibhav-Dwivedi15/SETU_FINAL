@@ -16,9 +16,16 @@
 // 2. The "permanently denied" banner uses emergencyContainer, a FIXED
 //    light pink that never changes with theme -- its text was inheriting
 //    theme-driven color (light in dark mode), making it invisible
-//    against the fixed light pink box. Same root cause as the OTP
-//    screen's demo banner bug. Fix: explicit dark text color on that
-//    banner specifically, since its background is intentionally fixed.
+//    against the fixed light pink box. Fix: explicit dark text color on
+//    that banner specifically, since its background is intentionally fixed.
+//
+// Aug 5 2026: added developer.log calls around the request flow to
+// diagnose a stuck-on-this-screen report on a real device (Redmi 8A,
+// Android 9) -- see mesh_permission_service.dart for the matching
+// per-permission logging. Watch with `adb logcat -s MeshPermission`.
+
+import 'dart:async';
+import 'dart:developer' as developer;
 
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
@@ -28,6 +35,7 @@ import 'package:setu_app/core/design_system/app_radius.dart';
 import 'package:setu_app/core/design_system/app_spacing.dart';
 import 'package:setu_app/core/design_system/app_typography.dart';
 import 'package:setu_app/core/design_system/widgets/app_button.dart';
+import 'package:setu_app/core/services/connectivity_mesh_controller.dart';
 import 'package:setu_app/features/onboarding/data/services/mesh_permission_service.dart';
 
 class PermissionGateScreen extends StatefulWidget {
@@ -44,18 +52,38 @@ class _PermissionGateScreenState extends State<PermissionGateScreen> {
   bool _permanentlyDenied = false;
 
   Future<void> _requestPermissions() async {
+    developer.log('Allow permissions button tapped', name: 'MeshPermission');
     setState(() => _isRequesting = true);
 
     final stillMissing = await _permissionService.requestAll();
     final permanentlyDenied = await _permissionService.anyPermanentlyDenied();
 
-    if (!mounted) return;
+    developer.log(
+      'After requestAll(): stillMissing=$stillMissing permanentlyDenied=$permanentlyDenied',
+      name: 'MeshPermission',
+    );
+
+    if (!mounted) {
+      developer.log('Widget unmounted before request completed -- aborting', name: 'MeshPermission');
+      return;
+    }
 
     if (stillMissing.isEmpty) {
+      developer.log('All permissions granted -- starting connectivity-reactive mesh, navigating to /', name: 'MeshPermission');
+      // Aug 5 2026: this is the first-run case -- main.dart's own
+      // hasMeshPermissions() check is false at boot (nothing granted
+      // yet), so it deliberately skips enableAutoMode(). This is the
+      // moment permissions actually become true, so this is the
+      // correct place to start it for a fresh install.
+      unawaited(ConnectivityMeshController.instance.enableAutoMode());
       context.go('/');
       return;
     }
 
+    developer.log(
+      'Still missing ${stillMissing.length} permission(s) -- staying on gate screen',
+      name: 'MeshPermission',
+    );
     setState(() {
       _isRequesting = false;
       _permanentlyDenied = permanentlyDenied;

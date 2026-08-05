@@ -11,6 +11,16 @@
 // (reserved red) button variant — the one visual "this is
 // serious" cue on this screen, matching the design brief's
 // "red should be rare and mean something" rule.
+//
+// Aug 5 2026: _triggerSOS() now pushes SosProgressOverlay right
+// before calling SosRepository.triggerSOS(), and pops it right after
+// -- this is the "beautiful reassuring animation" from the product
+// vision (network check -> mesh activation -> relay search ->
+// forwarding, or the shorter online-path sequence). The overlay is
+// purely a display layer reading SosRepository.progressStream; the
+// actual triggerSOS() call sequence below is UNCHANGED from before.
+
+import 'dart:async';
 
 import 'package:flutter/material.dart';
 
@@ -25,6 +35,7 @@ import 'package:setu_app/features/sos/data/models/emergency_category.dart';
 import 'package:setu_app/features/sos/data/repositories/sos_repository.dart';
 import 'package:setu_app/features/sos/presentation/widgets/countdown_widget.dart';
 import 'package:setu_app/features/sos/presentation/widgets/emergency_category_selector.dart';
+import 'package:setu_app/features/sos/presentation/widgets/sos_progress_overlay.dart';
 import 'package:setu_app/features/settings/data/repositories/settings_repository.dart';
 
 class ConfirmationScreen extends StatefulWidget {
@@ -69,6 +80,16 @@ class _ConfirmationScreenState extends State<ConfirmationScreen> {
       _isSending = true;
     });
 
+    // Aug 5 2026: push the reassuring progress overlay right before
+    // starting the actual SOS. Not awaited -- it stays on screen
+    // reacting to SosRepository.progressStream until explicitly popped
+    // below, regardless of how long triggerSOS() takes.
+    unawaited(
+      Navigator.of(context).push(
+        MaterialPageRoute(builder: (_) => const SosProgressOverlay()),
+      ),
+    );
+
     try {
       await _sosRepository.triggerSOS(
         alertMode: _selectedMode,
@@ -76,6 +97,9 @@ class _ConfirmationScreenState extends State<ConfirmationScreen> {
       );
 
       if (!mounted) return;
+
+      // Pop the progress overlay now that triggerSOS has resolved.
+      Navigator.pop(context);
 
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
@@ -87,6 +111,11 @@ class _ConfirmationScreenState extends State<ConfirmationScreen> {
       Navigator.pop(context);
     } catch (e) {
       if (!mounted) return;
+
+      // Pop the progress overlay on failure too -- SosRepository already
+      // emits SosProgress.failed before this catch runs, so the overlay
+      // briefly shows the failure state before this removes it.
+      Navigator.pop(context);
 
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
