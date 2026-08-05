@@ -10,11 +10,20 @@
 // presentation: curved header (personalized greeting), a
 // floating SOS card, and full-width descriptive service cards
 // instead of small tiles that were truncating text.
+//
+// Aug 5 2026: connectivity status now comes from the shared
+// ConnectivityMeshController.statusStream (single source of truth
+// for the whole app) instead of a separate local Connectivity()
+// instance -- so the home chip, the SOS flow, and everything else
+// agree on one online/offline reading. Also: the offline state now
+// shows a "Mesh Active" chip (green, hub icon) instead of a gray
+// "Offline" chip -- per the product vision, no internet is exactly
+// when SETU's mesh matters MOST, so the status should reassure
+// ("your phone is now a relay node") rather than read as "dead".
 
 import 'dart:async';
 
 import 'package:flutter/material.dart';
-import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:go_router/go_router.dart';
 
 import 'package:setu_app/core/design_system/app_colors.dart';
@@ -23,6 +32,7 @@ import 'package:setu_app/core/design_system/app_radius.dart';
 import 'package:setu_app/core/design_system/app_spacing.dart';
 import 'package:setu_app/core/design_system/app_typography.dart';
 import 'package:setu_app/core/design_system/widgets/status_chip.dart';
+import 'package:setu_app/core/services/connectivity_mesh_controller.dart';
 import 'package:setu_app/features/settings/data/repositories/settings_repository.dart';
 import 'package:setu_app/features/sos/presentation/widgets/hold_to_confirm_sos_button.dart';
 import 'package:setu_app/features/sos/presentation/widgets/tap_to_confirm_sos_button.dart';
@@ -56,11 +66,12 @@ class _HomeScreenState extends State<HomeScreen> {
   String _sosTriggerMode = 'tap';
   String _userName = '';
 
-  // Block 31: real connectivity, replaces the old hardcoded
-  // "Offline" placeholder chip.
-  bool _isOnline = false;
-  final Connectivity _connectivity = Connectivity();
-  StreamSubscription<List<ConnectivityResult>>? _connectivitySubscription;
+  // Aug 5 2026: now driven by the shared ConnectivityMeshController
+  // instead of a local Connectivity() instance -- replaces the old
+  // hardcoded "Offline" placeholder AND the earlier per-screen
+  // connectivity listener.
+  NetworkStatus _networkStatus = ConnectivityMeshController.instance.currentStatus;
+  StreamSubscription<NetworkStatus>? _statusSubscription;
 
   @override
   void initState() {
@@ -69,24 +80,17 @@ class _HomeScreenState extends State<HomeScreen> {
     _initConnectivity();
   }
 
-  Future<void> _initConnectivity() async {
-    final results = await _connectivity.checkConnectivity();
-    _updateOnlineStatus(results);
-
-    _connectivitySubscription = _connectivity.onConnectivityChanged.listen(
-      _updateOnlineStatus,
-    );
-  }
-
-  void _updateOnlineStatus(List<ConnectivityResult> results) {
-    final online = results.any((r) => r != ConnectivityResult.none);
-    if (!mounted) return;
-    setState(() => _isOnline = online);
+  void _initConnectivity() {
+    _statusSubscription =
+        ConnectivityMeshController.instance.statusStream.listen((status) {
+      if (!mounted) return;
+      setState(() => _networkStatus = status);
+    });
   }
 
   @override
   void dispose() {
-    _connectivitySubscription?.cancel();
+    _statusSubscription?.cancel();
     super.dispose();
   }
 
@@ -239,6 +243,7 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   Widget build(BuildContext context) {
     final greeting = _userName.isNotEmpty ? 'Hi, $_userName' : 'Welcome';
+    final isOffline = _networkStatus == NetworkStatus.offline;
 
     return Scaffold(
       backgroundColor: Theme.of(context).scaffoldBackgroundColor,
@@ -294,10 +299,15 @@ class _HomeScreenState extends State<HomeScreen> {
                   Wrap(
                     spacing: AppSpacing.xs,
                     children: [
+                      // Aug 5 2026: offline now shows "Mesh Active" (green,
+                      // reassuring) rather than a gray "Offline" chip -- no
+                      // internet is precisely when SETU's mesh is doing its
+                      // job, so the status should say so.
                       StatusChip(
-                        kind: _isOnline
-                            ? StatusChipKind.connected
-                            : StatusChipKind.offline,
+                        kind: isOffline
+                            ? StatusChipKind.meshActive
+                            : StatusChipKind.connected,
+                        labelOverride: isOffline ? 'Offline · Mesh Active' : null,
                       ),
                     ],
                   ),
