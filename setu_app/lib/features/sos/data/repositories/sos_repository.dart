@@ -96,21 +96,24 @@ $mapsLink
     String status = "Sent";
     String errorReason = "";
     String emergencyId = "";
-    // Aug 5 2026 fix: SMS failure (e.g. true airplane mode -- SmsManager
-    // needs the cellular voice/SMS radio, which airplane mode disables
-    // entirely and no app-level code can override) was previously
-    // UNCAUGHT here, so it propagated to the outer catch block and
-    // marked the ENTIRE SOS as "Failed" -- even when the emergency
-    // packet had already been successfully originated onto the mesh
-    // moments earlier. That's actively misleading: the mesh signal
-    // genuinely went out; only the LOCAL SMS attempt (a redundant,
-    // best-effort channel -- the backend's own SMS Gateway is the real
-    // fallback for a device with zero cellular capability, see
-    // handoff docs) failed. Mesh success and SMS success are now
-    // tracked independently -- SMS failing degrades the status
-    // message but does NOT overwrite an already-successful mesh send
-    // with "Failed", and does NOT throw/abort the rest of the flow
-    // (public alert broadcast still happens even if SMS failed).
+
+    // Aug 6 2026 fix: mesh origination and SMS are now BOTH isolated,
+    // independently. Previously only SMS had its own try/catch (fixed
+    // earlier today) -- but MeshLocator.instance.meshService.originate()
+    // itself was still unprotected. If IT threw for any reason (native
+    // channel error, mesh internal state issue), the exception jumped
+    // straight to the outer catch block and skipped EVERYTHING after
+    // it in the sequence, including the SMS attempt below -- meaning a
+    // mesh-layer hiccup could silently prevent SMS from ever being
+    // tried at all. That's the most likely explanation for "SMS only
+    // sends when internet is present": a no-internet-but-has-cellular
+    // scenario is exactly when the mesh layer's own state/behavior
+    // changes the most, so a mesh-side exception there was aborting
+    // the SMS attempt too. Now each channel is attempted independently
+    // -- a failure in one is recorded but does not prevent the other
+    // from being tried.
+    bool meshFailed = false;
+    String meshFailureReason = "";
     bool smsFailed = false;
     String smsFailureReason = "";
 
@@ -136,17 +139,27 @@ $mapsLink
       );
       emergencyId = emergencyPacket.emergencyId;
 
-      // If THIS line throws, the SOS genuinely failed end-to-end --
-      // that's correctly caught by the outer try/catch below and marks
-      // status "Failed", same as before. Everything after this point
-      // is secondary/redundant channels (SMS, public broadcast) whose
-      // individual failure should NOT retroactively undo this success.
-      await MeshLocator.instance.meshService.originate(emergencyPacket);
-      developer.log('Emergency packet originated onto mesh: $emergencyId', name: 'SosRepository');
+      // Mesh origination: isolated. A failure here is recorded but no
+      // longer prevents SMS (below) or the public broadcast from being
+      // attempted.
+      try {
+        await MeshLocator.instance.meshService.originate(emergencyPacket);
+        developer.log('Emergency packet originated onto mesh: $emergencyId', name: 'SosRepository');
 
-      if (!hasInternet) {
-        _progressController.add(SosProgress.forwarding);
-      } else {
+        if (!hasInternet) {
+          _progressController.add(SosProgress.forwarding);
+        }
+      } catch (e) {
+        meshFailed = true;
+        meshFailureReason = e.toString();
+        developer.log(
+          'Mesh origination FAILED (SMS will still be attempted): $meshFailureReason',
+          name: 'SosRepository',
+          error: e,
+        );
+      }
+
+      if (hasInternet && !meshFailed) {
         try {
           final confirmed = await _backendService
               .uploadPacket(emergencyPacket)
@@ -171,13 +184,8 @@ $mapsLink
         _progressController.add(SosProgress.notifyingContacts);
       }
 
-      // Aug 5 2026 fix: SMS is now its own try/catch, isolated from the
-      // rest of the flow. A failure here (most commonly: no cellular
-      // radio available, e.g. true airplane mode, or the device has no
-      // SIM) is recorded for the history entry's errorReason but does
-      // NOT throw -- the mesh packet already went out above, and the
-      // public alert broadcast below should still happen regardless of
-      // whether the local SMS channel worked.
+      // SMS: isolated (fixed earlier today) -- a mesh failure above no
+      // longer prevents this from running.
       try {
         await _smsRepository.sendBulkSMS(
           message: message,
@@ -187,33 +195,55 @@ $mapsLink
         smsFailed = true;
         smsFailureReason = e.toString().replaceFirst("Exception: ", "");
         developer.log(
-          'SMS failed but mesh packet already sent -- not failing overall SOS: $smsFailureReason',
+          'SMS failed: $smsFailureReason',
           name: 'SosRepository',
         );
       }
 
+      // Public broadcast: also isolated -- a failure here (e.g. if
+      // mesh already failed above) shouldn't retroactively mark SMS's
+      // success as a total failure either.
       if (alertMode == AlertMode.public) {
-        await _nearbyRepository.addAlert(
-          NearbyAlertModel(
-            id: DateTime.now().millisecondsSinceEpoch.toString(),
-            alertMode: alertMode,
+        try {
+          await _nearbyRepository.addAlert(
+            NearbyAlertModel(
+              id: DateTime.now().millisecondsSinceEpoch.toString(),
+              alertMode: alertMode,
+              latitude: location.latitude,
+              longitude: location.longitude,
+              timestamp: DateTime.now(),
+              radius: 1000,
+              status: "ACTIVE",
+            ),
+          );
+
+          final alertPacket = await _alertPacketBuilder.buildAlertPacket(
+            incidentType: category.name,
             latitude: location.latitude,
             longitude: location.longitude,
-            timestamp: DateTime.now(),
-            radius: 1000,
-            status: "ACTIVE",
-          ),
-        );
-
-        final alertPacket = await _alertPacketBuilder.buildAlertPacket(
-          incidentType: category.name,
-          latitude: location.latitude,
-          longitude: location.longitude,
-        );
-        await MeshLocator.instance.meshService.originate(alertPacket);
+          );
+          await MeshLocator.instance.meshService.originate(alertPacket);
+        } catch (e) {
+          developer.log('Public alert broadcast failed: $e', name: 'SosRepository');
+        }
       }
 
-      if (smsFailed) {
+      // Aug 6 2026: overall status now genuinely reflects what
+      // actually happened across BOTH channels, not just whichever ran
+      // last. If mesh succeeded, the emergency signal genuinely went
+      // out regardless of SMS. If mesh failed AND SMS failed, this IS
+      // a real total failure -- correctly thrown below so History
+      // shows "Failed", not a false "Sent".
+      if (meshFailed && smsFailed) {
+        throw Exception(
+          "Both mesh relay and SMS failed. Mesh: $meshFailureReason SMS: $smsFailureReason",
+        );
+      }
+
+      if (meshFailed) {
+        errorReason = "Mesh relay failed, but SMS was sent to your contacts. "
+            "Mesh error: $meshFailureReason";
+      } else if (smsFailed) {
         errorReason = "Emergency signal sent via mesh. SMS to contacts "
             "failed: $smsFailureReason";
       }

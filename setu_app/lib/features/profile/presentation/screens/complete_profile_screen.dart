@@ -7,6 +7,16 @@
 // Shown once, right after OTP verification — skippable.
 // Reachable again later from Settings > Profile if the person
 // wants to fill it in afterward.
+//
+// Aug 6 2026: both _save() and _skip() now trigger a fire-and-forget
+// backend profile sync (see profile_sync_service.dart) -- this is what
+// actually feeds the backend's existing emergency-contact SMS
+// notification mechanism, which was fully built but never received any
+// data before this. Called on skip too, not just save, since userName/
+// phoneNumber are already set from login by this point regardless of
+// whether medical info was filled in.
+
+import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
@@ -15,6 +25,7 @@ import 'package:setu_app/core/design_system/app_colors.dart';
 import 'package:setu_app/core/design_system/app_spacing.dart';
 import 'package:setu_app/core/design_system/app_typography.dart';
 import 'package:setu_app/core/design_system/widgets/app_button.dart';
+import 'package:setu_app/core/services/profile_sync_service.dart';
 import 'package:setu_app/features/settings/data/repositories/settings_repository.dart';
 
 class CompleteProfileScreen extends StatefulWidget {
@@ -26,6 +37,7 @@ class CompleteProfileScreen extends StatefulWidget {
 
 class _CompleteProfileScreenState extends State<CompleteProfileScreen> {
   final _settingsRepository = SettingsRepository();
+  final _profileSyncService = ProfileSyncService();
   final _bloodGroupController = TextEditingController();
   final _medicalNoteController = TextEditingController();
 
@@ -62,11 +74,17 @@ class _CompleteProfileScreenState extends State<CompleteProfileScreen> {
       ),
     );
 
+    // Fire-and-forget -- never blocks navigation on network state.
+    unawaited(_profileSyncService.syncToBackend());
+
     if (!mounted) return;
     context.go('/');
   }
 
-  void _skip() => context.go('/');
+  void _skip() {
+    unawaited(_profileSyncService.syncToBackend());
+    context.go('/');
+  }
 
   @override
   Widget build(BuildContext context) {

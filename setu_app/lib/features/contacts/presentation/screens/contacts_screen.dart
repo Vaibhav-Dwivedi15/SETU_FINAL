@@ -1,7 +1,18 @@
+// Aug 6 2026: deleteContact() and openAddContact()'s post-navigation
+// reload now both trigger a fire-and-forget backend profile sync (see
+// profile_sync_service.dart) -- contacts are exactly the data the
+// backend's emergency-contact SMS notification needs, so any time the
+// local list changes, the backend's copy should be refreshed too.
+// POST /register upserts now (Aug 6 2026 backend fix), so calling this
+// on every contact change is safe and idempotent.
+
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
 import 'package:setu_app/core/constants/app_colors.dart';
+import 'package:setu_app/core/services/profile_sync_service.dart';
 
 import '../../data/models/contact_model.dart';
 import '../../data/repositories/contact_repository.dart';
@@ -15,6 +26,7 @@ class ContactsScreen extends StatefulWidget {
 
 class _ContactsScreenState extends State<ContactsScreen> {
   final ContactRepository _repository = ContactRepository();
+  final ProfileSyncService _profileSyncService = ProfileSyncService();
 
   List<ContactModel> contacts = [];
 
@@ -35,6 +47,8 @@ class _ContactsScreenState extends State<ContactsScreen> {
   Future<void> deleteContact(int index) async {
     await _repository.deleteContact(index);
     await loadContacts();
+
+    unawaited(_profileSyncService.syncToBackend());
 
     if (!mounted) return;
 
@@ -71,6 +85,10 @@ class _ContactsScreenState extends State<ContactsScreen> {
     await context.push('/add-contact');
 
     await loadContacts();
+    // Covers the case where AddContactScreen itself doesn't sync (it
+    // does too, see add_contact_screen.dart -- this is a harmless
+    // redundant sync on return, not the only place it happens).
+    unawaited(_profileSyncService.syncToBackend());
   }
 
   Widget _buildEmptyState() {
