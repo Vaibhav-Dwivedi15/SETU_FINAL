@@ -25,6 +25,14 @@ class HistoryModel {
 
   final bool locationAttached;
 
+  // Aug 5 2026: added so a later real ack (MeshService.acknowledgments)
+  // can find and update THIS specific history entry's status --
+  // previously there was no way to correlate an incoming ack back to
+  // the history row it belongs to. Nullable/defaults to '' for
+  // backward compatibility with history entries written before this
+  // field existed (fromJson below falls back to '' if absent).
+  final String emergencyId;
+
   HistoryModel({
     required this.id,
     required this.timestamp,
@@ -38,6 +46,7 @@ class HistoryModel {
     required this.retryCount,
     required this.errorReason,
     required this.locationAttached,
+    this.emergencyId = '',
   });
 
   Map<String, dynamic> toJson() {
@@ -54,6 +63,7 @@ class HistoryModel {
       'retryCount': retryCount,
       'errorReason': errorReason,
       'locationAttached': locationAttached,
+      'emergencyId': emergencyId,
     };
   }
 
@@ -75,6 +85,7 @@ class HistoryModel {
       retryCount: json['retryCount'] ?? 0,
       errorReason: json['errorReason'] ?? "",
       locationAttached: json['locationAttached'] ?? true,
+      emergencyId: json['emergencyId'] ?? '',
     );
   }
 
@@ -91,6 +102,7 @@ class HistoryModel {
     int? retryCount,
     String? errorReason,
     bool? locationAttached,
+    String? emergencyId,
   }) {
     return HistoryModel(
       id: id ?? this.id,
@@ -105,6 +117,7 @@ class HistoryModel {
       retryCount: retryCount ?? this.retryCount,
       errorReason: errorReason ?? this.errorReason,
       locationAttached: locationAttached ?? this.locationAttached,
+      emergencyId: emergencyId ?? this.emergencyId,
     );
   }
 }

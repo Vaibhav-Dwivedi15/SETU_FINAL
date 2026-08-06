@@ -70,6 +70,16 @@ class _HistoryScreenState extends State<HistoryScreen> {
       ),
 
       body: RefreshIndicator(
+        // Aug 5 2026: pull-to-refresh is how a real ack update (see
+        // MeshLocator's acknowledgments listener + HistoryService.
+        // updateStatusByEmergencyId) becomes visible on this screen if
+        // it arrives while this screen is already open. There's no
+        // live stream subscription here -- that's a deliberate,
+        // honestly-scoped choice: a real-time listener on this screen
+        // would need careful lifecycle handling (subscribe/unsubscribe
+        // on screen enter/exit) that's a bigger change than this pass
+        // covers. Pull-to-refresh is a correct, if not instant, way to
+        // see the update.
         onRefresh: _refresh,
 
         child: _isLoading
@@ -120,29 +130,49 @@ class _HistoryScreenState extends State<HistoryScreen> {
     );
   }
 
-  bool _isSuccessStatus(String status) {
-    // Only "Delivered" (see sos_repository.dart) counts as success.
-    // Anything else — "Failed" or any future status string — must
-    // NOT render as green. Showing a failed SOS as green in a
-    // safety app is actively misleading.
-    return status.toLowerCase() == 'delivered';
-  }
+  // Aug 5 2026: previously binary (isSuccess / not-success), and
+  // "not-success" rendered in AppColors.primary (blue) regardless of
+  // whether the status was "Failed" or anything else -- meaning an
+  // actual failed SOS never actually showed red, contradicting this
+  // file's own comment about honesty. Now three real states:
+  //   - "Delivered": genuinely confirmed (real ack, or awaited
+  //     backend confirmation for the online path) -- green.
+  //   - "Sent": handed off to mesh/SMS, awaiting real confirmation --
+  //     neutral/blue, hourglass icon. This is the honest default for
+  //     the offline/mesh path now, replacing the old immediate
+  //     "Delivered" claim (see sos_repository.dart).
+  //   - Anything else (i.e. "Failed"): genuine failure -- red.
+  bool _isDeliveredStatus(String status) => status.toLowerCase() == 'delivered';
+  bool _isSentStatus(String status) => status.toLowerCase() == 'sent';
 
   Widget _buildHistoryCard(HistoryModel item) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final isSuccess = _isSuccessStatus(item.status);
+    final isDelivered = _isDeliveredStatus(item.status);
+    final isSent = _isSentStatus(item.status);
+    final isFailed = !isDelivered && !isSent;
 
-    final chipBg = isSuccess
-        ? (isDark
-            ? Colors.green.shade900.withValues(alpha: 0.35)
-            : Colors.green.shade100)
-        : (isDark
-            ? AppColors.primary.withValues(alpha: 0.3)
-            : AppColors.primary.withValues(alpha: 0.12));
+    final Color chipBg;
+    final Color chipText;
+    final IconData chipIcon;
 
-    final chipText = isSuccess
-        ? (isDark ? Colors.greenAccent : Colors.green)
-        : AppColors.primary;
+    if (isDelivered) {
+      chipBg = isDark ? Colors.green.shade900.withValues(alpha: 0.35) : Colors.green.shade100;
+      chipText = isDark ? Colors.greenAccent : Colors.green;
+      chipIcon = Icons.check_circle;
+    } else if (isSent) {
+      chipBg = isDark
+          ? AppColors.primary.withValues(alpha: 0.3)
+          : AppColors.primary.withValues(alpha: 0.12);
+      chipText = AppColors.primary;
+      chipIcon = Icons.hourglass_top_rounded;
+    } else {
+      // Genuine failure -- now actually red, not blue.
+      chipBg = isDark
+          ? AppColors.danger.withValues(alpha: 0.3)
+          : AppColors.danger.withValues(alpha: 0.12);
+      chipText = AppColors.danger;
+      chipIcon = Icons.error;
+    }
 
     return Card(
       elevation: 4,
@@ -174,13 +204,13 @@ class _HistoryScreenState extends State<HistoryScreen> {
                     mainAxisSize: MainAxisSize.min,
                     children: [
                       Icon(
-                        isSuccess ? Icons.check_circle : Icons.error,
+                        chipIcon,
                         size: 14,
                         color: chipText,
                       ),
                       const SizedBox(width: 6),
                       Text(
-                        item.status,
+                        isSent ? '${item.status} · awaiting confirmation' : item.status,
                         style: TextStyle(
                           color: chipText,
                           fontWeight: FontWeight.bold,
@@ -223,17 +253,17 @@ class _HistoryScreenState extends State<HistoryScreen> {
               ],
             ),
 
-            if (!isSuccess && item.errorReason.isNotEmpty) ...[
+            if (isFailed && item.errorReason.isNotEmpty) ...[
               const SizedBox(height: 12),
               Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Icon(Icons.info_outline, color: AppColors.primary, size: 20),
+                  const Icon(Icons.info_outline, color: AppColors.danger, size: 20),
                   const SizedBox(width: 10),
                   Expanded(
                     child: Text(
                       item.errorReason,
-                      style: const TextStyle(color: AppColors.primary, fontSize: 13),
+                      style: const TextStyle(color: AppColors.danger, fontSize: 13),
                     ),
                   ),
                 ],

@@ -24,6 +24,14 @@ class _NearbyScreenState extends State<NearbyScreen> {
   }
 
   Future<void> loadAlerts() async {
+    // Aug 5 2026: this list now genuinely includes real incoming
+    // AlertPackets from other nearby SETU devices, not just this
+    // device's own local public-SOS copy -- see MeshLocator's alert
+    // listener, which writes real incoming alerts into the same
+    // NearbyRepository this screen already reads from. Pull-to-refresh
+    // (below) is how a newly-arrived alert becomes visible if one
+    // comes in while this screen is already open -- same honestly-
+    // scoped choice as history_screen.dart's refresh pattern.
     alerts = await repository.getAlerts();
 
     if (!mounted) return;
@@ -62,46 +70,52 @@ class _NearbyScreenState extends State<NearbyScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(title: const Text("Nearby Alerts")),
-      body: alerts.isEmpty
-          ? _buildEmptyState()
-          : ListView.builder(
-              padding: const EdgeInsets.all(12),
-              itemCount: alerts.length,
-              itemBuilder: (context, index) {
-                final alert = alerts[index];
+      body: RefreshIndicator(
+        onRefresh: loadAlerts,
+        child: alerts.isEmpty
+            ? _buildEmptyState()
+            : ListView.builder(
+                padding: const EdgeInsets.all(12),
+                itemCount: alerts.length,
+                itemBuilder: (context, index) {
+                  final alert = alerts[index];
+                  final hasIncidentType = alert.incidentType.isNotEmpty;
 
-                return Card(
-                  margin: const EdgeInsets.only(bottom: 12),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(16),
-                  ),
-                  child: ListTile(
-                    contentPadding: const EdgeInsets.all(12),
-                    leading: Container(
-                      height: 46,
-                      width: 46,
-                      decoration: const BoxDecoration(
-                        gradient: AppColors.primaryGradient,
-                        shape: BoxShape.circle,
+                  return Card(
+                    margin: const EdgeInsets.only(bottom: 12),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(16),
+                    ),
+                    child: ListTile(
+                      contentPadding: const EdgeInsets.all(12),
+                      leading: Container(
+                        height: 46,
+                        width: 46,
+                        decoration: const BoxDecoration(
+                          gradient: AppColors.primaryGradient,
+                          shape: BoxShape.circle,
+                        ),
+                        child: const Icon(
+                          Icons.warning_amber_rounded,
+                          color: Colors.white,
+                        ),
                       ),
-                      child: const Icon(
-                        Icons.warning_amber_rounded,
-                        color: Colors.white,
+                      title: Text(
+                        hasIncidentType
+                            ? alert.incidentType.toUpperCase()
+                            : alert.alertMode.name.toUpperCase(),
+                        style: const TextStyle(fontWeight: FontWeight.bold),
                       ),
+                      subtitle: Text(
+                        "Lat: ${alert.latitude}\nLng: ${alert.longitude}",
+                      ),
+                      isThreeLine: true,
+                      trailing: const Icon(Icons.arrow_forward_ios, size: 16),
                     ),
-                    title: Text(
-                      alert.alertMode.name.toUpperCase(),
-                      style: const TextStyle(fontWeight: FontWeight.bold),
-                    ),
-                    subtitle: Text(
-                      "Lat: ${alert.latitude}\nLng: ${alert.longitude}",
-                    ),
-                    isThreeLine: true,
-                    trailing: const Icon(Icons.arrow_forward_ios, size: 16),
-                  ),
-                );
-              },
-            ),
+                  );
+                },
+              ),
+      ),
     );
   }
 }

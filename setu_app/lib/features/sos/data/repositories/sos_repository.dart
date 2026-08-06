@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:developer' as developer;
 
 import 'package:flutter/services.dart';
 
@@ -18,14 +19,6 @@ import '../services/alert_packet_builder.dart';
 import '../services/emergency_packet_builder.dart';
 import 'package:setu_app/services/backend_service.dart';
 
-/// Aug 5 2026: progress states for the reassuring SOS UI from the
-/// product vision. HONEST SCOPE NOTE: [forwarded] means "handed off
-/// to the mesh layer" (offline path). [backendConfirmed] means the
-/// backend genuinely acknowledged receipt within this call -- NOT the
-/// same as the mesh's own internal ack-packet loop (that's a separate,
-/// asynchronous confirmation for the offline/relayed path). See the
-/// online-path comment in triggerSOS() below for exactly what changed
-/// and why.
 enum SosProgress {
   checkingNetwork,
   networkUnavailable,
@@ -33,7 +26,7 @@ enum SosProgress {
   searchingRelayDevices,
   forwarding,
   onlineSending,
-  backendConfirmed, // NEW: online path only, real awaited confirmation
+  backendConfirmed,
   notifyingContacts,
   delivered,
   failed,
@@ -100,8 +93,26 @@ $mapsLink
 ''';
 
     int retryCount = 0;
-    String status = "Delivered";
+    String status = "Sent";
     String errorReason = "";
+    String emergencyId = "";
+    // Aug 5 2026 fix: SMS failure (e.g. true airplane mode -- SmsManager
+    // needs the cellular voice/SMS radio, which airplane mode disables
+    // entirely and no app-level code can override) was previously
+    // UNCAUGHT here, so it propagated to the outer catch block and
+    // marked the ENTIRE SOS as "Failed" -- even when the emergency
+    // packet had already been successfully originated onto the mesh
+    // moments earlier. That's actively misleading: the mesh signal
+    // genuinely went out; only the LOCAL SMS attempt (a redundant,
+    // best-effort channel -- the backend's own SMS Gateway is the real
+    // fallback for a device with zero cellular capability, see
+    // handoff docs) failed. Mesh success and SMS success are now
+    // tracked independently -- SMS failing degrades the status
+    // message but does NOT overwrite an already-successful mesh send
+    // with "Failed", and does NOT throw/abort the rest of the flow
+    // (public alert broadcast still happens even if SMS failed).
+    bool smsFailed = false;
+    String smsFailureReason = "";
 
     try {
       _progressController.add(SosProgress.checkingNetwork);
@@ -123,53 +134,29 @@ $mapsLink
         message: message,
         category: category,
       );
+      emergencyId = emergencyPacket.emergencyId;
 
-      // originate() still runs in EITHER case -- an online device still
-      // joins the mesh (so it can relay for others, and so the packet
-      // is queued/signed exactly the same way regardless of path).
+      // If THIS line throws, the SOS genuinely failed end-to-end --
+      // that's correctly caught by the outer try/catch below and marks
+      // status "Failed", same as before. Everything after this point
+      // is secondary/redundant channels (SMS, public broadcast) whose
+      // individual failure should NOT retroactively undo this success.
       await MeshLocator.instance.meshService.originate(emergencyPacket);
+      developer.log('Emergency packet originated onto mesh: $emergencyId', name: 'SosRepository');
 
       if (!hasInternet) {
         _progressController.add(SosProgress.forwarding);
       } else {
-        // Aug 5 2026 fix: previously, the online path did NOT actually
-        // wait for backend confirmation -- MeshService.originate()
-        // fires the upload fire-and-forget internally
-        // (_tryUpload is unawaited), so triggerSOS() would return
-        // (and the UI would say "delivered") without ever knowing if
-        // the backend genuinely received it. That's a real gap against
-        // the product vision's "within approximately 10 seconds...
-        // notify backend" claim -- "within 10 seconds" implies a
-        // checked guarantee, not an unverified fire-and-forget.
-        //
-        // Fix: directly (re-)upload via BackendService here, awaited,
-        // with an explicit 10-second timeout matching the vision's own
-        // wording. This is a SEPARATE upload attempt from MeshService's
-        // internal one -- redundant on success (the backend's own
-        // dedup, confirmed working, correctly treats the duplicate
-        // packet_id as already-seen), but it's what lets this method
-        // genuinely know whether backend confirmation happened before
-        // claiming "delivered". If this direct attempt fails/times out,
-        // MeshService's own internal retry loop (_retryPendingUploads,
-        // every 30s) still has the packet queued and keeps trying --
-        // this foreground attempt is additive confirmation, not the
-        // only delivery mechanism.
         try {
           final confirmed = await _backendService
               .uploadPacket(emergencyPacket)
               .timeout(const Duration(seconds: 10), onTimeout: () => false);
           if (confirmed) {
             _progressController.add(SosProgress.backendConfirmed);
+            status = "Delivered";
           }
-          // If not confirmed within 10s, we deliberately do NOT throw --
-          // the packet is still safely queued (queue.enqueue() already
-          // ran inside originate()) and MeshService's retry loop will
-          // keep trying. Silently degrading to "still sending" is more
-          // honest than either a false success or blocking the SOS
-          // flow entirely on a slow network.
         } catch (_) {
-          // Same reasoning -- swallow and continue; the packet is
-          // already safely queued via originate() above.
+          // status stays "Sent" -- packet is safely queued regardless.
         }
       }
 
@@ -183,10 +170,28 @@ $mapsLink
       if (hasInternet) {
         _progressController.add(SosProgress.notifyingContacts);
       }
-      await _smsRepository.sendBulkSMS(
-        message: message,
-        phoneNumbers: phoneNumbers,
-      );
+
+      // Aug 5 2026 fix: SMS is now its own try/catch, isolated from the
+      // rest of the flow. A failure here (most commonly: no cellular
+      // radio available, e.g. true airplane mode, or the device has no
+      // SIM) is recorded for the history entry's errorReason but does
+      // NOT throw -- the mesh packet already went out above, and the
+      // public alert broadcast below should still happen regardless of
+      // whether the local SMS channel worked.
+      try {
+        await _smsRepository.sendBulkSMS(
+          message: message,
+          phoneNumbers: phoneNumbers,
+        );
+      } catch (e) {
+        smsFailed = true;
+        smsFailureReason = e.toString().replaceFirst("Exception: ", "");
+        developer.log(
+          'SMS failed but mesh packet already sent -- not failing overall SOS: $smsFailureReason',
+          name: 'SosRepository',
+        );
+      }
+
       if (alertMode == AlertMode.public) {
         await _nearbyRepository.addAlert(
           NearbyAlertModel(
@@ -206,6 +211,11 @@ $mapsLink
           longitude: location.longitude,
         );
         await MeshLocator.instance.meshService.originate(alertPacket);
+      }
+
+      if (smsFailed) {
+        errorReason = "Emergency signal sent via mesh. SMS to contacts "
+            "failed: $smsFailureReason";
       }
 
       _progressController.add(SosProgress.delivered);
@@ -231,6 +241,7 @@ $mapsLink
           retryCount: retryCount,
           errorReason: errorReason,
           locationAttached: true,
+          emergencyId: emergencyId,
         ),
       );
     }

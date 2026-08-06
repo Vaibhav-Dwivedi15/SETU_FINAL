@@ -33,6 +33,25 @@ class HistoryService {
     await saveHistory(historyList);
   }
 
+  /// Aug 5 2026: added so a real ack arriving later (see
+  /// MeshLocator's acknowledgments listener) can update an
+  /// already-written history entry's status from "Sent" to
+  /// "Delivered" -- finds by emergencyId, not by list position, since
+  /// the ack can arrive well after this entry was written and other
+  /// entries may have been added in between. No-op (not an error) if
+  /// no matching entry is found -- e.g. history was cleared, or this
+  /// is an old entry written before emergencyId existed.
+  Future<void> updateStatusByEmergencyId(String emergencyId, String newStatus) async {
+    if (emergencyId.isEmpty) return;
+
+    final historyList = await getHistory();
+    final index = historyList.indexWhere((h) => h.emergencyId == emergencyId);
+    if (index == -1) return;
+
+    historyList[index] = historyList[index].copyWith(status: newStatus);
+    await saveHistory(historyList);
+  }
+
   Future<void> clearHistory() async {
     final prefs = await SharedPreferences.getInstance();
 

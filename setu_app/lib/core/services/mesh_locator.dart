@@ -1,9 +1,13 @@
+import 'package:setu_app/features/history/data/repositories/history_repository.dart';
+import 'package:setu_app/features/nearby/data/models/nearby_alert_model.dart';
+import 'package:setu_app/features/nearby/data/repositories/nearby_repository.dart';
+import 'package:setu_app/features/sos/data/models/alert_mode.dart';
+import 'package:setu_app/mesh/models/alert_packet.dart';
 import 'package:setu_app/mesh/services/local_queue_service.dart';
 import 'package:setu_app/mesh/services/mesh_service.dart';
 import 'package:setu_app/mesh/services/nearby_service.dart';
 import 'package:setu_app/mesh/services/signing_service.dart';
 import 'package:setu_app/services/backend_service.dart';
-
 // =====================================================
 // SETU Project
 // Module : Mesh service locator (SOS-to-mesh wiring)
@@ -17,6 +21,25 @@ import 'package:setu_app/services/backend_service.dart';
 // implementation, confirmed via grep. BackendService()'s baseUrl still
 // defaults to a placeholder URL (backend_service.dart) — update once
 // Ayush's backend is deployed and the real URL is known.
+//
+// Aug 5 2026: added two persistent listeners here, at the singleton
+// level, rather than inside any particular screen's widget lifecycle
+// -- both need to work regardless of which screen (if any) is
+// currently open, since a real ack or a real incoming community alert
+// can arrive at any time, not just while someone's looking at History
+// or Nearby Alerts.
+//
+// 1. acknowledgments listener -- closes the honest-status gap from
+//    sos_repository.dart: when a real ack for an emergency THIS device
+//    originated arrives, update that history entry from "Sent" to
+//    "Delivered" via HistoryRepository, by emergencyId.
+//
+// 2. incomingPackets listener (filtered to AlertPacket) -- this is
+//    what makes Nearby Alerts show REAL incoming community alerts
+//    from other devices, not just this device's own local copy of its
+//    own public SOS. AlertPacket is deliberately anonymous (see its
+//    own docstring) -- mapped straight into NearbyAlertModel with no
+//    sender-identifying fields carried over.
 class MeshLocator {
   MeshLocator._internal()
       : signingService = SigningService(),
@@ -29,13 +52,35 @@ class MeshLocator {
       backendService: backendService,
       queueService: _queueService,
     );
+
+    meshService.acknowledgments.listen((ack) {
+      _historyRepository.updateStatusByEmergencyId(ack.emergencyId, 'Delivered');
+    });
+
+    meshService.incomingPackets.listen((packet) {
+      if (packet is AlertPacket) {
+        _nearbyRepository.addAlert(
+          NearbyAlertModel(
+            id: packet.packetId,
+            alertMode: AlertMode.public,
+            latitude: packet.latitude,
+            longitude: packet.longitude,
+            timestamp: packet.timestamp,
+            radius: packet.radiusMeters.toDouble(),
+            status: 'ACTIVE',
+            incidentType: packet.incidentType,
+          ),
+        );
+      }
+    });
   }
 
   static final MeshLocator instance = MeshLocator._internal();
-
   final SigningService signingService;
   final BackendService backendService;
   final NearbyService _nearbyService;
   final LocalQueueService _queueService;
+  final HistoryRepository _historyRepository = HistoryRepository();
+  final NearbyRepository _nearbyRepository = NearbyRepository();
   late final MeshServiceImpl meshService;
 }
