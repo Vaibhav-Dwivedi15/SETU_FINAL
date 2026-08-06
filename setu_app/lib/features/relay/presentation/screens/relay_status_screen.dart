@@ -3,19 +3,12 @@
 // Module : Relay Status Screen
 // =====================================================
 //
-// Aug 5 2026: the home screen has always had a "Relay Status" card
-// routing to /relay, but no screen actually existed at that route --
-// tapping it went nowhere. This builds the real screen, showing the
-// device's LIVE role in the mesh: how many packets it has sent,
-// received, relayed for others, and carried out to the backend as an
-// exit node. Every number here is read from MeshMetrics (the real
-// runtime counters incremented by MeshService) and refreshes on
-// MeshMetrics.changes -- no hardcoded/placeholder values, which the
-// project has repeatedly flagged as a correctness failure.
-//
-// This is a STATUS/observability screen, not a control panel -- it
-// doesn't start/stop anything, it reflects what the mesh layer is
-// actually doing.
+// Aug 6 2026: the "Relayed" metric card now also shows a RelayTrace
+// node-chain visualization (see relay_trace_indicator.dart) below the
+// count -- mirrors the dashboard's signature Relay Trace component so
+// both products share one visual language for "this device's actual
+// mesh relay activity" instead of it just being a plain number here
+// and a chain-of-nodes there.
 
 import 'dart:async';
 
@@ -28,6 +21,7 @@ import 'package:setu_app/core/design_system/app_spacing.dart';
 import 'package:setu_app/core/design_system/app_typography.dart';
 import 'package:setu_app/core/design_system/widgets/status_chip.dart';
 import 'package:setu_app/core/services/connectivity_mesh_controller.dart';
+import 'package:setu_app/features/relay/presentation/widgets/relay_trace_indicator.dart';
 import 'package:setu_app/mesh/services/mesh_metrics.dart';
 
 class RelayStatusScreen extends StatefulWidget {
@@ -66,6 +60,7 @@ class _RelayStatusScreenState extends State<RelayStatusScreen> {
     required String label,
     required int value,
     required String sublabel,
+    Widget? trailing,
   }) {
     return Container(
       padding: const EdgeInsets.all(AppSpacing.md),
@@ -79,35 +74,44 @@ class _RelayStatusScreenState extends State<RelayStatusScreen> {
             ? Border.all(color: Theme.of(context).dividerColor)
             : null,
       ),
-      child: Row(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Container(
-            height: 48,
-            width: 48,
-            decoration: BoxDecoration(
-              color: color.withValues(alpha: 0.12),
-              borderRadius: AppRadius.mdRadius,
-            ),
-            child: Icon(icon, color: color, size: 24),
-          ),
-          const SizedBox(width: AppSpacing.md),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(label, style: AppTypography.subtitle),
-                const SizedBox(height: 2),
-                Text(
-                  sublabel,
-                  style: AppTypography.caption.copyWith(color: AppColors.neutral500),
+          Row(
+            children: [
+              Container(
+                height: 48,
+                width: 48,
+                decoration: BoxDecoration(
+                  color: color.withValues(alpha: 0.12),
+                  borderRadius: AppRadius.mdRadius,
                 ),
-              ],
-            ),
+                child: Icon(icon, color: color, size: 24),
+              ),
+              const SizedBox(width: AppSpacing.md),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(label, style: AppTypography.subtitle),
+                    const SizedBox(height: 2),
+                    Text(
+                      sublabel,
+                      style: AppTypography.caption.copyWith(color: AppColors.neutral500),
+                    ),
+                  ],
+                ),
+              ),
+              Text(
+                '$value',
+                style: AppTypography.headline.copyWith(color: color),
+              ),
+            ],
           ),
-          Text(
-            '$value',
-            style: AppTypography.headline.copyWith(color: color),
-          ),
+          if (trailing != null) ...[
+            const SizedBox(height: AppSpacing.sm),
+            trailing,
+          ],
         ],
       ),
     );
@@ -123,7 +127,6 @@ class _RelayStatusScreenState extends State<RelayStatusScreen> {
       body: ListView(
         padding: const EdgeInsets.all(AppSpacing.lg),
         children: [
-          // Live mesh state summary
           Container(
             padding: const EdgeInsets.all(AppSpacing.lg),
             decoration: BoxDecoration(
@@ -188,6 +191,7 @@ class _RelayStatusScreenState extends State<RelayStatusScreen> {
             label: 'Relayed',
             value: metrics.relayed,
             sublabel: 'Carried forward for someone else',
+            trailing: RelayTraceIndicator(relayedCount: metrics.relayed),
           ),
           const SizedBox(height: AppSpacing.sm),
           _metricCard(
