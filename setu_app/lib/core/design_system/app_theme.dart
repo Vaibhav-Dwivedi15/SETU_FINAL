@@ -3,12 +3,6 @@
 // Module : Theme Assembly
 // Owner  : Sudheer
 // =====================================================
-//
-// This is NOT wired into app.dart yet — per the design brief,
-// screen-by-screen redesign only starts after this Design
-// System is reviewed/approved. Wiring this in is the first
-// step of the Home screen redesign pass, not part of this
-// delivery.
 
 import 'package:flutter/material.dart';
 
@@ -31,14 +25,12 @@ class AppDesignSystem {
       scaffoldBackgroundColor: AppColors.lightBackground,
       cardColor: AppColors.lightSurface,
       dividerColor: AppColors.lightBorder,
-      appBarTheme: const AppBarTheme(
+      appBarTheme: AppBarTheme(
         centerTitle: true,
         elevation: 0,
         backgroundColor: AppColors.lightBackground,
         foregroundColor: AppColors.lightTextPrimary,
-        titleTextStyle: TextStyle(
-          fontSize: 20,
-          fontWeight: FontWeight.bold,
+        titleTextStyle: AppTypography.title.copyWith(
           color: AppColors.lightTextPrimary,
         ),
       ),
@@ -67,7 +59,13 @@ class AppDesignSystem {
           borderSide: const BorderSide(color: AppColors.lightBorder),
         ),
       ),
-      textTheme: const TextTheme(
+      // Aug 6 2026 fix: NOT const anymore -- AppTypography.displayLarge/
+      // headline/title are now getters returning GoogleFonts.spaceGrotesk(...),
+      // which is not a compile-time constant (any font loaded via a
+      // package can't be const). This was a real compile break the
+      // moment app_typography.dart changed -- `const TextTheme(...)`
+      // requires every argument to be const.
+      textTheme: TextTheme(
         displayLarge: AppTypography.displayLarge,
         headlineMedium: AppTypography.headline,
         titleMedium: AppTypography.title,
@@ -94,14 +92,12 @@ class AppDesignSystem {
       scaffoldBackgroundColor: AppColors.darkBackground,
       cardColor: AppColors.darkSurface,
       dividerColor: AppColors.darkBorder,
-      appBarTheme: const AppBarTheme(
+      appBarTheme: AppBarTheme(
         centerTitle: true,
         elevation: 0,
         backgroundColor: AppColors.darkBackground,
         foregroundColor: AppColors.darkTextPrimary,
-        titleTextStyle: TextStyle(
-          fontSize: 20,
-          fontWeight: FontWeight.bold,
+        titleTextStyle: AppTypography.title.copyWith(
           color: AppColors.darkTextPrimary,
         ),
       ),
@@ -130,7 +126,7 @@ class AppDesignSystem {
           borderSide: const BorderSide(color: AppColors.darkBorder),
         ),
       ),
-      textTheme: const TextTheme(
+      textTheme: TextTheme(
         displayLarge: AppTypography.displayLarge,
         headlineMedium: AppTypography.headline,
         titleMedium: AppTypography.title,
