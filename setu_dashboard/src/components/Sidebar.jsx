@@ -1,5 +1,6 @@
 import { timeAgo } from "../utils/timeAgo";
 import { useTick } from "../utils/useTick";
+import setuLogo from "../assets/setu-logo.png";
 
 const NAV_ITEMS = [
   { key: "dashboard", icon: "🏠", label: "Dashboard" },
@@ -16,7 +17,7 @@ function Sidebar({ activePage, onNavigate, backendConnected, openIncidentCount, 
   return (
     <aside className="sidebar">
       <div className="logo-row">
-        <span className="logo-mark">◆</span>
+        <img src={setuLogo} alt="SETU" className="logo-mark-img" />
         <h1 className="logo">SETU</h1>
       </div>
 

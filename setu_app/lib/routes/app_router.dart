@@ -1,5 +1,6 @@
 import 'package:go_router/go_router.dart';
 import 'package:setu_app/features/relay/presentation/screens/relay_status_screen.dart';
+import 'package:setu_app/features/relay/presentation/screens/relay_log_screen.dart';
 import 'package:setu_app/features/home/presentation/screens/home_screen.dart';
 import 'package:setu_app/features/stealth/presentation/screens/stealth_screen.dart';
 import 'package:setu_app/features/confirmation/presentation/screens/confirmation_screen.dart';
@@ -127,6 +128,27 @@ final GoRouter appRouter = GoRouter(
     GoRoute(path: '/nearby', builder: (context, state) => const NearbyScreen()),
 
     GoRoute(
+      path: '/relay',
+      builder: (context, state) => const RelayStatusScreen(),
+    ),
+
+    // Aug 6 2026: persistent relay activity log -- separate from
+    // /relay (live, in-memory-only counters). Reached via the
+    // history icon on RelayStatusScreen app bar.
+    GoRoute(
+      path: '/relay/history',
+      builder: (context, state) => const RelayLogScreen(),
+    ),
+
+    // Aug 6 2026: persistent relay activity log -- separate from
+    // /relay (live, in-memory-only counters). Reached via the
+    // history icon on RelayStatusScreen's app bar.
+    GoRoute(
+      path: '/relay/history',
+      builder: (context, state) => const RelayLogScreen(),
+    ),
+
+    GoRoute(
       path: '/community-demo',
       builder: (context, state) => const CommunityDemoScreen(),
     ),
@@ -153,10 +175,6 @@ final GoRouter appRouter = GoRouter(
     GoRoute(
       path: '/lost-child/broadcast',
       builder: (context, state) => const LostChildBroadcastScreen(),
-    ),
-  GoRoute(
-      path: '/relay',
-      builder: (context, state) => const RelayStatusScreen(),
     ),
   ],
 );

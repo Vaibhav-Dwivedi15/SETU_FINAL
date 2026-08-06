@@ -161,6 +161,13 @@ body{
   text-shadow:0 0 12px var(--accent-glow);
 }
 
+.logo-mark-img{
+  width:30px;
+  height:30px;
+  object-fit:contain;
+  filter:drop-shadow(0 0 8px var(--accent-glow));
+}
+
 .logo{
   font-size:26px;
   letter-spacing:3px;

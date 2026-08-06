@@ -1,24 +1,14 @@
-// =====================================================
-// SETU Project
-// Module : Relay Status Screen
-// =====================================================
-//
-// Aug 6 2026: the "Relayed" metric card now also shows a RelayTrace
-// node-chain visualization (see relay_trace_indicator.dart) below the
-// count -- mirrors the dashboard's signature Relay Trace component so
-// both products share one visual language for "this device's actual
-// mesh relay activity" instead of it just being a plain number here
-// and a chain-of-nodes there.
-
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
 
 import 'package:setu_app/core/design_system/app_colors.dart';
 import 'package:setu_app/core/design_system/app_elevation.dart';
 import 'package:setu_app/core/design_system/app_radius.dart';
 import 'package:setu_app/core/design_system/app_spacing.dart';
 import 'package:setu_app/core/design_system/app_typography.dart';
+import 'package:setu_app/core/design_system/widgets/app_button.dart';
 import 'package:setu_app/core/design_system/widgets/status_chip.dart';
 import 'package:setu_app/core/services/connectivity_mesh_controller.dart';
 import 'package:setu_app/features/relay/presentation/widgets/relay_trace_indicator.dart';
@@ -123,7 +113,16 @@ class _RelayStatusScreenState extends State<RelayStatusScreen> {
     final isOffline = _networkStatus == NetworkStatus.offline;
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Relay Status')),
+      appBar: AppBar(
+        title: const Text('Relay Status'),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.history),
+            tooltip: 'Relay History',
+            onPressed: () => context.push('/relay/history'),
+          ),
+        ],
+      ),
       body: ListView(
         padding: const EdgeInsets.all(AppSpacing.lg),
         children: [
@@ -163,9 +162,19 @@ class _RelayStatusScreenState extends State<RelayStatusScreen> {
             ),
           ),
 
+          const SizedBox(height: AppSpacing.sm),
+          // Aug 6 2026: these counters (MeshMetrics) are in-memory only
+          // and reset to 0 every time the app process restarts -- the
+          // Relay History screen below has the persistent record.
+          Text(
+            'Numbers below reset when the app restarts. See Relay History '
+            '(top-right) for a permanent record.',
+            style: AppTypography.caption.copyWith(color: AppColors.neutral500),
+          ),
+
           const SizedBox(height: AppSpacing.lg),
 
-          Text('THIS DEVICE\'S ACTIVITY',
+          Text('THIS SESSION\'S ACTIVITY',
               style: AppTypography.label.copyWith(color: AppColors.neutral500)),
           const SizedBox(height: AppSpacing.sm),
 
@@ -211,11 +220,10 @@ class _RelayStatusScreenState extends State<RelayStatusScreen> {
           ),
 
           const SizedBox(height: AppSpacing.lg),
-          Text(
-            'These numbers update live as your device participates in the '
-            'mesh. A high "Relayed" count means you\'ve helped others reach '
-            'help.',
-            style: AppTypography.caption.copyWith(color: AppColors.neutral500),
+          AppButton(
+            label: 'View Full Relay History',
+            icon: Icons.history,
+            onPressed: () => context.push('/relay/history'),
           ),
         ],
       ),

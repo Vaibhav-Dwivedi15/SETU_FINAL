@@ -1,5 +1,6 @@
 import { timeAgo } from "../utils/timeAgo";
 import { useTick } from "../utils/useTick";
+import RelayTrace from "./RelayTrace";
 
 function IncidentList({ incidents, onResolve, onSelect }) {
   useTick(); // keeps "Xm ago" timestamps below advancing without a data refetch
@@ -59,6 +60,12 @@ function IncidentList({ incidents, onResolve, onSelect }) {
 
             <p>{incident.city}</p>
             <small className="mono">{timeAgo(incident.reportedAt)}</small>
+
+            {/* Aug 6 2026: real hop-count relay journey, replaces
+                nothing that was here before -- purely additive. See
+                RelayTrace.jsx for why this is SETU's actual signature
+                element rather than a generic "live" indicator. */}
+            <RelayTrace hopCount={incident.hopCount} />
 
             {!isClosed && onResolve && (
               <button
