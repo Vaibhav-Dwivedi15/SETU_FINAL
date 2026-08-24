@@ -32,6 +32,17 @@ it wasn't a pool-size problem). Fixed by using db.flush() everywhere
 that only needs an ID/visibility within the same transaction, and
 committing ONCE per packet, at the very end of handle_sos_packet /
 close_incident_by_emergency_id.
+
+PHASE 2 NOTE (government notification adapter, Aug 2026): like SMS
+notification, the government adapter call (notify_government, see
+app/services/government_notification_service.py) fires AFTER commit /
+advisory-lock-release, and ONLY for genuinely new incidents -- same
+reasoning as SMS: never spam a duplicate government notification per
+corroborating report, and never hold the per-incident-type lock open for
+an external (even if currently mocked) network-shaped call. It is
+strictly non-blocking: any failure is caught and logged inside
+notify_government itself and can never affect the response returned to
+the mesh device.
 """
 
 from typing import Optional
@@ -48,6 +59,7 @@ from app.schemas.packet import PacketIn, IncidentType
 from app.services.classification_service import infer_incident_type
 from app.services.deduplication_service import find_matching_incident
 from app.services.sms_service import notify_emergency_contacts
+from app.services.government_notification_service import notify_government
 
 
 def _find_incident_by_emergency_id(db: Session, emergency_id: str) -> Optional[Incident]:
@@ -163,6 +175,8 @@ def handle_sos_packet(db: Session, packet: PacketIn, ai_result: Optional[dict] =
     SMS notification fires ONLY when a brand-new incident is created
     (existing is None) -- never on a merge into an existing incident,
     since that would spam the same contacts once per corroborating report.
+    The government notification adapter call (Phase 2) follows the exact
+    same rule, for the exact same reason.
 
     RACE CONDITION FIX (load test, Aug 2): a Postgres advisory transaction
     lock, scoped per incident_type, serializes the check+create section
@@ -173,7 +187,8 @@ def handle_sos_packet(db: Session, packet: PacketIn, ai_result: Optional[dict] =
     queued behind that one HTTP request, causing timeouts under load.
     Moved SMS to after commit/lock-release: the lock now only covers
     fast DB work, and a slow SMS send only blocks its OWN request, not
-    everyone else's.
+    everyone else's. The government adapter call (Phase 2) follows after
+    SMS, same reasoning -- it never runs while the lock is held.
 
     DIALECT GUARD (Aug, found via local pytest run): pg_advisory_xact_lock
     is Postgres-only -- SQLite (used by the test suite's in-memory DB,
@@ -227,8 +242,10 @@ def handle_sos_packet(db: Session, packet: PacketIn, ai_result: Optional[dict] =
 
     db.commit()  # releases the advisory lock here -- next same-type request can proceed now
 
-    # SMS happens AFTER commit/lock-release -- a slow send only delays
-    # this one request's response, not every other packet waiting on the lock.
+    # SMS and the government notification adapter both happen AFTER
+    # commit/lock-release -- a slow send only delays this one request's
+    # response, not every other packet waiting on the lock. Both fire
+    # only for genuinely new incidents, never on a merge.
     if is_new_incident:
         profile = db.query(UserProfile).filter(
             UserProfile.sender_id == packet.sender_id
@@ -241,6 +258,11 @@ def handle_sos_packet(db: Session, packet: PacketIn, ai_result: Optional[dict] =
                 incident_type=incident.incident_type,
                 incident_id=incident.id,
             )
+
+        # Phase 2: mock government notification adapter. Never blocking,
+        # never able to affect the response below -- see
+        # government_notification_service.notify_government's docstring.
+        notify_government(db, incident)
 
     return incident
 
@@ -310,4 +332,3 @@ def resolve_incident_by_id(db: Session, incident_id: int) -> Optional[Incident]:
 
     db.commit()
     db.refresh(incident)
-    return incident
