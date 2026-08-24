@@ -5,7 +5,7 @@ Incident response schemas -- what the dashboard sees.
 from datetime import datetime
 from typing import Optional
 
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 
 
 class IncidentOut(BaseModel):
@@ -18,8 +18,7 @@ class IncidentOut(BaseModel):
     created_at: datetime
     closed_at: Optional[datetime] = None
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class ProfileOut(BaseModel):
@@ -30,8 +29,7 @@ class ProfileOut(BaseModel):
     medical_history: Optional[str] = None
     emergency_contacts: list[str] = []
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class AuditLogOut(BaseModel):
@@ -41,5 +39,4 @@ class AuditLogOut(BaseModel):
     detail: Optional[str] = None
     created_at: datetime
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)

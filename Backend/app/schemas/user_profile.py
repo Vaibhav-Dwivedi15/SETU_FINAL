@@ -9,7 +9,7 @@ mesh-facing path.
 
 from typing import List, Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ConfigDict
 
 
 class RegisterIn(BaseModel):
@@ -26,5 +26,4 @@ class RegisterOut(BaseModel):
     sender_id: str
     name: str
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
