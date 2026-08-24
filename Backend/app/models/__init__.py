@@ -4,3 +4,4 @@ from app.models.user_profile import UserProfile
 from app.models.responder import ResponderProfile
 from app.models.audit_log import IncidentAuditLog
 from app.models.government_notification import GovernmentNotificationLog
+from app.models.community_response import CommunityResponse

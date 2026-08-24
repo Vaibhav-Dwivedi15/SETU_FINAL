@@ -5,7 +5,7 @@ from fastapi.middleware.cors import CORSMiddleware
 import logging
 
 from app.core.config import settings
-from app.routers import health, ingest, register, incidents, responders
+from app.routers import health, ingest, register, incidents, responders, alerts
 from app.db.init_db import init_db
 
 logging.basicConfig(level=logging.INFO)
@@ -54,6 +54,7 @@ app.include_router(ingest.router)
 app.include_router(register.router)
 app.include_router(incidents.router)
 app.include_router(responders.router)
+app.include_router(alerts.router)
 
 
 @app.get("/")
