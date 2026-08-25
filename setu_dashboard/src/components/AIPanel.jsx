@@ -16,7 +16,7 @@ function AIPanel({ incidents = [] }) {
 
   return (
     <div className="ai-panel">
-      <h2 style={{ display: "flex", alignItems: "center", gap: 8 }}>
+      <h2 className="ds-card-title" style={{ display: "flex", alignItems: "center", gap: 8 }}>
         <ActionIcons.refresh className="ds-icon-md" aria-hidden="true" /> Live Situational Snapshot
       </h2>
       <p className="ai-panel-caption">Computed from currently active incidents — not a predictive model.</p>

@@ -8,13 +8,19 @@
 
 import { LANGUAGES } from "../utils/i18n";
 import { useLanguage } from "../context/LanguageContext";
+import { ActionIcons } from "../icons";
 
+// Redesign brief section 2: swapped the raw 🌐 emoji for the already
+// -verified ActionIcons.language (Lucide globe) — same icon family as
+// every other control in the header now.
 function LanguageSelector() {
   const { language, setLanguage, t } = useLanguage();
 
   return (
     <label className="language-selector" title={t("lang.label")}>
-      <span className="language-selector-icon" aria-hidden="true">🌐</span>
+      <span className="language-selector-icon" aria-hidden="true">
+        <ActionIcons.language className="ds-icon-sm" aria-hidden="true" />
+      </span>
       <select
         value={language}
         onChange={(e) => setLanguage(e.target.value)}

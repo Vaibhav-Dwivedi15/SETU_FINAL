@@ -1,23 +1,24 @@
 import { timeAgo } from "../utils/timeAgo";
 import { useTick } from "../utils/useTick";
 import RelayTrace from "./RelayTrace";
-import { NavIcons, ActionIcons } from "../icons";
-import { PriorityBadge, StatusBadge } from "./ui/Primitives";
+import { NavIcons, MiscIcons } from "../icons";
+import { PriorityBadge, StatusBadge, EmptyState } from "./ui/Primitives";
 
 function IncidentList({ incidents, onResolve, onSelect }) {
   useTick(); // keeps "Xm ago" timestamps below advancing without a data refetch
 
   return (
     <div className="incident-list">
-      <h2 style={{ display: "flex", alignItems: "center", gap: 8 }}>
+      <h2 className="ds-card-title" style={{ display: "flex", alignItems: "center", gap: 8 }}>
         <NavIcons.liveIncidents className="ds-icon-md" aria-hidden="true" /> Recent Incidents
       </h2>
 
       {incidents.length === 0 && (
-        <div className="empty-state">
-          <span className="empty-icon"><ActionIcons.search className="ds-icon-lg" aria-hidden="true" /></span>
-          No incidents match your current filters.
-        </div>
+        <EmptyState
+          icon={MiscIcons.empty}
+          title="NO MATCHING INCIDENTS"
+          description="No incidents match your current search and filters."
+        />
       )}
 
       {incidents.map((incident) => {

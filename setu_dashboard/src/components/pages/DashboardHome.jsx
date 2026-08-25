@@ -13,7 +13,7 @@ function DashboardHome({ allIncidents, filteredIncidents, onResolve, onSelectInc
 
       <div className="dashboard-grid">
         <div className="map-section">
-          <h2 style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <h2 className="ds-card-title" style={{ display: "flex", alignItems: "center", gap: 8 }}>
             <NavIcons.liveMap className="ds-icon-md" aria-hidden="true" /> Live Map
           </h2>
           <MapView incidents={filteredIncidents} onSelectIncident={onSelectIncident} />

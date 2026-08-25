@@ -2,8 +2,8 @@ import { useState } from "react";
 import { timeAgo } from "../../utils/timeAgo";
 import { useTick } from "../../utils/useTick";
 import { exportIncidentsToCsv } from "../../utils/exportCsv";
-import { ActionIcons } from "../../icons";
-import { StatusBadge } from "../ui/Primitives";
+import { ActionIcons, MiscIcons } from "../../icons";
+import { StatusBadge, EmptyState } from "../ui/Primitives";
 
 const PRIORITY_ORDER = { Critical: 4, High: 3, Medium: 2, Low: 1 };
 
@@ -21,7 +21,7 @@ function IncidentsPage({ incidents, onResolve, onSelectIncident }) {
   return (
     <div className="incidents-page">
       <div className="incidents-page-header">
-        <h3>{incidents.length} Incident{incidents.length === 1 ? "" : "s"}</h3>
+        <h3 className="ds-card-title">{incidents.length} Incident{incidents.length === 1 ? "" : "s"}</h3>
         <div className="sort-toggle">
           <span>Sort by:</span>
           <button className={sortBy === "priority" ? "active" : ""} onClick={() => setSortBy("priority")}>Priority</button>
@@ -39,10 +39,11 @@ function IncidentsPage({ incidents, onResolve, onSelectIncident }) {
       </div>
 
       {sorted.length === 0 && (
-        <div className="empty-state">
-          <span className="empty-icon"><ActionIcons.search className="ds-icon-lg" aria-hidden="true" /></span>
-          No incidents match your current filters.
-        </div>
+        <EmptyState
+          icon={MiscIcons.empty}
+          title="NO MATCHING INCIDENTS"
+          description="No incidents match your current search and filters. Try widening the filters or clearing the search."
+        />
       )}
 
       <div className="incidents-table">

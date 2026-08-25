@@ -8,6 +8,13 @@
   padding:4px 10px; border-radius:999px;
   font:var(--text-status); text-transform:uppercase; letter-spacing:var(--tracking-label);
   border:1px solid transparent;
+  /* Redesign brief section 18 (motion design) — status transition. When
+     an incident's priority/status re-renders with a different tone
+     (e.g. AI re-assessment, or Active -> Closed), the badge's color
+     eases instead of hard-cutting to the new color every poll cycle. */
+  transition:background-color var(--duration-base) var(--ease-standard),
+             color var(--duration-base) var(--ease-standard),
+             border-color var(--duration-base) var(--ease-standard);
 }
 .ds-badge-sm{ padding:2px 8px; font-size:.62rem; }
 .ds-priority-dot{ width:6px; height:6px; border-radius:50%; }
@@ -29,6 +36,8 @@
   display:inline-flex; align-items:center; gap:5px;
   padding:3px 9px; border-radius:6px;
   font:var(--text-metadata); text-transform:none; letter-spacing:0;
+  transition:background-color var(--duration-base) var(--ease-standard),
+             color var(--duration-base) var(--ease-standard);
 }
 .ds-status-confirmed{ background:var(--success-dim); color:var(--success); }
 .ds-status-unknown{ background:var(--unknown-dim); color:var(--unknown); }

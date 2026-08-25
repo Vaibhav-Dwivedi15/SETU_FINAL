@@ -49,15 +49,22 @@ const cityCoordinates = {
   Delhi: { lat: 28.6139, lng: 77.2090 },
 };
 
+// Redesign brief section 2 explicitly bans emoji as product iconography,
+// and section 15 asks for concise operational status language. The page
+// titles here used to lead with an emoji character despite every other
+// surface (sidebar, cards, badges) already having moved to the Lucide
+// icon registry in icons.js — this was the one place that slipped
+// through. Titles are now plain operational text; the icon-carrying job
+// belongs to the sidebar nav item for the same page, not the header.
 const PAGE_TITLES = {
-  dashboard: { title: "🚨 Emergency Response Dashboard", subtitle: "AI Powered Disaster Monitoring System" },
-  map: { title: "🗺 Live Map", subtitle: "All active and recent incidents, plotted in real time" },
-  incidents: { title: "🚨 Incidents", subtitle: "Full incident log with search and filters" },
-  categories: { title: "🗂 Categories", subtitle: "Incidents grouped by emergency category" },
-  analytics: { title: "📊 Analytics", subtitle: "Trends and breakdowns across all reported incidents" },
-  resources: { title: "📍 Resources", subtitle: "Deployment status of emergency response assets" },
-  teams: { title: "👥 Teams", subtitle: "Registered responder teams" },
-  settings: { title: "⚙ Settings", subtitle: "Dashboard configuration" },
+  dashboard: { title: "Emergency Response Dashboard", subtitle: "AI-powered disaster monitoring, live" },
+  map: { title: "Live Map", subtitle: "All active and recent incidents, plotted in real time" },
+  incidents: { title: "Incidents", subtitle: "Full incident log with search and filters" },
+  categories: { title: "Incident Categories", subtitle: "Incidents grouped by emergency category" },
+  analytics: { title: "Analytics", subtitle: "Trends and breakdowns across all reported incidents" },
+  resources: { title: "Response Capacity Center", subtitle: "Deployment status of emergency response assets" },
+  teams: { title: "Response Teams", subtitle: "Registered responder teams" },
+  settings: { title: "Settings", subtitle: "Dashboard configuration" },
 };
 
 const DEFAULT_SETTINGS = { pollIntervalMs: 5000, notificationsEnabled: true, soundEnabled: true };
@@ -315,8 +322,8 @@ function App() {
       <main className="main">
         <header className="navbar">
           <div>
-            <h2>{pageInfo.title}</h2>
-            <p className="subtitle">{pageInfo.subtitle}</p>
+            <h2 className="ds-page-title">{pageInfo.title}</h2>
+            <p className="subtitle ds-supporting">{pageInfo.subtitle}</p>
           </div>
 
           <div className="nav-right">
@@ -401,7 +408,13 @@ function App() {
           </div>
         </header>
 
-        <section className="content">
+        {/* key={activePage} forces React to remount this section's
+            subtree on every nav change, which retriggers the
+            .content's page-transition-in CSS animation (design-system.css)
+            — redesign brief section 18 asked for page transitions and
+            this was the one still missing. Respects prefers-reduced-motion
+            via the existing global override in design-system.css. */}
+        <section className="content" key={activePage}>
           {activePage === "dashboard" && (
             <DashboardHome
               allIncidents={incidents}

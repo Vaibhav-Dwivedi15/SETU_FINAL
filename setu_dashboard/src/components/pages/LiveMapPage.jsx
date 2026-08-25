@@ -1,7 +1,8 @@
 import MapView from "../MapView";
 import { timeAgo } from "../../utils/timeAgo";
 import { useTick } from "../../utils/useTick";
-import { NavIcons } from "../../icons";
+import { NavIcons, MiscIcons } from "../../icons";
+import { EmptyState } from "../ui/Primitives";
 
 function LiveMapPage({ incidents, onSelectIncident }) {
   useTick();
@@ -17,12 +18,13 @@ function LiveMapPage({ incidents, onSelectIncident }) {
       </div>
 
       <div className="live-map-rail">
-        <h3>Active on Map ({incidents.length})</h3>
+        <h3 className="ds-card-title">Active on Map ({incidents.length})</h3>
         {sorted.length === 0 && (
-          <div className="empty-state">
-            <span className="empty-icon"><NavIcons.liveMap className="ds-icon-lg" aria-hidden="true" /></span>
-            No incidents currently plotted.
-          </div>
+          <EmptyState
+            icon={MiscIcons.empty}
+            title="NETWORK CLEAR"
+            description="No active emergency reports are currently being received."
+          />
         )}
         {sorted.map((incident) => (
           <button
