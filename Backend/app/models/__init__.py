@@ -5,3 +5,4 @@ from app.models.responder import ResponderProfile
 from app.models.audit_log import IncidentAuditLog
 from app.models.government_notification import GovernmentNotificationLog
 from app.models.community_response import CommunityResponse
+from app.models.email_otp import EmailOtp

@@ -5,7 +5,10 @@ from fastapi.middleware.cors import CORSMiddleware
 import logging
 
 from app.core.config import settings
-from app.routers import health, ingest, register, incidents, responders, alerts
+from app.routers import (
+    health, ingest, register, incidents, responders, alerts,
+    auth, voice, government,
+)
 from app.db.init_db import init_db
 
 logging.basicConfig(level=logging.INFO)
@@ -55,6 +58,12 @@ app.include_router(register.router)
 app.include_router(incidents.router)
 app.include_router(responders.router)
 app.include_router(alerts.router)
+# Email OTP auth (replaces the mobile app's demo client-side OTP).
+app.include_router(auth.router)
+# Voice SOS ingest -- spoken distress reports, transcribed via Whisper.
+app.include_router(voice.router)
+# Government notification adapter log (mock adapter -- see routers/government.py).
+app.include_router(government.router)
 
 
 @app.get("/")

@@ -45,3 +45,22 @@ numpy
 
 # --- setu_ai_service Gemini path -- still NOT needed (SETU_AI_GEMINI_ENABLED stays false) ---
 # google-genai       -- only if SETU_AI_GEMINI_ENABLED=true
+
+# --- Email OTP auth (app/routers/auth.py) ---
+# email-validator backs pydantic's EmailStr; without it, importing
+# app/schemas/auth.py raises ImportError at startup.
+email-validator
+
+# --- Voice SOS ingest (app/routers/voice.py) ---
+# python-multipart is REQUIRED for FastAPI's UploadFile/Form handling.
+# Without it, FastAPI raises at import time on any route using File().
+python-multipart
+
+# openai-whisper powers voice transcription (setu_ai_service/service/voice_service.py).
+# NOTE: it ALSO needs ffmpeg installed at the SYSTEM level -- ffmpeg is not
+# a pip package. On Ubuntu: sudo apt install ffmpeg
+# On a fresh Render instance neither is present, so /ingest/voice will
+# return 503 there until this is provisioned. Left uncommented because
+# voice SOS is now a shipped feature, not a roadmap item -- but be aware
+# this pulls in torch and is a large install.
+openai-whisper

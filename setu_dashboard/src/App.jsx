@@ -3,6 +3,9 @@ import incidentsData from "./data/incidents";
 import { startIncidentPolling, resolveIncidentOnBackend } from "./services/api";
 import { playAlertSound } from "./utils/alertSound";
 import "./App.css";
+// Phase 4 styles kept in their own file rather than appended to the
+// 2000-line App.css — easier to review, and trivially revertable.
+import "./phase4.css";
 
 import Sidebar from "./components/Sidebar";
 import NewAlertModal from "./components/NewAlertModal";
@@ -11,11 +14,15 @@ import ToastStack from "./components/ToastStack";
 import CommandPalette from "./components/CommandPalette";
 import NotificationCenter from "./components/NotificationCenter";
 import ThemeToggle from "./components/ThemeToggle";
+import CriticalAlertModal from "./components/CriticalAlertModal";
 import { ThemeProvider } from "./context/ThemeContext";
+import { LanguageProvider } from "./context/LanguageContext";
+import LanguageSelector from "./components/LanguageSelector";
 
 import DashboardHome from "./components/pages/DashboardHome";
 import LiveMapPage from "./components/pages/LiveMapPage";
 import IncidentsPage from "./components/pages/IncidentsPage";
+import CategoriesPage from "./components/pages/CategoriesPage";
 import AnalyticsPage from "./components/pages/AnalyticsPage";
 import ResourcesPage from "./components/pages/ResourcesPage";
 import TeamsPage from "./components/pages/TeamsPage";
@@ -34,6 +41,7 @@ const PAGE_TITLES = {
   dashboard: { title: "🚨 Emergency Response Dashboard", subtitle: "AI Powered Disaster Monitoring System" },
   map: { title: "🗺 Live Map", subtitle: "All active and recent incidents, plotted in real time" },
   incidents: { title: "🚨 Incidents", subtitle: "Full incident log with search and filters" },
+  categories: { title: "🗂 Categories", subtitle: "Incidents grouped by emergency category" },
   analytics: { title: "📊 Analytics", subtitle: "Trends and breakdowns across all reported incidents" },
   resources: { title: "📍 Resources", subtitle: "Deployment status of emergency response assets" },
   teams: { title: "👥 Teams", subtitle: "Registered responder teams" },
@@ -72,6 +80,12 @@ function App() {
   const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
   const [lastSyncedAt, setLastSyncedAt] = useState(null);
 
+  // Phase 4: Critical incidents get a blocking, unmissable modal rather
+  // than just another toast. Held as a QUEUE, not a single value —
+  // several Critical incidents can arrive in one poll cycle, and
+  // overwriting would silently drop all but the last one.
+  const [criticalQueue, setCriticalQueue] = useState([]);
+
   const knownIdsRef = useRef(new Set(incidentsData.map((i) => i.id)));
   const hasLoadedOnceRef = useRef(false);
   const prevCountsRef = useRef(null);
@@ -107,8 +121,7 @@ function App() {
   // on any previous poll) and raises a toast + persistent notification +
   // optional sound for them — skips the very first successful load so
   // switching from mock->real data doesn't fire a notification storm for
-  // incidents that were already there. Also computes real stat trends
-  // (see StatsCards) by comparing per-type counts against the previous poll.
+  // incidents that were already there.
   useEffect(() => {
     const stopPolling = startIncidentPolling(
       (freshIncidents) => {
@@ -152,6 +165,18 @@ function App() {
               })),
               ...prev,
             ].slice(0, 50)); // cap history so this can't grow unbounded over a long demo session
+
+            // Phase 4: escalate Critical-priority arrivals to the
+            // blocking modal. Deliberately NOT gated on
+            // notificationsEnabled — that setting governs routine toast
+            // noise; a Critical emergency is exactly what a responder
+            // opened this dashboard for and must not be suppressible by
+            // a general "quiet" preference.
+            const newCriticals = newOnes.filter((i) => i.priority === "Critical");
+            if (newCriticals.length > 0) {
+              setCriticalQueue((prev) => [...prev, ...newCriticals]);
+            }
+
             if (settings.soundEnabled) {
               const worst = newOnes.reduce((acc, i) =>
                 (PRIORITY_ORDER[i.priority] || 0) > (PRIORITY_ORDER[acc.priority] || 0) ? i : acc
@@ -191,10 +216,11 @@ function App() {
   });
 
   // Merged view: collapses multiple reports of the same real-world
-  // incident (grouped by clusterKey — see services/api.js) into one card
-  // with a report count, instead of showing every duplicate separately.
-  // Raw view shows every individual report untouched — useful for audit
-  // or debugging duplicate-detection behavior.
+  // incident (grouped by clusterKey) into one card with a report count.
+  // NOTE: against a live backend this is effectively a no-op, and
+  // correctly so — the backend already deduplicates server-side into a
+  // single Incident row, so there are no duplicates left to merge. It
+  // still does real work against mock data.
   function mergeByCluster(items) {
     const groups = new Map();
     for (const item of items) {
@@ -233,9 +259,8 @@ function App() {
   }
 
   // Termination-trigger from the pipeline design: a verified responder
-  // marks an incident resolved, which should propagate a signed
-  // termination packet back through the mesh. Updates the UI immediately
-  // (optimistic) and attempts the real backend call in parallel.
+  // marks an incident resolved. Updates the UI immediately (optimistic)
+  // and attempts the real backend call in parallel.
   const resolveIncident = useCallback((incidentId) => {
     setIncidents((prev) =>
       prev.map((i) => (i.id === incidentId ? { ...i, status: "closed" } : i))
@@ -243,11 +268,29 @@ function App() {
     resolveIncidentOnBackend(incidentId);
   }, []);
 
+  const activeCritical = criticalQueue[0] || null;
+
+  const dismissCritical = useCallback(() => {
+    setCriticalQueue((prev) => prev.slice(1));
+  }, []);
+
+  const openCriticalDetails = useCallback(() => {
+    setCriticalQueue((prev) => {
+      if (prev.length > 0) setSelectedIncident(prev[0]);
+      return prev.slice(1);
+    });
+  }, []);
+
   const pageInfo = PAGE_TITLES[activePage];
-  const showFilterBar = activePage === "dashboard" || activePage === "incidents" || activePage === "map";
+  const showFilterBar =
+    activePage === "dashboard" ||
+    activePage === "incidents" ||
+    activePage === "categories" ||
+    activePage === "map";
 
   return (
     <ThemeProvider>
+    <LanguageProvider>
     <div className="app">
       <Sidebar
         activePage={activePage}
@@ -330,6 +373,8 @@ function App() {
               onSelect={(incident) => setSelectedIncident(incident)}
             />
 
+            <LanguageSelector />
+
             <ThemeToggle />
           </div>
         </header>
@@ -349,6 +394,13 @@ function App() {
           )}
           {activePage === "incidents" && (
             <IncidentsPage
+              incidents={filteredIncidents}
+              onResolve={resolveIncident}
+              onSelectIncident={setSelectedIncident}
+            />
+          )}
+          {activePage === "categories" && (
+            <CategoriesPage
               incidents={filteredIncidents}
               onResolve={resolveIncident}
               onSelectIncident={setSelectedIncident}
@@ -375,6 +427,17 @@ function App() {
         />
       )}
 
+      {/* Phase 4: blocking Critical-priority alert. Rendered above the
+          detail drawer intentionally — a new Critical arriving while a
+          responder reads another incident must not be missable. */}
+      {activeCritical && (
+        <CriticalAlertModal
+          incident={activeCritical}
+          onAcknowledge={dismissCritical}
+          onViewDetails={openCriticalDetails}
+        />
+      )}
+
       <CommandPalette
         open={commandPaletteOpen}
         onClose={() => setCommandPaletteOpen(false)}
@@ -389,6 +452,7 @@ function App() {
         onDismiss={(id) => setToasts((prev) => prev.filter((t) => t.id !== id))}
       />
     </div>
+    </LanguageProvider>
     </ThemeProvider>
   );
 }

@@ -52,6 +52,22 @@ class Settings(BaseSettings):
     sms_gateway_username: str = ""
     sms_gateway_password: str = ""
 
+    # --- Email / SMTP (email OTP auth) ---
+    # WHY EMAIL OTP AND NOT SMS OTP: SMS OTP in India needs a paid
+    # gateway plus TRAI DLT sender registration -- neither of which this
+    # project has. Email is free and has no telecom regulatory
+    # dependency. See app/services/email_service.py.
+    #
+    # For Gmail: SMTP_PASSWORD must be a 16-character App Password
+    # (requires 2FA enabled on the account). The normal account password
+    # will be rejected by Google.
+    smtp_host: str = ""
+    smtp_port: int = 587
+    smtp_username: str = ""
+    smtp_password: str = ""
+    smtp_from_email: str = ""
+    smtp_from_name: str = "SETU"
+
     # --- CORS (Aug 6 2026, actually wired now -- see main.py) ---
     # Comma-separated list of allowed origins, e.g.
     # "https://setu-sih-dashboard.vercel.app,http://localhost:5173"
