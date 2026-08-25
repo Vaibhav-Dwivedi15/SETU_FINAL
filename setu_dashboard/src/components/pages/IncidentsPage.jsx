@@ -2,6 +2,8 @@ import { useState } from "react";
 import { timeAgo } from "../../utils/timeAgo";
 import { useTick } from "../../utils/useTick";
 import { exportIncidentsToCsv } from "../../utils/exportCsv";
+import { ActionIcons } from "../../icons";
+import { StatusBadge } from "../ui/Primitives";
 
 const PRIORITY_ORDER = { Critical: 4, High: 3, Medium: 2, Low: 1 };
 
@@ -29,15 +31,16 @@ function IncidentsPage({ incidents, onResolve, onSelectIncident }) {
             onClick={() => exportIncidentsToCsv(sorted)}
             disabled={sorted.length === 0}
             title="Download the current filtered list as CSV"
+            style={{ display: "inline-flex", alignItems: "center", gap: 6 }}
           >
-            ⬇ Export CSV
+            <ActionIcons.download className="ds-icon-sm" aria-hidden="true" /> Export CSV
           </button>
         </div>
       </div>
 
       {sorted.length === 0 && (
         <div className="empty-state">
-          <span className="empty-icon">🔍</span>
+          <span className="empty-icon"><ActionIcons.search className="ds-icon-lg" aria-hidden="true" /></span>
           No incidents match your current filters.
         </div>
       )}
@@ -60,9 +63,7 @@ function IncidentsPage({ incidents, onResolve, onSelectIncident }) {
               {incident.reportCount > 1 && (
                 <span className="report-count-badge">×{incident.reportCount}</span>
               )}
-              <span className={`status-badge ${isClosed ? "closed" : "active"}`}>
-                {isClosed ? "Closed" : "Active"}
-              </span>
+              <StatusBadge status={isClosed ? "closed" : "active"} label={isClosed ? "Closed" : "Active"} />
               <span className="mono incident-row-time">{timeAgo(incident.reportedAt)}</span>
               {!isClosed && (
                 <button
@@ -71,8 +72,9 @@ function IncidentsPage({ incidents, onResolve, onSelectIncident }) {
                     e.stopPropagation();
                     onResolve(incident.id);
                   }}
+                  style={{ display: "inline-flex", alignItems: "center", gap: 6 }}
                 >
-                  ✓ Resolve
+                  <ActionIcons.confirm className="ds-icon-sm" aria-hidden="true" /> Resolve
                 </button>
               )}
             </div>

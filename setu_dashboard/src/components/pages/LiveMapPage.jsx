@@ -1,6 +1,7 @@
 import MapView from "../MapView";
 import { timeAgo } from "../../utils/timeAgo";
 import { useTick } from "../../utils/useTick";
+import { NavIcons } from "../../icons";
 
 function LiveMapPage({ incidents, onSelectIncident }) {
   useTick();
@@ -19,7 +20,7 @@ function LiveMapPage({ incidents, onSelectIncident }) {
         <h3>Active on Map ({incidents.length})</h3>
         {sorted.length === 0 && (
           <div className="empty-state">
-            <span className="empty-icon">🗺</span>
+            <span className="empty-icon"><NavIcons.liveMap className="ds-icon-lg" aria-hidden="true" /></span>
             No incidents currently plotted.
           </div>
         )}

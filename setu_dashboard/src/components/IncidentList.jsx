@@ -1,26 +1,29 @@
 import { timeAgo } from "../utils/timeAgo";
 import { useTick } from "../utils/useTick";
 import RelayTrace from "./RelayTrace";
+import { NavIcons, ActionIcons } from "../icons";
+import { PriorityBadge, StatusBadge } from "./ui/Primitives";
 
 function IncidentList({ incidents, onResolve, onSelect }) {
   useTick(); // keeps "Xm ago" timestamps below advancing without a data refetch
 
   return (
     <div className="incident-list">
-      <h2>🚨 Recent Incidents</h2>
+      <h2 style={{ display: "flex", alignItems: "center", gap: 8 }}>
+        <NavIcons.liveIncidents className="ds-icon-md" aria-hidden="true" /> Recent Incidents
+      </h2>
 
       {incidents.length === 0 && (
         <div className="empty-state">
-          <span className="empty-icon">🔍</span>
+          <span className="empty-icon"><ActionIcons.search className="ds-icon-lg" aria-hidden="true" /></span>
           No incidents match your current filters.
         </div>
       )}
 
       {incidents.map((incident) => {
-        // Guard added — previously incident.priority.toLowerCase() would
-        // throw if priority was ever missing/undefined (a real risk once
-        // this connects to live backend data with a different field
-        // shape than the mock data).
+        // Guard kept from v1 — priority can be missing/undefined once this
+        // connects to live backend data with a different field shape than
+        // the mock data.
         const priority = incident.priority || "Medium";
         const isClosed = incident.status === "closed";
 
@@ -37,34 +40,14 @@ function IncidentList({ incidents, onResolve, onSelect }) {
                   ×{incident.reportCount} reports
                 </span>
               )}
-              <span className={`status-badge ${isClosed ? "closed" : "active"}`}>
-                {isClosed ? "Closed" : "Active"}
-              </span>
+              <StatusBadge status={isClosed ? "closed" : "active"} label={isClosed ? "Closed" : "Active"} />
             </div>
 
-            {/* Bug fix: Low-priority incidents previously fell through to
-                the "yellow" (Medium) badge color since there was no
-                explicit branch for "Low" — a Low and a Medium incident
-                looked identical in the list. */}
-            <span className={`badge ${
-              priority === "Critical"
-                ? "red"
-                : priority === "High"
-                ? "orange"
-                : priority === "Low"
-                ? "green"
-                : "yellow"
-            }`}>
-              {priority}
-            </span>
+            <PriorityBadge priority={priority} />
 
             <p>{incident.city}</p>
             <small className="mono">{timeAgo(incident.reportedAt)}</small>
 
-            {/* Aug 6 2026: real hop-count relay journey, replaces
-                nothing that was here before -- purely additive. See
-                RelayTrace.jsx for why this is SETU's actual signature
-                element rather than a generic "live" indicator. */}
             <RelayTrace hopCount={incident.hopCount} />
 
             {!isClosed && onResolve && (
@@ -74,8 +57,9 @@ function IncidentList({ incidents, onResolve, onSelect }) {
                   e.stopPropagation();
                   onResolve(incident.id);
                 }}
+                style={{ display: "inline-flex", alignItems: "center", gap: 6 }}
               >
-                ✓ Mark Resolved
+                <ActionIcons.confirm className="ds-icon-sm" aria-hidden="true" /> Mark Resolved
               </button>
             )}
           </div>

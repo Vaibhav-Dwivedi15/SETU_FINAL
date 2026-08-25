@@ -2,6 +2,8 @@ import { useEffect, useState } from "react";
 import { fetchResponders } from "../../services/api";
 import mockTeams from "../../data/teams";
 import { SkeletonGrid } from "../Skeleton";
+import { ActionIcons } from "../../icons";
+import { StatusBadge } from "../ui/Primitives";
 
 function TeamsPage() {
   const [teams, setTeams] = useState(mockTeams);
@@ -54,11 +56,13 @@ function TeamsPage() {
             <div className="team-card-body">
               <h3>{team.name}</h3>
               <p>{team.organization}</p>
-              {team.area && <span className="team-card-area">📍 {team.area}</span>}
-              {team.status && (
-                <span className={`status-badge ${team.status === "On Duty" ? "active" : "closed"}`}>
-                  {team.status}
+              {team.area && (
+                <span className="team-card-area" style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
+                  <ActionIcons.location className="ds-icon-sm" aria-hidden="true" /> {team.area}
                 </span>
+              )}
+              {team.status && (
+                <StatusBadge status={team.status === "On Duty" ? "active" : "closed"} label={team.status} />
               )}
             </div>
           </div>

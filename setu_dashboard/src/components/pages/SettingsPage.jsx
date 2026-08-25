@@ -1,5 +1,7 @@
 import { playAlertSound } from "../../utils/alertSound";
 import { useTheme } from "../../context/ThemeContext";
+import { ActionIcons } from "../../icons";
+import { NetworkStatusPill } from "../ui/Primitives";
 
 const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || "http://localhost:8000";
 
@@ -15,8 +17,12 @@ function SettingsPage({ settings, onChange, backendConnected }) {
             <p className="settings-dim">Switch between the dark command-center look and a light theme.</p>
           </div>
           <div className="settings-theme-toggle">
-            <button className={theme === "dark" ? "active" : ""} onClick={() => setTheme("dark")}>🌙 Dark</button>
-            <button className={theme === "light" ? "active" : ""} onClick={() => setTheme("light")}>☀️ Light</button>
+            <button className={theme === "dark" ? "active" : ""} onClick={() => setTheme("dark")} style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+              <ActionIcons.themeDark className="ds-icon-sm" aria-hidden="true" /> Dark
+            </button>
+            <button className={theme === "light" ? "active" : ""} onClick={() => setTheme("light")} style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+              <ActionIcons.themeLight className="ds-icon-sm" aria-hidden="true" /> Light
+            </button>
           </div>
         </div>
       </div>
@@ -27,10 +33,7 @@ function SettingsPage({ settings, onChange, backendConnected }) {
             <strong>Backend URL</strong>
             <p className="mono settings-dim">{BACKEND_URL}</p>
           </div>
-          <span className={backendConnected ? "status-live" : "status-offline"}>
-            <span className="status-dot" />
-            {backendConnected ? "Connected" : "Unreachable"}
-          </span>
+          <NetworkStatusPill connected={backendConnected} lastSyncedAt={null} formatTime={() => ""} />
         </div>
         <p className="settings-hint">
           Set VITE_BACKEND_URL in .env to point this dashboard at a different backend instance.
@@ -89,8 +92,8 @@ function SettingsPage({ settings, onChange, backendConnected }) {
         </div>
 
         {settings.soundEnabled && (
-          <button className="settings-test-btn" onClick={() => playAlertSound("Critical")}>
-            🔊 Test sound
+          <button className="settings-test-btn" onClick={() => playAlertSound("Critical")} style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+            <ActionIcons.volume className="ds-icon-sm" aria-hidden="true" /> Test sound
           </button>
         )}
       </div>

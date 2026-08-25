@@ -2,6 +2,7 @@ import {
   BarChart, Bar, PieChart, Pie, Cell,
   XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
 } from "recharts";
+import { NavIcons, ActionIcons } from "../../icons";
 
 const PRIORITY_COLORS = { Critical: "#f87171", High: "#fb923c", Medium: "#fbbf24", Low: "#4ade80" };
 const TYPE_COLOR = "#38bdf8";
@@ -54,7 +55,9 @@ function AnalyticsPage({ incidents }) {
 
       <div className="analytics-charts-grid">
         <div className="analytics-card">
-          <h3>📊 Incidents by Type</h3>
+          <h3 style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <NavIcons.analytics className="ds-icon-sm" aria-hidden="true" /> Incidents by Type
+          </h3>
           <ResponsiveContainer width="100%" height={260}>
             <BarChart data={typeData}>
               <CartesianGrid strokeDasharray="3 3" stroke="var(--border-subtle)" />
@@ -67,7 +70,9 @@ function AnalyticsPage({ incidents }) {
         </div>
 
         <div className="analytics-card">
-          <h3>🎯 Incidents by Priority</h3>
+          <h3 style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <ActionIcons.chartPie className="ds-icon-sm" aria-hidden="true" /> Incidents by Priority
+          </h3>
           <ResponsiveContainer width="100%" height={260}>
             <PieChart>
               <Pie

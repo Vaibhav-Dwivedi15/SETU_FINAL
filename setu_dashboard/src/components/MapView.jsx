@@ -2,11 +2,10 @@ import { MapContainer, TileLayer, Marker, Popup } from "react-leaflet";
 import "leaflet/dist/leaflet.css";
 import { Icon } from "leaflet";
 import { useTheme } from "../context/ThemeContext";
+import { ActionIcons } from "../icons";
 
 // Icons are keyed by URGENCY, not incident type — matches the role brief
-// ("markers ... color-coded by urgency"). Previously these were keyed by
-// type (Fire=red, Flood=blue, Medical=green), which was a deviation from
-// spec: a Low-priority Fire and a Critical Fire looked identical.
+// ("markers ... color-coded by urgency").
 const redIcon = new Icon({
   iconUrl: "https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-red.png",
   shadowUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png",
@@ -44,16 +43,11 @@ const greyIcon = new Icon({
 
 function getMarker(priority) {
   switch (priority) {
-    case "Critical":
-      return redIcon;
-    case "High":
-      return orangeIcon;
-    case "Medium":
-      return goldIcon;
-    case "Low":
-      return greenIcon;
-    default:
-      return greyIcon;
+    case "Critical": return redIcon;
+    case "High": return orangeIcon;
+    case "Medium": return goldIcon;
+    case "Low": return greenIcon;
+    default: return greyIcon;
   }
 }
 
@@ -71,9 +65,6 @@ function MapView({ incidents, onSelectIncident, tall = false }) {
         style={{ height: tall ? "100%" : "400px", width: "100%" }}
         scrollWheelZoom
       >
-        {/* CARTO dark_all/light_all — free, no API key, switches with the
-            dashboard's theme toggle so the map never clashes with the
-            surrounding UI in either mode. */}
         <TileLayer
           attribution='&copy; OpenStreetMap, &copy; CARTO'
           url={tileUrl}
@@ -95,12 +86,12 @@ function MapView({ incidents, onSelectIncident, tall = false }) {
               <br />
               {incident.priority}
               <br />
-              {/* hop_count is a real field on the frozen packet spec (Section 3).
-                  Only renders when it's a number so this stays silent until the
-                  backend actually starts sending it — see services/api.js. */}
               {typeof incident.hopCount === "number" && (
                 <>
-                  🔀 {incident.hopCount} hop{incident.hopCount === 1 ? "" : "s"} — no internet needed
+                  <span style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
+                    <ActionIcons.refresh className="ds-icon-sm" aria-hidden="true" />
+                    {incident.hopCount} hop{incident.hopCount === 1 ? "" : "s"} — no internet needed
+                  </span>
                   <br />
                 </>
               )}

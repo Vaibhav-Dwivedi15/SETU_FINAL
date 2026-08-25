@@ -28,6 +28,8 @@ import {
   LuEye, LuNavigation, LuPhone, LuX, LuCheck, LuChevronDown,
   LuChevronRight, LuSearch, LuBell, LuGlobe, LuSun, LuMoon,
   LuRefreshCw, LuMapPin, LuCopy, LuPlus,
+  // Charts / stats / misc additions (Block 3)
+  LuChartPie, LuDownload, LuVolume2, LuTrendingUp, LuTrendingDown, LuMinus,
   // Misc / empty states
   LuInbox, LuWifiOff, LuLink,
 } from "react-icons/lu";
@@ -95,6 +97,12 @@ export const ActionIcons = {
   location: LuMapPin,
   copy: LuCopy,
   add: LuPlus,
+  chartPie: LuChartPie,
+  download: LuDownload,
+  volume: LuVolume2,
+  trendUp: LuTrendingUp,
+  trendDown: LuTrendingDown,
+  trendFlat: LuMinus,
 };
 
 export const MiscIcons = {

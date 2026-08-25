@@ -1,17 +1,14 @@
-// Trend arrows are now computed from a real before/after comparison
-// (see App.jsx's trends state, updated each successful poll) instead of
-// hardcoded "▲ 12% Today" text that never changed and wasn't tied to
-// any actual data. With no historical/daily backend data to compare
-// against, "since last update" is the honest thing to show — a fixed
-// fake daily percentage would just be a made-up number.
-function TrendLabel({ delta }) {
-  if (delta === undefined || delta === null) {
-    return <span className="trend-neutral">— since last update</span>;
-  }
-  if (delta > 0) return <span className="trend-up">▲ +{delta} since last update</span>;
-  if (delta < 0) return <span className="trend-down">▼ {delta} since last update</span>;
-  return <span className="trend-neutral">→ No change</span>;
-}
+// Trend arrows are computed from a real before/after comparison (see
+// App.jsx's trends state, updated each successful poll) — never a
+// hardcoded fake daily percentage.
+//
+// Rebuilt on MetricCard (src/components/ui/Primitives.jsx), which was
+// already introduced and CSS-verified in the Block 1 redesign — this
+// swap introduces ZERO new class names, only reuses .ds-metric-*
+// rules already confirmed present in primitives.css.
+
+import { PipelineIcons, CategoryIcons } from "../icons";
+import { MetricCard } from "./ui/Primitives";
 
 function StatsCards({ incidents, trends = {} }) {
   const medical = incidents.filter((i) => i.type === "Medical").length;
@@ -20,23 +17,27 @@ function StatsCards({ incidents, trends = {} }) {
 
   return (
     <div className="cards">
-      <div className="card medical">
-        <p>Total Medical Cases</p>
-        <h1>{medical}</h1>
-        <TrendLabel delta={trends.Medical} />
-      </div>
-
-      <div className="card fire">
-        <p>Fire Incidents</p>
-        <h1>{fire}</h1>
-        <TrendLabel delta={trends.Fire} />
-      </div>
-
-      <div className="card flood">
-        <p>Flood Alerts</p>
-        <h1>{flood}</h1>
-        <TrendLabel delta={trends.Flood} />
-      </div>
+      <MetricCard
+        icon={CategoryIcons.medical}
+        label="Total Medical Cases"
+        value={medical}
+        trend={trends.Medical}
+        tone="critical"
+      />
+      <MetricCard
+        icon={CategoryIcons.fire}
+        label="Fire Incidents"
+        value={fire}
+        trend={trends.Fire}
+        tone="critical"
+      />
+      <MetricCard
+        icon={CategoryIcons.natural_disaster}
+        label="Flood Alerts"
+        value={flood}
+        trend={trends.Flood}
+        tone="network"
+      />
     </div>
   );
 }
