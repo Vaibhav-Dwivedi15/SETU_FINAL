@@ -1,76 +1,57 @@
 // =====================================================
-// SETU Dashboard
-// Component : Government Notification Panel
+// SETU Dashboard — Government Notification Panel (v2)
 // =====================================================
-//
-// Surfaces the backend's GovernmentNotificationLog for one incident
-// (GET /incidents/{id}/government-notifications).
-//
-// THE SIMULATED BANNER IS NOT DECORATION. The active backend adapter is
-// a mock — no real 112/ERSS or state emergency API is integrated or
-// authorized. Reference IDs are prefixed MOCK-GOV- for exactly this
-// reason. Anyone screenshotting this panel for a demo or a deck must be
-// unable to mistake it for a real government dispatch. Do not remove or
-// soften the banner to make a demo look better; that is precisely the
-// overclaim this project's shipped-vs-roadmap rule exists to prevent.
+// Visual redesign only — the SIMULATED banner logic/wording is
+// UNCHANGED from v1 by design (see v1's module docstring: this
+// disclosure is non-negotiable, never soften it for a demo).
 
 import { timeAgo } from "../utils/timeAgo";
 import { useTick } from "../utils/useTick";
 import { useLanguage } from "../context/LanguageContext";
+import { PipelineIcons, MiscIcons } from "../icons";
+import { EmptyState } from "./ui/Primitives";
 
 function GovernmentNotificationPanel({ notifications, loading }) {
   useTick();
   const { t } = useLanguage();
-
   const anyMock = notifications.some((n) => n.isMock);
 
   return (
     <div className="government-panel">
-      <h3 className="drawer-section-title">
-        {t("gov.title")}
-        {notifications.length > 0 && (
-          <span className="drawer-section-count">{notifications.length}</span>
-        )}
-      </h3>
+      <h3 className="ds-section-title">{t("gov.title")}</h3>
 
       {(anyMock || notifications.length === 0) && (
         <div className="government-mock-banner" role="note">
-          <span className="government-mock-badge">{t("gov.simulated")}</span>
-          <p>{t("gov.noReal")}</p>
+          <MiscIcons.alert className="ds-icon-md" aria-hidden="true" />
+          <div>
+            <span className="government-mock-badge">{t("gov.simulated")}</span>
+            <p>{t("gov.noReal")}</p>
+          </div>
         </div>
       )}
 
-      {loading && <p className="community-response-empty">Loading…</p>}
+      {loading && <p className="ds-supporting">Loading…</p>}
 
       {!loading && notifications.length === 0 && (
-        <p className="community-response-empty">{t("gov.none")}</p>
+        <EmptyState icon={PipelineIcons.government} title={t("gov.none")} />
       )}
 
       {!loading && notifications.length > 0 && (
         <ul className="government-list">
           {notifications.map((n) => (
-            <li
-              key={n.id}
-              className={`government-item government-${String(n.status).toLowerCase()}`}
-            >
+            <li key={n.id} className={`government-item government-${String(n.status).toLowerCase()}`}>
               <div className="government-item-top">
-                <span className={`government-status government-status-${String(n.status).toLowerCase()}`}>
-                  {n.status}
-                </span>
-                <span className="government-adapter mono">{n.adapterName}</span>
-                <span className="government-time mono">{timeAgo(n.createdAt)}</span>
+                <span className={`government-status government-status-${String(n.status).toLowerCase()}`}>{n.status}</span>
+                <span className="ds-mono government-adapter">{n.adapterName}</span>
+                <span className="ds-mono government-time">{timeAgo(n.createdAt)}</span>
               </div>
-
               {n.referenceId && (
                 <div className="government-reference">
-                  <span className="government-reference-label">{t("gov.reference")}</span>
-                  <code className="mono" title={n.referenceId}>{n.referenceId}</code>
+                  <span className="ds-metadata">{t("gov.reference")}</span>
+                  <code className="ds-mono" title={n.referenceId}>{n.referenceId}</code>
                 </div>
               )}
-
-              {n.responseDetail && (
-                <p className="government-detail">{n.responseDetail}</p>
-              )}
+              {n.responseDetail && <p className="ds-supporting">{n.responseDetail}</p>}
             </li>
           ))}
         </ul>

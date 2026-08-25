@@ -1,0 +1,57 @@
+/* ============================================================
+   SETU — Pipeline chain (Delivery tab v2)
+   ============================================================ */
+
+.pipeline-chain{
+  list-style:none;
+  margin:0; padding:0;
+  display:flex; flex-direction:column;
+}
+
+.pipeline-node{
+  display:flex; gap:14px;
+}
+
+.pipeline-node-rail{
+  display:flex; flex-direction:column; align-items:center;
+  flex-shrink:0;
+}
+
+.pipeline-node-dot{
+  width:30px; height:30px; border-radius:50%;
+  display:flex; align-items:center; justify-content:center;
+  border:1.5px solid var(--border-strong);
+  background:var(--bg-surface-alt);
+  color:var(--text-dim);
+  flex-shrink:0;
+  z-index:1;
+}
+
+.pipeline-node-line{
+  width:2px; flex:1;
+  background:var(--border-subtle);
+  min-height:26px;
+}
+
+.pipeline-node-body{
+  flex:1;
+  padding-bottom:22px;
+  display:flex; flex-direction:column; gap:3px;
+}
+
+.pipeline-node-title-row{
+  display:flex; align-items:center; gap:6px;
+}
+.pipeline-node-title-row strong{ font:var(--text-card-title); font-size:.88rem; }
+
+.pipeline-status-icon{ flex-shrink:0; }
+
+.pipeline-confirmed .pipeline-node-dot{ border-color:var(--success); color:var(--success); background:var(--success-dim); }
+.pipeline-confirmed .pipeline-status-icon{ color:var(--success); }
+.pipeline-confirmed .pipeline-node-line{ background:var(--success); opacity:.4; }
+
+.pipeline-pending .pipeline-node-dot{ border-color:var(--caution); color:var(--caution); }
+.pipeline-pending .pipeline-status-icon{ color:var(--caution); }
+
+.pipeline-unknown .pipeline-status-icon{ color:var(--unknown); }
+.pipeline-unknown .ds-supporting{ color:var(--text-dim); }

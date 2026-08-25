@@ -1,30 +1,15 @@
-// =====================================================
-// SETU Dashboard
-// Component : Community Response Panel
-// =====================================================
-//
-// Phase 4, surfacing Phase 3's backend data. Shows which nearby SETU
-// users responded to an incident from the mobile app, and how.
-//
-// PRIVACY: sender_id is a hex-encoded Ed25519 public key — it is a
-// pseudonymous device identifier, not a name, but it's still an
-// identifier and there's no reason a responder dashboard needs the full
-// value on screen. Truncated for display; the full value is available on
-// hover/copy for anyone who genuinely needs it for cross-referencing.
-//
-// Empty state matters here: "no responses yet" is a real, common, and
-// completely fine state — not an error, and not something to fill with
-// placeholder rows.
-
 import { timeAgo } from "../utils/timeAgo";
 import { useTick } from "../utils/useTick";
+import { EmptyState } from "./ui/Primitives";
+import { PipelineIcons } from "../icons";
+import { LuMapPin, LuHandHeart, LuFootprints, LuPhoneCall, LuCompass } from "react-icons/lu";
 
-const RESPONSE_ICON = {
-  NEARBY: "📍",
-  CAN_HELP: "🤝",
-  ALREADY_RESPONDING: "🏃",
-  CALLED_EMERGENCY_SERVICES: "📞",
-  NAVIGATING: "🧭",
+const RESPONSE_META = {
+  NEARBY: { Icon: LuMapPin, tone: "nearby" },
+  CAN_HELP: { Icon: LuHandHeart, tone: "can_help" },
+  ALREADY_RESPONDING: { Icon: LuFootprints, tone: "already_responding" },
+  CALLED_EMERGENCY_SERVICES: { Icon: LuPhoneCall, tone: "called_emergency_services" },
+  NAVIGATING: { Icon: LuCompass, tone: "navigating" },
 };
 
 function shortenSenderId(senderId) {
@@ -38,38 +23,34 @@ function CommunityResponsePanel({ responses, loading }) {
 
   return (
     <div className="community-response-panel">
-      <h3 className="drawer-section-title">
-        Community Responses
-        {responses.length > 0 && (
-          <span className="drawer-section-count">{responses.length}</span>
-        )}
-      </h3>
+      <h3 className="ds-section-title">Community Responses</h3>
 
-      {loading && (
-        <p className="community-response-empty">Loading responses…</p>
-      )}
+      {loading && <p className="ds-supporting">Loading responses…</p>}
 
       {!loading && responses.length === 0 && (
-        <p className="community-response-empty">
-          No nearby SETU users have responded to this incident yet.
-        </p>
+        <EmptyState
+          icon={PipelineIcons.community}
+          title="No nearby SETU users have responded yet"
+        />
       )}
 
       {!loading && responses.length > 0 && (
         <ul className="community-response-list">
-          {responses.map((r) => (
-            <li key={r.id} className={`community-response-item response-${r.responseType.toLowerCase()}`}>
-              <span className="community-response-icon" aria-hidden="true">
-                {RESPONSE_ICON[r.responseType] || "•"}
-              </span>
-              <div className="community-response-body">
-                <strong>{r.responseLabel}</strong>
-                <span className="community-response-meta mono" title={r.senderId}>
-                  {shortenSenderId(r.senderId)} · {timeAgo(r.updatedAt || r.createdAt)}
-                </span>
-              </div>
-            </li>
-          ))}
+          {responses.map((r) => {
+            const meta = RESPONSE_META[r.responseType] || { Icon: PipelineIcons.community, tone: "" };
+            const { Icon } = meta;
+            return (
+              <li key={r.id} className={`community-response-item response-${meta.tone}`}>
+                <span className="community-response-icon"><Icon className="ds-icon-sm" aria-hidden="true" /></span>
+                <div className="community-response-body">
+                  <strong>{r.responseLabel}</strong>
+                  <span className="ds-mono community-response-meta" title={r.senderId}>
+                    {shortenSenderId(r.senderId)} · {timeAgo(r.updatedAt || r.createdAt)}
+                  </span>
+                </div>
+              </li>
+            );
+          })}
         </ul>
       )}
     </div>

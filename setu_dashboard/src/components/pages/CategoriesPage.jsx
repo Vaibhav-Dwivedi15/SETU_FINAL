@@ -1,117 +1,84 @@
-// =====================================================
-// SETU Dashboard
-// Page : Categories
-// =====================================================
-//
-// Phase 4. The team spec's category-based incident sections. See
-// src/utils/incidentCategories.js for the important honesty note about
-// where these nine categories come from — they are a dashboard-side
-// presentation layer over the backend's smaller real enum, NOT fields
-// the mesh reports.
-//
-// Empty categories are shown by default (collapsed, dimmed, with a "0"
-// count) rather than hidden, because hiding them would misrepresent the
-// system as covering categories it can't currently populate. There's a
-// toggle to hide them for a cleaner demo view, but the default is the
-// honest one.
-
 import { useState } from "react";
 import { CATEGORIES, groupByCategory } from "../../utils/incidentCategories";
 import { timeAgo } from "../../utils/timeAgo";
 import { useTick } from "../../utils/useTick";
 import RelayTrace from "../RelayTrace";
+import { CategoryIcons, AI_ONLY_CATEGORIES, ActionIcons } from "../../icons";
+import { PriorityBadge, StatusBadge, EmptyState, SectionHeader } from "../ui/Primitives";
+import { MiscIcons } from "../../icons";
 
 const PRIORITY_ORDER = { Critical: 4, High: 3, Medium: 2, Low: 1 };
-
-function badgeClass(priority) {
-  if (priority === "Critical") return "red";
-  if (priority === "High") return "orange";
-  if (priority === "Low") return "green";
-  return "yellow";
-}
 
 function CategorySection({ category, incidents, onResolve, onSelectIncident, defaultOpen }) {
   const [open, setOpen] = useState(defaultOpen);
   const isEmpty = incidents.length === 0;
+  const isAiOnly = AI_ONLY_CATEGORIES.has(category.key);
+  const Icon = CategoryIcons[category.key] || MiscIcons.alert;
+  const Chevron = open ? ActionIcons.chevronDown : ActionIcons.chevronRight;
 
   const sorted = [...incidents].sort(
     (a, b) => (PRIORITY_ORDER[b.priority] || 0) - (PRIORITY_ORDER[a.priority] || 0)
   );
-
   const criticalCount = incidents.filter((i) => i.priority === "Critical").length;
 
   return (
-    <section className={`category-section ${isEmpty ? "category-empty" : ""} ${open ? "open" : ""}`}>
-      <button
-        className="category-header"
-        onClick={() => setOpen((o) => !o)}
-        aria-expanded={open}
-      >
-        <span className="category-icon" aria-hidden="true">{category.icon}</span>
-        <span className="category-label">{category.label}</span>
+    <section className={`cat-section ds-surface ${isEmpty ? "cat-section-empty" : ""} ${open ? "open" : ""}`}>
+      <button className="cat-header" onClick={() => setOpen((o) => !o)} aria-expanded={open}>
+        <div className={`cat-icon-badge ${isEmpty ? "dim" : ""}`}>
+          <Icon className="ds-icon-md" aria-hidden="true" />
+        </div>
+        <div className="cat-header-text">
+          <span className="ds-card-title">{category.label}</span>
+          {isAiOnly && <span className="cat-ai-note">AI-classified only — no mesh packet field yet</span>}
+        </div>
         {criticalCount > 0 && (
-          <span className="category-critical-badge" title={`${criticalCount} critical`}>
-            {criticalCount} critical
-          </span>
+          <PriorityBadge priority="Critical" size="sm" />
         )}
-        <span className="category-count">{incidents.length}</span>
-        <span className="category-chevron" aria-hidden="true">{open ? "▾" : "▸"}</span>
+        <span className="cat-count ds-mono">{incidents.length}</span>
+        <Chevron className="ds-icon-sm cat-chevron" aria-hidden="true" />
       </button>
 
       {open && (
-        <div className="category-body">
+        <div className="cat-body">
           {isEmpty ? (
-            <p className="category-empty-note">
-              No incidents in this category.
-              {category.backendTypes.length === 0 && (
-                <span className="category-empty-reason">
-                  {" "}This category has no matching type in the mesh packet spec — it can only be
-                  populated by AI classification.
-                </span>
-              )}
-            </p>
+            <EmptyState
+              icon={MiscIcons.empty}
+              title="No incidents in this category"
+              description={
+                isAiOnly
+                  ? "This category has no matching type in the mesh packet spec — it can only be populated by AI classification of the report's content."
+                  : undefined
+              }
+            />
           ) : (
-            <div className="category-incident-grid">
+            <div className="cat-incident-grid">
               {sorted.map((incident) => {
                 const isClosed = incident.status === "closed";
                 return (
                   <article
                     key={incident.id}
-                    className={`category-incident-card priority-${(incident.priority || "medium").toLowerCase()} ${isClosed ? "resolved" : ""}`}
+                    className={`cat-incident-card priority-${(incident.priority || "medium").toLowerCase()} ${isClosed ? "resolved" : ""}`}
                     onClick={() => onSelectIncident(incident)}
                     role="button"
                     tabIndex={0}
                     onKeyDown={(e) => {
-                      if (e.key === "Enter" || e.key === " ") {
-                        e.preventDefault();
-                        onSelectIncident(incident);
-                      }
+                      if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onSelectIncident(incident); }
                     }}
                   >
-                    <div className="category-card-top">
-                      <span className={`badge ${badgeClass(incident.priority)}`}>
-                        {incident.priority}
-                      </span>
-                      <span className={`status-badge ${isClosed ? "closed" : "active"}`}>
-                        {isClosed ? "Closed" : "Active"}
-                      </span>
+                    <div className="cat-card-top">
+                      <PriorityBadge priority={incident.priority} size="sm" />
+                      <StatusBadge status={isClosed ? "closed" : "active"} label={isClosed ? "Closed" : "Active"} />
                     </div>
-
-                    <h4>{incident.type}</h4>
-                    <p className="category-card-city">{incident.city}</p>
-                    <small className="mono">{timeAgo(incident.reportedAt)}</small>
-
+                    <h4 className="ds-card-title">{incident.type}</h4>
+                    <p className="ds-supporting cat-card-city">{incident.city}</p>
+                    <small className="ds-mono cat-card-time">{timeAgo(incident.reportedAt)}</small>
                     <RelayTrace hopCount={incident.hopCount} />
-
                     {!isClosed && onResolve && (
                       <button
                         className="resolve-btn"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          onResolve(incident.id);
-                        }}
+                        onClick={(e) => { e.stopPropagation(); onResolve(incident.id); }}
                       >
-                        ✓ Mark Resolved
+                        <ActionIcons.confirm className="ds-icon-sm" aria-hidden="true" /> Mark Resolved
                       </button>
                     )}
                   </article>
@@ -130,45 +97,36 @@ function CategoriesPage({ incidents, onResolve, onSelectIncident }) {
   const [hideEmpty, setHideEmpty] = useState(false);
 
   const grouped = groupByCategory(incidents);
-  const visibleCategories = hideEmpty
-    ? CATEGORIES.filter((c) => grouped[c.key].length > 0)
-    : CATEGORIES;
+  const activeCategoryCount = CATEGORIES.filter((c) => grouped[c.key].length > 0).length;
+  const visibleCategories = hideEmpty ? CATEGORIES.filter((c) => grouped[c.key].length > 0) : CATEGORIES;
 
   return (
     <div className="categories-page">
-      <div className="categories-page-header">
-        <h3>
-          {incidents.length} incident{incidents.length === 1 ? "" : "s"} across{" "}
-          {CATEGORIES.filter((c) => grouped[c.key].length > 0).length} active categor
-          {CATEGORIES.filter((c) => grouped[c.key].length > 0).length === 1 ? "y" : "ies"}
-        </h3>
-        <label className="show-resolved-toggle">
-          <input
-            type="checkbox"
-            checked={hideEmpty}
-            onChange={(e) => setHideEmpty(e.target.checked)}
+      <SectionHeader
+        title="Incident Categories"
+        description={`${incidents.length} active report${incidents.length === 1 ? "" : "s"} across ${activeCategoryCount} categor${activeCategoryCount === 1 ? "y" : "ies"} — where are the problems?`}
+        actions={
+          <label className="show-resolved-toggle">
+            <input type="checkbox" checked={hideEmpty} onChange={(e) => setHideEmpty(e.target.checked)} />
+            Hide empty categories
+          </label>
+        }
+      />
+
+      {visibleCategories.length === 0 ? (
+        <EmptyState icon={MiscIcons.empty} title="No incidents match your current filters" />
+      ) : (
+        visibleCategories.map((category) => (
+          <CategorySection
+            key={category.key}
+            category={category}
+            incidents={grouped[category.key]}
+            onResolve={onResolve}
+            onSelectIncident={onSelectIncident}
+            defaultOpen={grouped[category.key].length > 0}
           />
-          Hide empty categories
-        </label>
-      </div>
-
-      {visibleCategories.length === 0 && (
-        <div className="empty-state">
-          <span className="empty-icon">🔍</span>
-          No incidents match your current filters.
-        </div>
+        ))
       )}
-
-      {visibleCategories.map((category) => (
-        <CategorySection
-          key={category.key}
-          category={category}
-          incidents={grouped[category.key]}
-          onResolve={onResolve}
-          onSelectIncident={onSelectIncident}
-          defaultOpen={grouped[category.key].length > 0}
-        />
-      ))}
     </div>
   );
 }

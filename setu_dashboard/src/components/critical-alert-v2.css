@@ -1,0 +1,59 @@
+/* ============================================================
+   SETU — Critical Alert v2
+   Overrides the plain-text v1 layout with an icon-led fact grid and
+   an icon-badge header. Kept z-index/backdrop/pop-in animation from
+   v1 (already correct — sits above the drawer, restrained motion).
+   ============================================================ */
+
+.critical-alert-icon-badge{
+  width:52px; height:52px; border-radius:var(--radius-md);
+  display:flex; align-items:center; justify-content:center;
+  background:var(--danger-dim); color:var(--danger);
+  flex-shrink:0;
+}
+
+.critical-alert-eyebrow{
+  display:flex; align-items:center; gap:6px;
+  margin:0 0 2px;
+  font:var(--text-metadata); font-weight:800;
+  letter-spacing:var(--tracking-eyebrow); color:var(--danger);
+}
+
+.critical-alert-facts{
+  display:grid; grid-template-columns:1fr 1fr;
+  gap:10px; margin:16px 0;
+}
+.critical-alert-fact{
+  display:flex; align-items:flex-start; gap:8px;
+  padding:10px 12px; border-radius:var(--radius-sm);
+  background:var(--bg-surface-alt); border:1px solid var(--border-subtle);
+  color:var(--text-dim);
+}
+.critical-alert-fact > div{ display:flex; flex-direction:column; gap:3px; }
+.critical-alert-fact > div > span:last-child{ font-size:.85rem; color:var(--text-primary); }
+
+.critical-alert-actions{
+  display:flex; gap:8px; align-items:center;
+}
+.critical-alert-primary, .critical-alert-secondary{
+  display:inline-flex; align-items:center; justify-content:center; gap:7px;
+  flex:1; padding:11px 14px; border-radius:var(--radius-sm);
+  font:var(--text-body); font-weight:600; font-size:.85rem;
+  cursor:pointer; transition:filter var(--duration-base) var(--ease-standard);
+}
+.critical-alert-primary{ background:var(--danger); color:#fff; border:1px solid var(--danger); }
+.critical-alert-primary:hover{ filter:brightness(1.08); }
+.critical-alert-secondary{ background:transparent; color:var(--text-secondary); border:1px solid var(--border-strong); }
+.critical-alert-secondary:hover{ background:var(--bg-surface-hover); color:var(--text-primary); }
+.critical-alert-dismiss{
+  flex-shrink:0; width:40px; height:40px; border-radius:var(--radius-sm);
+  display:flex; align-items:center; justify-content:center;
+  background:transparent; border:1px solid var(--border-strong); color:var(--text-dim);
+  cursor:pointer;
+}
+.critical-alert-dismiss:hover{ background:var(--bg-surface-hover); color:var(--text-primary); }
+
+@media (max-width:640px){
+  .critical-alert-facts{ grid-template-columns:1fr; }
+  .critical-alert-actions{ flex-wrap:wrap; }
+}

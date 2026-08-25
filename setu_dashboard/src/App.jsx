@@ -6,6 +6,14 @@ import "./App.css";
 // Phase 4 styles kept in their own file rather than appended to the
 // 2000-line App.css — easier to review, and trivially revertable.
 import "./phase4.css";
+// Frontend redesign (Block 1 — foundation): design tokens, icon
+// registry consumers, and the v2 component styles they drive. Loaded
+// after App.css/phase4.css so their tokens/overrides win.
+import "./design-system.css";
+import "./components/sidebar-v2.css";
+import "./components/critical-alert-v2.css";
+import "./components/pipeline-v2.css";
+import "./components/pages/categories-v2.css";
 
 import Sidebar from "./components/Sidebar";
 import NewAlertModal from "./components/NewAlertModal";

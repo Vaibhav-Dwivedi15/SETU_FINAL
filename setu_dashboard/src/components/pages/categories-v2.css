@@ -1,0 +1,157 @@
+/* ============================================================
+   SETU — Categories page v2
+   BUG FIX: CategoriesPage.jsx was renamed from category-* classes
+   (styled in phase4.css) to cat-* classes, but the matching CSS was
+   never written — every card rendered as unstyled inline content
+   overflowing its container. This file provides that missing CSS,
+   adapted from phase4.css's .category-* rules with icon-badge circles
+   replacing the old emoji font-size treatment.
+   ============================================================ */
+
+.categories-page{
+  display:flex;
+  flex-direction:column;
+  gap:12px;
+}
+
+.cat-section{
+  overflow:hidden;
+  transition:border-color var(--duration-base) var(--ease-standard);
+}
+.cat-section.open{ border-color:var(--border-strong); }
+.cat-section.cat-section-empty{ opacity:.55; }
+
+.cat-header{
+  width:100%;
+  display:flex;
+  align-items:center;
+  gap:12px;
+  padding:14px 16px;
+  background:transparent;
+  border:none;
+  cursor:pointer;
+  text-align:left;
+  color:var(--text-primary);
+  font-family:var(--font-ui);
+  transition:background var(--duration-base) var(--ease-standard);
+}
+.cat-header:hover{ background:var(--bg-surface-hover); }
+
+.cat-icon-badge{
+  width:36px; height:36px; border-radius:var(--radius-sm);
+  display:flex; align-items:center; justify-content:center;
+  background:var(--accent-glow); color:var(--accent);
+  flex-shrink:0;
+}
+.cat-icon-badge.dim{ background:var(--bg-surface-alt); color:var(--text-dim); }
+
+.cat-header-text{
+  flex:1;
+  min-width:0;
+  display:flex;
+  flex-direction:column;
+  gap:2px;
+}
+.cat-ai-note{
+  font:var(--text-supporting);
+  font-size:.68rem;
+  color:var(--text-dim);
+}
+
+.cat-count{
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  min-width:26px;
+  height:24px;
+  padding:0 8px;
+  border-radius:999px;
+  background:var(--bg-surface-alt);
+  border:1px solid var(--border-subtle);
+  font-size:.78rem;
+  font-weight:700;
+  color:var(--text-secondary);
+  flex-shrink:0;
+}
+
+.cat-chevron{
+  color:var(--text-dim);
+  flex-shrink:0;
+}
+
+.cat-body{
+  padding:0 16px 16px;
+  border-top:1px solid var(--border-subtle);
+}
+
+.cat-incident-grid{
+  display:grid;
+  grid-template-columns:repeat(auto-fill,minmax(230px,1fr));
+  gap:12px;
+  margin-top:14px;
+}
+
+.cat-incident-card{
+  background:var(--bg-surface-alt);
+  border:1px solid var(--border-subtle);
+  border-left:3px solid var(--border-strong);
+  border-radius:var(--radius-sm);
+  padding:14px;
+  cursor:pointer;
+  transition:transform var(--duration-fast) var(--ease-standard),
+             border-color var(--duration-base) var(--ease-standard),
+             box-shadow var(--duration-base) var(--ease-standard);
+  display:flex;
+  flex-direction:column;
+  gap:4px;
+}
+.cat-incident-card:hover{
+  transform:translateY(-2px);
+  box-shadow:var(--shadow-card);
+  border-color:var(--border-strong);
+}
+.cat-incident-card:focus-visible{ outline:2px solid var(--accent); outline-offset:2px; }
+
+.cat-incident-card.priority-critical{ border-left-color:var(--danger); }
+.cat-incident-card.priority-high{ border-left-color:var(--warning); }
+.cat-incident-card.priority-medium{ border-left-color:var(--caution); }
+.cat-incident-card.priority-low{ border-left-color:var(--success); }
+.cat-incident-card.resolved{ opacity:.6; }
+
+.cat-card-top{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:8px;
+  margin-bottom:6px;
+}
+
+.cat-incident-card h4{
+  margin:0;
+  font:var(--text-card-title);
+  color:var(--text-primary);
+}
+
+.cat-card-city{
+  margin:0;
+  color:var(--text-secondary);
+}
+
+.cat-card-time{
+  display:block;
+  color:var(--text-dim);
+  font-size:.72rem;
+  margin-bottom:4px;
+}
+
+.cat-incident-card .resolve-btn{
+  margin-top:6px;
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  gap:6px;
+}
+
+@media (max-width:640px){
+  .cat-incident-grid{ grid-template-columns:1fr; }
+}

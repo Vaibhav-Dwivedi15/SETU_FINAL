@@ -1,51 +1,32 @@
 // =====================================================
-// SETU Dashboard
-// Component : Delivery & Notification Status
+// SETU Dashboard — Delivery Pipeline (v2)
 // =====================================================
 //
-// Phase 4. The spec asks the incident detail view to show
-// "relay / delivery / notification status".
-//
-// HONESTY DISCIPLINE — read before changing this:
-// The backend does NOT expose a per-incident notification-status field.
-// What can be truthfully derived from GET /incidents alone:
-//
-//   Mesh relay      -> CONFIRMED. hop_count is a real field on the frozen
-//                      packet spec, genuinely counted per relay hop.
-//   Backend receipt -> CONFIRMED. If the dashboard is rendering this
-//                      incident at all, the packet reached the backend
-//                      and was stored.
-//   SMS to contacts -> UNKNOWN from this endpoint. The backend fires
-//                      notify_emergency_contacts() only when the sender
-//                      has a registered profile with contacts, and does
-//                      not report the outcome on IncidentOut.
-//   Government      -> UNKNOWN from this endpoint, and note it is a MOCK
-//                      adapter today (MOCK-GOV-... reference ids). There
-//                      is no authorized real 112/ERSS integration.
-//
-// So this component renders three states — confirmed / unknown /
-// not-applicable — and never shows a green check for something it can't
-// actually verify. If a future backend release adds real per-incident
-// notification status to IncidentOut, wire it in here; until then,
-// "Status not reported by backend" is the correct, honest label.
+// Redesign brief section 8 asks for a visually impressive connected
+// pipeline (SOURCE -> MESH RELAY -> ... -> RESOLUTION). Same three
+// honest states as v1 (confirmed/unknown/pending) — see v1's module
+// docstring for why "unknown" must never be upgraded to a fake
+// checkmark. Only the presentation changed: a connected vertical
+// chain with icon nodes instead of a flat card list.
 
-const STEP_STATE = {
-  CONFIRMED: "confirmed",
-  UNKNOWN: "unknown",
-  PENDING: "pending",
-};
+import { PipelineIcons, StatusIcons } from "../icons";
 
-function StatusRow({ label, state, detail }) {
-  const icon =
-    state === STEP_STATE.CONFIRMED ? "✓" :
-    state === STEP_STATE.PENDING ? "…" : "?";
+const STEP_STATE = { CONFIRMED: "confirmed", UNKNOWN: "unknown", PENDING: "pending" };
 
+function PipelineNode({ icon: Icon, label, state, detail, isLast }) {
+  const StatusIcon = StatusIcons[state];
   return (
-    <li className={`delivery-step delivery-step-${state}`}>
-      <span className="delivery-step-icon" aria-hidden="true">{icon}</span>
-      <div className="delivery-step-body">
-        <strong>{label}</strong>
-        <span className="delivery-step-detail">{detail}</span>
+    <li className={`pipeline-node pipeline-${state}`}>
+      <div className="pipeline-node-rail">
+        <span className="pipeline-node-dot"><Icon className="ds-icon-sm" aria-hidden="true" /></span>
+        {!isLast && <span className="pipeline-node-line" />}
+      </div>
+      <div className="pipeline-node-body">
+        <div className="pipeline-node-title-row">
+          <strong>{label}</strong>
+          <StatusIcon className="ds-icon-sm pipeline-status-icon" aria-hidden="true" />
+        </div>
+        <span className="ds-supporting">{detail}</span>
       </div>
     </li>
   );
@@ -57,56 +38,58 @@ function DeliveryStatusPanel({ incident, responseCount }) {
   const hasHops = typeof incident.hopCount === "number";
   const isClosed = incident.status === "closed";
 
+  const steps = [
+    {
+      icon: PipelineIcons.meshRelay,
+      label: "Mesh Relay",
+      state: hasHops ? STEP_STATE.CONFIRMED : STEP_STATE.UNKNOWN,
+      detail: hasHops
+        ? incident.hopCount === 0
+          ? "Reported directly — origin device had connectivity"
+          : `Relayed through ${incident.hopCount} device${incident.hopCount === 1 ? "" : "s"} with no internet`
+        : "Hop count not reported for this incident",
+    },
+    {
+      icon: PipelineIcons.backendReceipt,
+      label: "Backend Receipt",
+      state: STEP_STATE.CONFIRMED,
+      detail: "Packet validated, signature verified, and stored",
+    },
+    {
+      icon: PipelineIcons.sms,
+      label: "Emergency Contact SMS",
+      state: STEP_STATE.UNKNOWN,
+      detail: "Fires server-side only if the reporter registered contacts. Outcome not reported by this endpoint.",
+    },
+    {
+      icon: PipelineIcons.government,
+      label: "Government Notification",
+      state: STEP_STATE.UNKNOWN,
+      detail: "Mock adapter — no authorized 112/ERSS integration exists yet. Not a real dispatch.",
+    },
+    {
+      icon: PipelineIcons.community,
+      label: "Community Response",
+      state: responseCount > 0 ? STEP_STATE.CONFIRMED : STEP_STATE.PENDING,
+      detail: responseCount > 0
+        ? `${responseCount} nearby SETU user${responseCount === 1 ? "" : "s"} responded`
+        : "No community responses recorded yet",
+    },
+    {
+      icon: PipelineIcons.resolution,
+      label: "Resolution",
+      state: isClosed ? STEP_STATE.CONFIRMED : STEP_STATE.PENDING,
+      detail: isClosed ? "Incident closed" : "Incident still open",
+    },
+  ];
+
   return (
     <div className="delivery-status-panel">
-      <h3 className="drawer-section-title">Delivery Pipeline</h3>
-
-      <ul className="delivery-steps">
-        <StatusRow
-          label="Mesh relay"
-          state={hasHops ? STEP_STATE.CONFIRMED : STEP_STATE.UNKNOWN}
-          detail={
-            hasHops
-              ? incident.hopCount === 0
-                ? "Reported directly — origin device had connectivity"
-                : `Relayed through ${incident.hopCount} device${incident.hopCount === 1 ? "" : "s"} with no internet`
-              : "Hop count not reported for this incident"
-          }
-        />
-
-        <StatusRow
-          label="Backend receipt"
-          state={STEP_STATE.CONFIRMED}
-          detail="Packet validated, signature verified, and stored"
-        />
-
-        <StatusRow
-          label="Emergency contact SMS"
-          state={STEP_STATE.UNKNOWN}
-          detail="Fires server-side only if the reporter registered contacts. Outcome not reported by this endpoint."
-        />
-
-        <StatusRow
-          label="Government notification"
-          state={STEP_STATE.UNKNOWN}
-          detail="Mock adapter — no authorized 112/ERSS integration exists yet. Not a real dispatch."
-        />
-
-        <StatusRow
-          label="Community response"
-          state={responseCount > 0 ? STEP_STATE.CONFIRMED : STEP_STATE.PENDING}
-          detail={
-            responseCount > 0
-              ? `${responseCount} nearby SETU user${responseCount === 1 ? "" : "s"} responded`
-              : "No community responses recorded yet"
-          }
-        />
-
-        <StatusRow
-          label="Resolution"
-          state={isClosed ? STEP_STATE.CONFIRMED : STEP_STATE.PENDING}
-          detail={isClosed ? "Incident closed" : "Incident still open"}
-        />
+      <h3 className="ds-section-title">Delivery Pipeline</h3>
+      <ul className="pipeline-chain">
+        {steps.map((step, i) => (
+          <PipelineNode key={step.label} {...step} isLast={i === steps.length - 1} />
+        ))}
       </ul>
     </div>
   );
