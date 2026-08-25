@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import incidentsData from "./data/incidents";
 import { startIncidentPolling, resolveIncidentOnBackend } from "./services/api";
 import { playAlertSound } from "./utils/alertSound";
+import { timeAgo } from "./utils/timeAgo";
 import "./App.css";
 // Phase 4 styles kept in their own file rather than appended to the
 // 2000-line App.css — easier to review, and trivially revertable.
@@ -14,6 +15,7 @@ import "./components/sidebar-v2.css";
 import "./components/critical-alert-v2.css";
 import "./components/pipeline-v2.css";
 import "./components/pages/categories-v2.css";
+import "./components/map-v2.css";
 
 import Sidebar from "./components/Sidebar";
 import NewAlertModal from "./components/NewAlertModal";
@@ -26,6 +28,8 @@ import CriticalAlertModal from "./components/CriticalAlertModal";
 import { ThemeProvider } from "./context/ThemeContext";
 import { LanguageProvider } from "./context/LanguageContext";
 import LanguageSelector from "./components/LanguageSelector";
+import { ActionIcons } from "./icons";
+import { NetworkStatusPill } from "./components/ui/Primitives";
 
 import DashboardHome from "./components/pages/DashboardHome";
 import LiveMapPage from "./components/pages/LiveMapPage";
@@ -316,12 +320,22 @@ function App() {
           </div>
 
           <div className="nav-right">
+            {/* Live system state, given prominence in the header itself
+                rather than buried only in the sidebar footer — reuses
+                the already-verified NetworkStatusPill component
+                (Block 1), zero new CSS. */}
+            <NetworkStatusPill
+              connected={backendConnected}
+              lastSyncedAt={lastSyncedAt}
+              formatTime={timeAgo}
+            />
+
             {showFilterBar && (
               <>
                 <input
                   ref={searchInputRef}
                   type="text"
-                  placeholder="🔍 Search incidents... (press /)"
+                  placeholder="Search incidents... (press /)"
                   value={search}
                   onChange={(e) => setSearch(e.target.value)}
                 />
@@ -364,14 +378,14 @@ function App() {
                   Show Resolved
                 </label>
 
-                <button className="alert-btn" onClick={() => setShowModal(true)}>
-                  + New Alert
+                <button className="alert-btn" onClick={() => setShowModal(true)} style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+                  <ActionIcons.add className="ds-icon-sm" aria-hidden="true" /> New Alert
                 </button>
               </>
             )}
 
-            <button className="cmdk-launcher" onClick={() => setCommandPaletteOpen(true)} title="Search everything (Ctrl/Cmd+K)">
-              🔍 <kbd>⌘K</kbd>
+            <button className="cmdk-launcher" onClick={() => setCommandPaletteOpen(true)} title="Search everything (Ctrl/Cmd+K)" style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+              <ActionIcons.search className="ds-icon-sm" aria-hidden="true" /> <kbd>⌘K</kbd>
             </button>
 
             <NotificationCenter
