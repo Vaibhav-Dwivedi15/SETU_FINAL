@@ -1,7 +1,7 @@
 import { timeAgo } from "../utils/timeAgo";
 import { useTick } from "../utils/useTick";
 import RelayTrace from "./RelayTrace";
-import { NavIcons, MiscIcons } from "../icons";
+import { NavIcons, ActionIcons, MiscIcons } from "../icons";
 import { PriorityBadge, StatusBadge, EmptyState } from "./ui/Primitives";
 
 function IncidentList({ incidents, onResolve, onSelect }) {
