@@ -1,11 +1,12 @@
 import { useEffect, useRef, useState } from "react";
 import { timeAgo } from "../utils/timeAgo";
 import { useTick } from "../utils/useTick";
+import { ActionIcons } from "../icons";
 
 function NotificationCenter({ notifications, onMarkAllRead, onClear, onSelect }) {
   const [open, setOpen] = useState(false);
   const panelRef = useRef(null);
-  useTick(30000); // keeps "Xm ago" advancing while the panel is open
+  useTick(30000);
 
   const unreadCount = notifications.filter((n) => !n.read).length;
 
@@ -26,7 +27,7 @@ function NotificationCenter({ notifications, onMarkAllRead, onClear, onSelect })
   return (
     <div className="notif-center" ref={panelRef}>
       <button className="notif-bell" onClick={toggle} aria-label="Notifications">
-        🔔
+        <ActionIcons.notifications className="ds-icon-md" aria-hidden="true" />
         {unreadCount > 0 && <span className="notif-badge">{unreadCount > 9 ? "9+" : unreadCount}</span>}
       </button>
 

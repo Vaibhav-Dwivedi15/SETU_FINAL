@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { NavIcons, ActionIcons } from "../icons";
 
 function NewAlertModal({ onClose, onCreate }) {
   const [type, setType] = useState("");
@@ -12,10 +13,6 @@ function NewAlertModal({ onClose, onCreate }) {
   const cityError = cityTouched && !city.trim();
   const isValid = type.trim() && city.trim();
 
-  // Close on Escape, focus the first field on open, and lock background
-  // scroll while the modal is up -- none of this existed before, so the
-  // modal previously had no keyboard escape hatch and the page behind it
-  // stayed scrollable while it was open.
   useEffect(() => {
     firstFieldRef.current?.focus();
     const previousOverflow = document.body.style.overflow;
@@ -35,7 +32,7 @@ function NewAlertModal({ onClose, onCreate }) {
   function handleSubmit() {
     setTypeTouched(true);
     setCityTouched(true);
-    if (!type.trim() || !city.trim()) return; // defense in depth even though the button is disabled in this state
+    if (!type.trim() || !city.trim()) return;
     onCreate({ type: type.trim(), city: city.trim(), priority });
     onClose();
   }
@@ -44,7 +41,7 @@ function NewAlertModal({ onClose, onCreate }) {
     <div
       className="modal"
       onMouseDown={(e) => {
-        if (e.target === e.currentTarget) onClose(); // click on the backdrop itself closes it
+        if (e.target === e.currentTarget) onClose();
       }}
     >
       <div
@@ -54,10 +51,12 @@ function NewAlertModal({ onClose, onCreate }) {
         aria-labelledby="new-alert-title"
       >
         <div className="modal-header">
-          <h2 id="new-alert-title">🚨 New Alert</h2>
+          <h2 id="new-alert-title" style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <NavIcons.liveIncidents className="ds-icon-md" aria-hidden="true" /> New Alert
+          </h2>
 
           <button className="close-btn" onClick={onClose} aria-label="Close">
-            ✖
+            <ActionIcons.dismiss className="ds-icon-sm" aria-hidden="true" />
           </button>
         </div>
 
