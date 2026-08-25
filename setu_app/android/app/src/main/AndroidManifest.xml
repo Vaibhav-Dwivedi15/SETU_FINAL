@@ -26,7 +26,11 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CONNECTED_DEVICE"
         tools:targetApi="34" />
-<uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.INTERNET" />
+    <!-- Microphone — Voice SOS (Phase 5), requested at first use of that
+         screen, not bundled into the mesh permission gate. See
+         lib/features/voice_sos/presentation/screens/voice_sos_screen.dart -->
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
     <application
         android:label="setu_app"
         android:name="${applicationName}"

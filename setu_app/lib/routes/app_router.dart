@@ -11,6 +11,7 @@ import 'package:setu_app/features/history/presentation/screens/history_screen.da
 import 'package:setu_app/features/settings/screens/settings_screen.dart';
 import 'package:setu_app/features/settings/data/repositories/settings_repository.dart';
 import 'package:setu_app/features/nearby/presentation/screens/nearby_screen.dart';
+import 'package:setu_app/features/nearby/presentation/screens/community_alerts_screen.dart';
 import 'package:setu_app/features/community/presentation/screens/community_demo_screen.dart';
 import 'package:setu_app/features/child_safety/data/models/child_profile_model.dart';
 import 'package:setu_app/features/child_safety/presentation/screens/child_safety_list_screen.dart';
@@ -22,6 +23,7 @@ import 'package:setu_app/features/auth/presentation/screens/otp_screen.dart';
 import 'package:setu_app/features/onboarding/presentation/screens/permission_gate_screen.dart';
 import 'package:setu_app/features/profile/presentation/screens/complete_profile_screen.dart';
 import 'package:setu_app/features/language/presentation/screens/language_selection_screen.dart';
+import 'package:setu_app/features/voice_sos/presentation/screens/voice_sos_screen.dart';
 
 final GoRouter appRouter = GoRouter(
   initialLocation: '/',
@@ -68,14 +70,19 @@ final GoRouter appRouter = GoRouter(
       builder: (context, state) => const PermissionGateScreen(),
     ),
 
+    // Phase 5: email OTP replaces the old demo local OTP -- extra now
+    // carries `email` + `expiresInMinutes` instead of a pre-generated
+    // `otp` string. See login_screen.dart / otp_screen.dart /
+    // services/email_otp_service.dart.
     GoRoute(
       path: '/otp',
       builder: (context, state) {
         final extra = state.extra as Map<String, dynamic>;
         return OtpScreen(
           name: extra['name'] as String,
+          email: extra['email'] as String,
           phone: extra['phone'] as String,
-          otp: extra['otp'] as String,
+          expiresInMinutes: extra['expiresInMinutes'] as int? ?? 10,
         );
       },
     ),
@@ -127,17 +134,20 @@ final GoRouter appRouter = GoRouter(
 
     GoRoute(path: '/nearby', builder: (context, state) => const NearbyScreen()),
 
+    // Phase 3 (backend-driven): DIFFERENT from /nearby above, which
+    // shows local mesh AlertPackets. This polls the backend's
+    // GET /alerts/nearby with the device's current location and lets
+    // the user record a response action. See
+    // community_alerts_screen.dart's module docstring for why the two
+    // are kept separate rather than merged.
+    GoRoute(
+      path: '/community-alerts',
+      builder: (context, state) => const CommunityAlertsScreen(),
+    ),
+
     GoRoute(
       path: '/relay',
       builder: (context, state) => const RelayStatusScreen(),
-    ),
-
-    // Aug 6 2026: persistent relay activity log -- separate from
-    // /relay (live, in-memory-only counters). Reached via the
-    // history icon on RelayStatusScreen app bar.
-    GoRoute(
-      path: '/relay/history',
-      builder: (context, state) => const RelayLogScreen(),
     ),
 
     // Aug 6 2026: persistent relay activity log -- separate from
@@ -175,6 +185,16 @@ final GoRouter appRouter = GoRouter(
     GoRoute(
       path: '/lost-child/broadcast',
       builder: (context, state) => const LostChildBroadcastScreen(),
+    ),
+
+    // Phase 5: voice SOS -- records via mic, uploads to backend
+    // POST /ingest/voice for transcription + the full emergency
+    // pipeline. Requires internet (cannot travel the offline mesh --
+    // audio is too large to relay hop-by-hop). See
+    // voice_sos_screen.dart's module docstring.
+    GoRoute(
+      path: '/voice-sos',
+      builder: (context, state) => const VoiceSosScreen(),
     ),
   ],
 );

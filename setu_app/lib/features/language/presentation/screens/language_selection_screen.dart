@@ -4,13 +4,24 @@
 // Owner  : Sudheer
 // =====================================================
 //
-// HONEST SCOPE NOTE: this screen genuinely saves the choice
-// and reflects it back correctly — but actual app-wide string
-// translation isn't wired yet. That needs the `intl` package +
-// generated ARB files for every string in the app, which is a
-// larger, separate piece of work. Selecting a language here
-// doesn't yet retranslate the UI — flagging that honestly
-// rather than faking it silently.
+// UPDATE: app-wide translation is now wired for 6 of the 11 languages
+// listed below -- see core/language/app_strings.dart + LanguageController.
+// Selecting one of {English, Hindi, Bengali, Tamil, Telugu, Marathi} now
+// genuinely retranslates the screens that have been migrated to
+// AppStrings.of(context).t(...) (login, OTP, voice SOS, and a handful of
+// home-screen strings as a first pass -- see app_strings.dart's own
+// coverage note for exactly what's done vs not yet).
+//
+// The remaining 5 languages (Gujarati, Kannada, Malayalam, Punjabi, Urdu)
+// are still selectable and saved correctly, but have no string table yet
+// -- they fall back to English rather than showing untranslated gaps or
+// blank text. That fallback is intentional, not a bug: extending real
+// coverage to them just means adding their key/value maps to
+// app_strings.dart, no architecture change needed.
+//
+// The rest of the app (every screen not yet migrated to AppStrings) is
+// still hardcoded English regardless of this setting -- that remains
+// honestly true and is NOT fixed by this change. See app_strings.dart.
 //
 // Aug 4 2026 dark-mode fix: nativeLabel used AppTypography.subtitle
 // with no explicit color, so it inherited the theme's default text
@@ -28,6 +39,7 @@ import 'package:setu_app/core/design_system/app_colors.dart';
 import 'package:setu_app/core/design_system/app_radius.dart';
 import 'package:setu_app/core/design_system/app_spacing.dart';
 import 'package:setu_app/core/design_system/app_typography.dart';
+import 'package:setu_app/core/language/language_controller.dart';
 import 'package:setu_app/features/settings/data/repositories/settings_repository.dart';
 
 class _LanguageOption {
@@ -87,6 +99,14 @@ class _LanguageSelectionScreenState extends State<LanguageSelectionScreen> {
     await _settingsRepository.saveSettings(
       settings.copyWith(languageCode: code),
     );
+
+    // This is the line that actually makes the choice take effect --
+    // previously the code above was the ONLY thing that happened here,
+    // which is why the old header note said selection didn't retranslate
+    // anything. LanguageController.setLanguage() notifies the
+    // ListenableBuilder in app.dart, which rebuilds the whole app --
+    // any screen reading AppStrings.of(context) updates immediately.
+    await LanguageController.instance.setLanguage(code);
   }
 
   @override

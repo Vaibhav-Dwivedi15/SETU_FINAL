@@ -1,19 +1,26 @@
 // =====================================================
 // SETU Project
-// Module : Login (Block 31)
+// Module : Login (Block 31) — Email OTP
 // Owner  : Sudheer
 // =====================================================
 //
-// DEMO OTP — READ BEFORE DEMOING:
-// There is no real SMS gateway wired up (no backend, no
-// Firebase Phone Auth project set up yet). This screen
-// generates a random 6-digit code locally and shows it
-// directly on screen (via the SnackBar on the next screen) so
-// it's fully testable — it does NOT pretend to silently send a
-// real SMS, which would be actively misleading. Swap this for
-// Firebase Phone Auth or a backend OTP endpoint when one
-// exists; the OTP screen's verification logic is written so
-// that swap only touches _sendOtp() below, nothing else.
+// REPLACES THE DEMO OTP. Previously this screen generated a random
+// 6-digit code locally and showed it directly on the next screen — an
+// honest demo, but not real verification (see git history for the
+// original header comment). Now it collects an email instead of a
+// phone number and requests a real code from the backend's
+// POST /auth/request-otp — see services/email_otp_service.dart and
+// docs/MOBILE_BACKEND_CONTRACT.md for the full contract.
+//
+// WHY EMAIL, NOT SMS: SMS OTP in India needs a paid gateway plus TRAI
+// DLT sender registration — this project has neither. Email is free
+// with no telecom regulatory dependency. See the backend's
+// app/services/email_service.py for the same reasoning written once,
+// server-side.
+//
+// The phone number field is KEPT (not removed) — it's still used
+// elsewhere (emergency contact display, profile), just no longer the
+// login/verification channel.
 
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
@@ -23,6 +30,8 @@ import 'package:setu_app/core/design_system/app_radius.dart';
 import 'package:setu_app/core/design_system/app_spacing.dart';
 import 'package:setu_app/core/design_system/app_typography.dart';
 import 'package:setu_app/core/design_system/widgets/app_button.dart';
+import 'package:setu_app/core/language/app_strings.dart';
+import 'package:setu_app/services/email_otp_service.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -34,37 +43,62 @@ class LoginScreen extends StatefulWidget {
 class _LoginScreenState extends State<LoginScreen> {
   final _formKey = GlobalKey<FormState>();
   final _nameController = TextEditingController();
+  final _emailController = TextEditingController();
   final _phoneController = TextEditingController();
+  final _otpService = EmailOtpService();
 
   bool _isSending = false;
+  String? _sendError;
 
   @override
   void dispose() {
     _nameController.dispose();
+    _emailController.dispose();
     _phoneController.dispose();
     super.dispose();
+  }
+
+  String? _validateEmail(String? value) {
+    final trimmed = value?.trim() ?? '';
+    if (trimmed.isEmpty) return 'Email is required';
+    // Deliberately simple check — the backend's EmailStr does the real
+    // validation and returns a clear 422 if this ever lets something
+    // malformed through. This is just to catch obvious typos early.
+    if (!trimmed.contains('@') || !trimmed.contains('.')) {
+      return 'Enter a valid email address';
+    }
+    return null;
   }
 
   Future<void> _sendOtp() async {
     if (!_formKey.currentState!.validate()) return;
 
-    setState(() => _isSending = true);
+    setState(() {
+      _isSending = true;
+      _sendError = null;
+    });
 
-    // DEMO OTP generation — see file header note.
-    final otp = (100000 + DateTime.now().millisecondsSinceEpoch % 900000)
-        .toString();
-
-    await Future.delayed(const Duration(milliseconds: 400));
+    final email = _emailController.text.trim();
+    final result = await _otpService.requestOtp(email: email);
 
     if (!mounted) return;
     setState(() => _isSending = false);
+
+    if (!result.delivered) {
+      // Honest failure: the backend accepted the request but no email
+      // actually went out (SMTP not configured server-side, or the send
+      // failed). Show exactly why, never a generic "code sent".
+      setState(() => _sendError = result.detail);
+      return;
+    }
 
     context.push(
       '/otp',
       extra: {
         'name': _nameController.text.trim(),
+        'email': email,
         'phone': _phoneController.text.trim(),
-        'otp': otp,
+        'expiresInMinutes': result.expiresInMinutes,
       },
     );
   }
@@ -98,10 +132,10 @@ class _LoginScreenState extends State<LoginScreen> {
 
                 const SizedBox(height: AppSpacing.lg),
 
-                Text('Login', style: AppTypography.headline),
+                Text(AppStrings.of(context).t('login.title'), style: AppTypography.headline),
                 const SizedBox(height: AppSpacing.xs),
                 Text(
-                  'Enter your name and phone number to get started.',
+                  AppStrings.of(context).t('login.subtitle'),
                   style: AppTypography.body.copyWith(
                     color: AppColors.neutral500,
                   ),
@@ -109,7 +143,7 @@ class _LoginScreenState extends State<LoginScreen> {
 
                 const SizedBox(height: AppSpacing.xl),
 
-                Text('Full Name', style: AppTypography.subtitle),
+                Text(AppStrings.of(context).t('login.fullName'), style: AppTypography.subtitle),
                 const SizedBox(height: AppSpacing.sm),
                 TextFormField(
                   controller: _nameController,
@@ -120,31 +154,67 @@ class _LoginScreenState extends State<LoginScreen> {
                       : null,
                 ),
 
-                const SizedBox(height: AppSpacing.md),
+                const SizedBox(height: AppSpacing.lg),
 
-                Text('Mobile Number', style: AppTypography.subtitle),
+                Text(AppStrings.of(context).t('login.email'), style: AppTypography.subtitle),
+                const SizedBox(height: AppSpacing.sm),
+                TextFormField(
+                  controller: _emailController,
+                  keyboardType: TextInputType.emailAddress,
+                  textInputAction: TextInputAction.next,
+                  decoration: const InputDecoration(hintText: 'you@example.com'),
+                  validator: _validateEmail,
+                ),
+
+                const SizedBox(height: AppSpacing.lg),
+
+                Text(
+                  AppStrings.of(context).t('login.phone'),
+                  style: AppTypography.subtitle,
+                ),
+                const SizedBox(height: AppSpacing.xs),
+                Text(
+                  'Used for emergency contact display — not for login.',
+                  style: AppTypography.caption.copyWith(color: AppColors.neutral500),
+                ),
                 const SizedBox(height: AppSpacing.sm),
                 TextFormField(
                   controller: _phoneController,
                   keyboardType: TextInputType.phone,
                   textInputAction: TextInputAction.done,
-                  decoration: const InputDecoration(
-                    hintText: '10-digit mobile number',
-                    prefixText: '+91 ',
-                  ),
-                  validator: (value) {
-                    final digits = (value ?? '').trim();
-                    if (digits.length != 10) {
-                      return 'Enter a valid 10-digit number';
-                    }
-                    return null;
-                  },
+                  decoration: const InputDecoration(hintText: 'Phone number (optional)'),
                 ),
+
+                if (_sendError != null) ...[
+                  const SizedBox(height: AppSpacing.md),
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(AppSpacing.sm),
+                    decoration: BoxDecoration(
+                      color: AppColors.warningContainer,
+                      borderRadius: AppRadius.mdRadius,
+                    ),
+                    child: Row(
+                      children: [
+                        const Icon(Icons.error_outline, color: AppColors.warning, size: 20),
+                        const SizedBox(width: AppSpacing.sm),
+                        Expanded(
+                          child: Text(
+                            _sendError!,
+                            style: AppTypography.caption.copyWith(color: AppColors.neutral900),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
 
                 const SizedBox(height: AppSpacing.xl),
 
                 AppButton(
-                  label: _isSending ? 'Sending OTP...' : 'Send OTP',
+                  label: _isSending
+                      ? AppStrings.of(context).t('login.sendingCode')
+                      : AppStrings.of(context).t('login.sendCode'),
                   onPressed: _isSending ? null : _sendOtp,
                 ),
               ],

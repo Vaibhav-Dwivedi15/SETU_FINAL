@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import 'core/design_system/app_theme.dart';
+import 'core/language/language_controller.dart';
 import 'core/services/volume_button_sos_service.dart';
 import 'core/theme/theme_controller.dart';
 import 'routes/app_router.dart';
@@ -23,6 +24,11 @@ class _SetuSOSAppState extends State<SetuSOSApp> {
   void initState() {
     super.initState();
     ThemeController.instance.loadSavedTheme();
+    // Loads the persisted language choice (if any) so AppStrings.of()
+    // returns the right table from first frame, not just after the
+    // Language screen is visited again. Mirrors ThemeController's own
+    // loadSavedTheme() call directly above it.
+    LanguageController.instance.loadSavedLanguage();
     VolumeButtonSosService.instance.initialize();
   }
 
@@ -31,14 +37,25 @@ class _SetuSOSAppState extends State<SetuSOSApp> {
     return ListenableBuilder(
       listenable: ThemeController.instance,
       builder: (context, _) {
-        return MaterialApp.router(
-          title: 'SETU SOS',
-          debugShowCheckedModeBanner: false,
-          routerConfig: appRouter,
-          theme: AppDesignSystem.lightTheme,
-          darkTheme: AppDesignSystem.darkTheme,
-          themeMode: ThemeController.instance.themeMode,
-          scaffoldMessengerKey: rootScaffoldMessengerKey,
+        // Nested ListenableBuilder rather than merging both controllers
+        // into one: keeps ThemeController and LanguageController fully
+        // independent (a language change doesn't need to know theme
+        // exists, or vice versa), same separation of concerns the
+        // project already applies to its other single-purpose
+        // ChangeNotifiers.
+        return ListenableBuilder(
+          listenable: LanguageController.instance,
+          builder: (context, __) {
+            return MaterialApp.router(
+              title: 'SETU SOS',
+              debugShowCheckedModeBanner: false,
+              routerConfig: appRouter,
+              theme: AppDesignSystem.lightTheme,
+              darkTheme: AppDesignSystem.darkTheme,
+              themeMode: ThemeController.instance.themeMode,
+              scaffoldMessengerKey: rootScaffoldMessengerKey,
+            );
+          },
         );
       },
     );
