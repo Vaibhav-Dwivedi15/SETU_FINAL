@@ -9,7 +9,7 @@
 // checkmark. Only the presentation changed: a connected vertical
 // chain with icon nodes instead of a flat card list.
 
-import { PipelineIcons, StatusIcons } from "../icons";
+import { PipelineIcons, StatusIcons, NavIcons } from "../icons";
 
 const STEP_STATE = { CONFIRMED: "confirmed", UNKNOWN: "unknown", PENDING: "pending" };
 
@@ -48,6 +48,21 @@ function DeliveryStatusPanel({ incident, responseCount }) {
           ? "Reported directly — origin device had connectivity"
           : `Relayed through ${incident.hopCount} device${incident.hopCount === 1 ? "" : "s"} with no internet`
         : "Hop count not reported for this incident",
+    },
+    {
+      // Redesign brief section 8's exact chain names an "Exit Node" step
+      // between Mesh Relay and Backend — the specific mesh device that
+      // actually had internet and forwarded the packet onward. There is
+      // no exit-node identity field anywhere in the backend's packet
+      // spec or IncidentOut model (same honest gap already documented
+      // in MapView.jsx for exit-node map markers). Rather than silently
+      // omitting the step the brief explicitly asks for, or inventing a
+      // fake device id, it's shown here in the UNKNOWN state — present,
+      // truthful about not being tracked yet.
+      icon: NavIcons.networkHealth,
+      label: "Exit Node",
+      state: STEP_STATE.UNKNOWN,
+      detail: "Which mesh device had internet and forwarded this packet is not tracked by the current backend model.",
     },
     {
       icon: PipelineIcons.backendReceipt,

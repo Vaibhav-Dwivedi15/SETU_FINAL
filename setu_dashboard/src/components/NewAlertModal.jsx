@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { NavIcons, ActionIcons } from "../icons";
+import { useFocusTrap } from "../utils/useFocusTrap";
 
 function NewAlertModal({ onClose, onCreate }) {
   const [type, setType] = useState("");
@@ -8,6 +9,7 @@ function NewAlertModal({ onClose, onCreate }) {
   const [typeTouched, setTypeTouched] = useState(false);
   const [cityTouched, setCityTouched] = useState(false);
   const firstFieldRef = useRef(null);
+  const trapRef = useFocusTrap(true);
 
   const typeError = typeTouched && !type.trim();
   const cityError = cityTouched && !city.trim();
@@ -45,6 +47,7 @@ function NewAlertModal({ onClose, onCreate }) {
       }}
     >
       <div
+        ref={trapRef}
         className="modal-content"
         role="dialog"
         aria-modal="true"

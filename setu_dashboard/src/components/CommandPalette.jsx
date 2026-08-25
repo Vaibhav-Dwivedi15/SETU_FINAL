@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { NavIcons, ActionIcons } from "../icons";
 import { PriorityBadge } from "./ui/Primitives";
+import { useFocusTrap } from "../utils/useFocusTrap";
 
 // Icon components (not emoji strings) — keys match App.jsx's activePage
 // values exactly (unchanged, since onNavigate(result.key) sets that
@@ -20,6 +21,7 @@ function CommandPalette({ open, onClose, onNavigate, incidents, onSelectIncident
   const [query, setQuery] = useState("");
   const [activeIndex, setActiveIndex] = useState(0);
   const inputRef = useRef(null);
+  const trapRef = useFocusTrap(open);
 
   useEffect(() => {
     if (open) {
@@ -84,7 +86,7 @@ function CommandPalette({ open, onClose, onNavigate, incidents, onSelectIncident
 
   return (
     <div className="cmdk-backdrop" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
-      <div className="cmdk-panel" role="dialog" aria-modal="true" aria-label="Command palette">
+      <div className="cmdk-panel" ref={trapRef} role="dialog" aria-modal="true" aria-label="Command palette">
         <div className="cmdk-input-row">
           <span className="cmdk-search-icon"><ActionIcons.search className="ds-icon-sm" aria-hidden="true" /></span>
           <input

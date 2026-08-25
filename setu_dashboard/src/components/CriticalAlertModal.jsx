@@ -6,21 +6,32 @@
 // urgency: a controlled pulse ring + a single accent color (danger),
 // not a flashing/bouncing effect. Icons replace the previous emoji.
 
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import RelayTrace from "./RelayTrace";
 import { CategoryIcons, ActionIcons, MiscIcons } from "../icons";
 import { PriorityBadge } from "./ui/Primitives";
 import { categorizeIncident } from "../utils/incidentCategories";
+import { useFocusTrap } from "../utils/useFocusTrap";
 
 export const EXIT_NODE_ACK_MESSAGE =
   "Emergency information successfully reached the SETU network. Thank you for helping connect someone in need.";
 
 function CriticalAlertModal({ incident, onAcknowledge, onViewDetails, onRespond, onNavigate }) {
+  const trapRef = useFocusTrap(Boolean(incident));
+  const primaryButtonRef = useRef(null);
+
   useEffect(() => {
     function handleKeyDown(e) { if (e.key === "Escape") onAcknowledge(); }
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [onAcknowledge]);
+
+  // Blocking alertdialog — this is exactly the kind of interruption a
+  // keyboard/screen-reader user most needs an initial focus landing
+  // spot for, since it can appear while they're anywhere else in the app.
+  useEffect(() => {
+    if (incident) primaryButtonRef.current?.focus();
+  }, [incident]);
 
   if (!incident) return null;
 
@@ -29,7 +40,7 @@ function CriticalAlertModal({ incident, onAcknowledge, onViewDetails, onRespond,
 
   return (
     <div className="critical-alert-backdrop" role="alertdialog" aria-modal="true" aria-labelledby="critical-alert-title">
-      <div className="critical-alert-modal">
+      <div className="critical-alert-modal" ref={trapRef}>
         <div className="critical-alert-pulse-ring" aria-hidden="true" />
 
         <div className="critical-alert-header">
@@ -73,7 +84,7 @@ function CriticalAlertModal({ incident, onAcknowledge, onViewDetails, onRespond,
         <p className="critical-alert-ack">{EXIT_NODE_ACK_MESSAGE}</p>
 
         <div className="critical-alert-actions">
-          <button className="critical-alert-primary" onClick={onViewDetails}>
+          <button ref={primaryButtonRef} className="critical-alert-primary" onClick={onViewDetails}>
             <ActionIcons.view className="ds-icon-sm" aria-hidden="true" /> View Incident
           </button>
           {onRespond && (

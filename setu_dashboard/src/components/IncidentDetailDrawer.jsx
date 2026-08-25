@@ -8,6 +8,7 @@ import { fetchIncidentResponses, fetchIncidentHistory, fetchIncidentGovernmentNo
 import { getCategory, categorizeIncident } from "../utils/incidentCategories";
 import { CategoryIcons, ActionIcons } from "../icons";
 import { PriorityBadge, StatusBadge } from "./ui/Primitives";
+import { useFocusTrap } from "../utils/useFocusTrap";
 import RelayTrace from "./RelayTrace";
 import DeliveryStatusPanel from "./DeliveryStatusPanel";
 import CommunityResponsePanel from "./CommunityResponsePanel";
@@ -24,6 +25,7 @@ const priorityIcon = {
 function IncidentDetailDrawer({ incident, onClose, onResolve }) {
   useTick();
   const { theme } = useTheme();
+  const trapRef = useFocusTrap(Boolean(incident));
   const [copied, setCopied] = useState(null);
   const [responses, setResponses] = useState([]);
   const [history, setHistory] = useState([]);
@@ -88,7 +90,7 @@ function IncidentDetailDrawer({ incident, onClose, onResolve }) {
   return (
     <>
       <div className="drawer-backdrop" onClick={onClose} />
-      <aside className="detail-drawer" role="dialog" aria-modal="true" aria-labelledby="drawer-title">
+      <aside className="detail-drawer" ref={trapRef} role="dialog" aria-modal="true" aria-labelledby="drawer-title">
         <div className="drawer-header">
           <div>
             <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
