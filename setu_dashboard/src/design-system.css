@@ -132,6 +132,26 @@
 .ds-icon-lg{ width:24px; height:24px; flex-shrink:0; }
 
 /* ============================================================
+   Metric row — generic summary-tile grid shared by Analytics,
+   Resources (Response Capacity Center), and Teams. Added this pass so
+   those three pages' new MetricCard rows don't each reinvent their own
+   grid CSS (the exact duplication the redesign brief calls out).
+   ============================================================ */
+.ds-metric-row{
+  display:grid;
+  grid-template-columns:repeat(auto-fit,minmax(200px,1fr));
+  gap:16px;
+  margin-bottom:20px;
+}
+
+/* ---------- Generic page shell (used by pages with no bespoke wrapper class) ---------- */
+.resources-page-shell{
+  display:flex;
+  flex-direction:column;
+  gap:20px;
+}
+
+/* ============================================================
    Focus states — accessibility requirement, applied globally to
    anything interactive that doesn't already define its own.
    ============================================================ */

@@ -1,14 +1,36 @@
 import { playAlertSound } from "../../utils/alertSound";
 import { useTheme } from "../../context/ThemeContext";
 import { ActionIcons } from "../../icons";
-import { NetworkStatusPill } from "../ui/Primitives";
+import { NetworkStatusPill, SectionHeader } from "../ui/Primitives";
 
 const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || "http://localhost:8000";
+const BUILD_MODE = import.meta.env.MODE || "unknown";
 
+// =====================================================
+// SETU Dashboard — Settings (v2)
+// =====================================================
+//
+// Redesign brief section 14 asked for a real product control center,
+// grouped logically: Appearance / Notifications / Live Updates /
+// Backend / Privacy / System. The previous pass had Appearance,
+// Connection (Backend), Live Updates, Notifications. This pass adds
+// the two missing groups.
+//
+// HONEST SCOPE: Privacy and System below are informational, not new
+// interactive controls — there is no confirmed settings field or
+// utility in this codebase for things like clearing local data or a
+// real build-version string, so nothing here fakes a working toggle
+// that isn't wired to anything. System shows Vite's real build mode
+// (import.meta.env.MODE), the one genuinely available build fact.
 function SettingsPage({ settings, onChange, backendConnected }) {
   const { theme, setTheme } = useTheme();
   return (
     <div className="settings-page">
+      <SectionHeader
+        title="Settings"
+        description="Product control center — appearance, connection, notifications, and system state."
+      />
+
       <div className="settings-card">
         <h3>Appearance</h3>
         <div className="settings-row">
@@ -26,6 +48,7 @@ function SettingsPage({ settings, onChange, backendConnected }) {
           </div>
         </div>
       </div>
+
       <div className="settings-card">
         <h3>Connection</h3>
         <div className="settings-row">
@@ -96,6 +119,24 @@ function SettingsPage({ settings, onChange, backendConnected }) {
             <ActionIcons.volume className="ds-icon-sm" aria-hidden="true" /> Test sound
           </button>
         )}
+      </div>
+
+      <div className="settings-card">
+        <h3>Privacy</h3>
+        <p className="settings-dim">
+          This dashboard does not load any third-party analytics or tracking scripts. Incident location data is used only for map display and routing to response teams, and is not stored beyond what the connected backend retains.
+        </p>
+      </div>
+
+      <div className="settings-card">
+        <h3>System</h3>
+        <div className="settings-row">
+          <div>
+            <strong>Build environment</strong>
+            <p className="settings-dim">The Vite build mode this dashboard was compiled with.</p>
+          </div>
+          <span className="mono settings-dim">{BUILD_MODE}</span>
+        </div>
       </div>
     </div>
   );
