@@ -1,5 +1,5 @@
 import resourcesData from "../../data/resources";
-import { NavIcons, CategoryIcons, StatusIcons } from "../../icons";
+import { NavIcons, CategoryIcons, StatusIcons, PipelineIcons } from "../../icons";
 import { SectionHeader, MetricCard, EmptyState } from "../ui/Primitives";
 
 // =====================================================
@@ -10,14 +10,18 @@ import { SectionHeader, MetricCard, EmptyState } from "../ui/Primitives";
 // TOTAL inventory list into a proper "Response Capacity Center" with
 // a fleet-wide summary plus per-unit-type capacity visualization.
 //
-// Icons reused exactly as already confirmed in the previous Resources
-// pass (CategoryIcons.medical/fire/violence, NavIcons.responseUnits) —
-// no new unverified icon names introduced this pass either.
+// Icons all come from the existing registry (icons.js) — no new icon
+// package added. Police Unit / Rescue Drone were previously mapped to
+// CategoryIcons.violence (a warning triangle — reads as "danger", and
+// is the exact same icon already used for the Violence incident
+// category elsewhere) and NavIcons.responseUnits (a plain truck — wrong
+// vehicle type for an aerial drone). Swapped to icons already imported
+// elsewhere in the registry that fit better semantically.
 const TYPE_ICON = {
   "Ambulance": CategoryIcons.medical,
   "Fire Truck": CategoryIcons.fire,
-  "Police Unit": CategoryIcons.violence,
-  "Rescue Drone": NavIcons.responseUnits,
+  "Police Unit": CategoryIcons.women_safety,
+  "Rescue Drone": PipelineIcons.meshRelay,
 };
 
 function readinessColor(pctAvailable) {
