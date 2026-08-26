@@ -13,12 +13,12 @@
   --bg-surface-hover:#1a2338;
   --bg-input:#0d1421;
 
-  --border-subtle:#1f2937;
-  --border-strong:#2d3b52;
+  --border-subtle:#3e526e;
+  --border-strong:#556f9a;
 
   --text-primary:#e8edf5;
   --text-secondary:#94a3b8;
-  --text-dim:#5b6b85;
+  --text-dim:#8290ab;
 
   --accent:#38bdf8;
   --accent-dim:#0ea5e9;
@@ -31,6 +31,14 @@
   --caution:#fbbf24;
   --success:#4ade80;
   --success-dim:#14532d;
+
+  /* Badge text (color-on-its-own-dim-background), verified 4.5:1+ vs the
+     matching -dim above. See SETU_Color_Contrast_Audit.md section 3 —
+     danger/warning at their plain hue fail against danger-dim/warning-dim.
+     success already passes at its plain hue, reused as-is. */
+  --danger-on-dim:#fa9393;
+  --warning-on-dim:#fca055;
+  --success-on-dim:#4ade80;
 
   --radius-sm:8px;
   --radius-md:12px;
@@ -60,12 +68,12 @@
   --bg-surface-hover:#f1f5f9;
   --bg-input:#ffffff;
 
-  --border-subtle:#e2e8f0;
-  --border-strong:#cbd5e1;
+  --border-subtle:#9bb0cb;
+  --border-strong:#708cad;
 
   --text-primary:#0f172a;
   --text-secondary:#475569;
-  --text-dim:#94a3b8;
+  --text-dim:#627793;
 
   --accent:#2563eb;
   --accent-dim:#1d4ed8;
@@ -73,11 +81,17 @@
 
   --danger:#dc2626;
   --danger-dim:#fee2e2;
-  --warning:#ea580c;
+  --warning:#cd4d0b;
   --warning-dim:#ffedd5;
-  --caution:#ca8a04;
-  --success:#16a34a;
+  --caution:#9d6b03;
+  --success:#12883e;
   --success-dim:#dcfce7;
+
+  /* Badge text (color-on-its-own-dim-background) — see contrast-audit
+     note in the dark-theme block above. */
+  --danger-on-dim:#c82020;
+  --warning-on-dim:#b9460a;
+  --success-on-dim:#117f3a;
 
   --shadow-card:0 2px 8px rgba(15,23,42,.08);
   --shadow-elevated:0 20px 50px rgba(15,23,42,.18);

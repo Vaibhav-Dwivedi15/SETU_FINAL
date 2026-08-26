@@ -19,16 +19,16 @@
 .ds-badge-sm{ padding:2px 8px; font-size:.62rem; }
 .ds-priority-dot{ width:6px; height:6px; border-radius:50%; }
 
-.ds-priority-critical{ background:var(--danger-dim); color:var(--danger); border-color:var(--danger); }
+.ds-priority-critical{ background:var(--danger-dim); color:var(--danger-on-dim,var(--danger)); border-color:var(--danger); }
 .ds-priority-critical .ds-priority-dot{ background:var(--danger); box-shadow:0 0 0 3px var(--danger-dim); }
 
-.ds-priority-high{ background:var(--warning-dim); color:var(--warning); border-color:var(--warning); }
+.ds-priority-high{ background:var(--warning-dim); color:var(--warning-on-dim,var(--warning)); border-color:var(--warning); }
 .ds-priority-high .ds-priority-dot{ background:var(--warning); }
 
 .ds-priority-medium{ background:var(--caution-dim,var(--warning-dim)); color:var(--caution); border-color:var(--caution); }
 .ds-priority-medium .ds-priority-dot{ background:var(--caution); }
 
-.ds-priority-low{ background:var(--success-dim); color:var(--success); border-color:var(--success); }
+.ds-priority-low{ background:var(--success-dim); color:var(--success-on-dim,var(--success)); border-color:var(--success); }
 .ds-priority-low .ds-priority-dot{ background:var(--success); }
 
 /* ---------- Status badge (confirmed/unknown/pending/etc) ---------- */
@@ -39,12 +39,12 @@
   transition:background-color var(--duration-base) var(--ease-standard),
              color var(--duration-base) var(--ease-standard);
 }
-.ds-status-confirmed{ background:var(--success-dim); color:var(--success); }
+.ds-status-confirmed{ background:var(--success-dim); color:var(--success-on-dim,var(--success)); }
 .ds-status-unknown{ background:var(--unknown-dim); color:var(--unknown); }
 .ds-status-pending{ background:var(--caution-dim,var(--warning-dim)); color:var(--caution); }
-.ds-status-active{ background:var(--danger-dim); color:var(--danger); }
-.ds-status-closed{ background:var(--success-dim); color:var(--success); }
-.ds-status-failed{ background:var(--danger-dim); color:var(--danger); }
+.ds-status-active{ background:var(--danger-dim); color:var(--danger-on-dim,var(--danger)); }
+.ds-status-closed{ background:var(--success-dim); color:var(--success-on-dim,var(--success)); }
+.ds-status-failed{ background:var(--danger-dim); color:var(--danger-on-dim,var(--danger)); }
 
 /* ---------- Category chip ---------- */
 .ds-category-chip{
