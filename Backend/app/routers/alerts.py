@@ -22,6 +22,7 @@ from typing import List
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
+from app.core.rate_limit import enforce_public_write_rate_limit
 from app.core.security import verify_responder_api_key
 from app.db.base import get_db
 from app.models.incident import Incident
@@ -58,6 +59,12 @@ def respond_to_alert(
     incident_id: int,
     payload: RespondIn,
     db: Session = Depends(get_db),
+    # SEP 2026: this is public/unauthenticated (see module docstring) AND
+    # a write, so it gets the lenient PUBLIC WRITE tier -- not the strict
+    # auth/responder tiers, and NOT left uncapped like /ingest, which is
+    # a different kind of endpoint (signed, deduplicated, TTL-bounded
+    # emergency data) with its own protections already in place.
+    _rate_limit: None = Depends(enforce_public_write_rate_limit),
 ):
     """
     Records/updates a community member's response action for an

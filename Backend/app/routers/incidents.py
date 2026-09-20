@@ -11,6 +11,7 @@ from typing import List
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
+from app.core.rate_limit import enforce_responder_action_rate_limit
 from app.core.security import verify_responder_api_key
 from app.db.base import get_db
 from app.models.audit_log import IncidentAuditLog
@@ -28,6 +29,10 @@ def resolve_incident(
     incident_id: int,
     db: Session = Depends(get_db),
     _: None = Depends(verify_responder_api_key),
+    # SEP 2026: RESPONDER ACTION tier -- see responders.py's POST route
+    # for the same reasoning. This is a state-changing administrative
+    # action parallel to the mesh's own signed TerminationPacket path.
+    _rate_limit: None = Depends(enforce_responder_action_rate_limit),
 ):
     """
     Dashboard "Mark Resolved" endpoint -- API-key gated (same X-API-Key

@@ -23,9 +23,10 @@ These routes are intentionally PUBLIC (no X-API-Key): they're called by
 ordinary users' mobile apps at first-run, before any responder identity
 exists. They expose no incident, profile, or responder data.
 """
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.orm import Session
 
+from app.core.rate_limit import enforce_auth_rate_limit
 from app.db.base import get_db
 from app.schemas.auth import OtpRequestIn, OtpRequestOut, OtpVerifyIn, OtpVerifyOut
 from app.services.otp_service import (
@@ -50,7 +51,12 @@ VERIFY_FAILURE_DETAIL = {
 
 
 @router.post("/auth/request-otp", response_model=OtpRequestOut)
-def request_email_otp(payload: OtpRequestIn, db: Session = Depends(get_db)):
+def request_email_otp(
+    payload: OtpRequestIn,
+    request: Request,
+    db: Session = Depends(get_db),
+    _rate_limit: None = Depends(enforce_auth_rate_limit),
+):
     """
     Generates a 6-digit code, stores it hashed, and emails it.
 
@@ -85,7 +91,12 @@ def request_email_otp(payload: OtpRequestIn, db: Session = Depends(get_db)):
 
 
 @router.post("/auth/verify-otp", response_model=OtpVerifyOut)
-def verify_email_otp(payload: OtpVerifyIn, db: Session = Depends(get_db)):
+def verify_email_otp(
+    payload: OtpVerifyIn,
+    request: Request,
+    db: Session = Depends(get_db),
+    _rate_limit: None = Depends(enforce_auth_rate_limit),
+):
     """
     Verifies a submitted code. Single-use: a correct code is consumed and
     will not verify a second time.

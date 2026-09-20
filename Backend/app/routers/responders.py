@@ -21,6 +21,7 @@ from typing import List
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
+from app.core.rate_limit import enforce_responder_action_rate_limit
 from app.core.security import verify_responder_api_key
 from app.db.base import get_db
 from app.models.responder import ResponderProfile
@@ -34,6 +35,14 @@ def register_responder(
     payload: ResponderIn,
     db: Session = Depends(get_db),
     _: None = Depends(verify_responder_api_key),
+    # SEP 2026: rate-limited on top of the API-key gate -- provisioning a
+    # new trusted responder key is the single most sensitive write in
+    # this API (that key can later authorize TerminationPacket
+    # acceptance mesh-wide), so it gets the "RESPONDER ACTION -> strict"
+    # tier even though it is already authenticated. Defense in depth: a
+    # leaked/guessed key still can't be used to script rapid-fire
+    # provisioning.
+    _rate_limit: None = Depends(enforce_responder_action_rate_limit),
 ):
     existing = db.query(ResponderProfile).filter(
         ResponderProfile.public_key == payload.public_key
