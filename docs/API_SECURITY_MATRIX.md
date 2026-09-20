@@ -15,7 +15,7 @@ section for why).
 | POST | `/ingest/batch` | None (per-packet signature-verified) | None (deliberate) | Each dict validated individually against `PacketIn`; batch itself capped at 500 (this sprint, was unbounded) | One bad packet doesn't fail the batch, by design |
 | POST | `/ingest/voice` | None | None | `python-multipart` file upload, ~25MB cap in `voice.py` | 503s cleanly if Whisper/ffmpeg aren't provisioned |
 | GET | `/ingest/voice/status` | None | None | — | Status/health only |
-| POST | `/register` | None | None | Pydantic schema | Citizen profile registration — intentionally open (first-run, pre-auth) |
+| POST | `/register` | None | None | Pydantic `RegisterIn`, all fields now bounded (this sprint) | Citizen profile registration — intentionally open (first-run, pre-auth). **Unfixed gap this sprint**: no proof-of-possession on `sender_id` (a public value), so anyone who knows a target's `sender_id` can currently overwrite their profile including `medical_history`/`emergency_contacts` — see threat model, second-highest-priority follow-up |
 | POST | `/incidents/{id}/resolve` | **X-API-Key** | **20/min/IP (new)** | Path param `int` | Privileged write; idempotent |
 | GET | `/incidents` | **X-API-Key** | None | — | List all incidents |
 | GET | `/incidents/{id}/profile` | **X-API-Key** | None | Path param `int` | Returns citizen profile/medical data — most sensitive read in the API |
@@ -42,6 +42,7 @@ section for why).
 
 ## Known gaps (documented, not fixed this sprint — see threat model for why)
 
+- **`POST /register` has no proof-of-possession check on `sender_id`** — a public value, not a secret. Highest-priority *unfixed* gap in this file (see threat model).
 - Shared single `X-API-Key` for all responders (no per-responder identity/revocation).
 - `allow_methods`/`allow_headers` on CORS are `*`.
 - `/ingest`, `/ingest/batch`, `/register`, `/alerts/nearby`, `/responders/keys` remain unrate-limited by deliberate design choice, not oversight.

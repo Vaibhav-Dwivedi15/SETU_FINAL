@@ -25,6 +25,8 @@ IMPLEMENTED**, **NOT IMPLEMENTED**, **NOT APPLICABLE**, **NOT VERIFIED**.
 | CORS origin allow-list | IMPLEMENTED | Pre-existing, verified correct (not wildcard) |
 | CORS method/header allow-list narrowing | NOT IMPLEMENTED | Left as `*`/`*` — unverifiable against the live dashboard in this sandbox; flagged, not changed |
 | Input length/range bounds on `/ingest` fields | IMPLEMENTED (this sprint) | `PacketIn` — every field now bounded |
+| Input length/range bounds on `/register` fields | IMPLEMENTED (this sprint) | `RegisterIn` — every field now bounded (was unbounded free text) |
+| Proof-of-possession on `POST /register`'s `sender_id` | **NOT IMPLEMENTED** | `sender_id` is a public value (a device's Ed25519 public key, observable in every mesh packet); nothing currently proves the caller holds the matching private key, so a citizen's profile (incl. `medical_history`/`emergency_contacts`) can be overwritten by anyone who knows their `sender_id`. Fix is architecturally sound (reuse `signature_service.py`) but needs a coordinated `setu_app` `ProfileSyncService` change not safely shippable as an untested backend-only pass. **Second-highest-priority follow-up.** |
 | Batch size cap on `/ingest/batch` | IMPLEMENTED (this sprint) | `PacketBatchIn.packets`, max 500 |
 | Rate limiting — auth routes | IMPLEMENTED (this sprint) | 10 req/5min/IP |
 | Rate limiting — responder-action writes | IMPLEMENTED (this sprint) | 20 req/min/IP |
@@ -62,13 +64,14 @@ IMPLEMENTED**, **NOT IMPLEMENTED**, **NOT APPLICABLE**, **NOT VERIFIED**.
 
 | Control | Status | Notes |
 |---|---|---|
-| `flutter analyze` / `flutter test` | NOT AVAILABLE | No Dart/Flutter SDK in this sandbox (confirmed: dart-archive download returns HTTP 403 through the egress proxy) |
-| `pytest` (backend) | NOT AVAILABLE | `fastapi`/`pydantic`/etc. not installed, no way to install them here |
-| `pip-audit` / dependency vulnerability scan | NOT AVAILABLE | Same — no Python environment |
-| `npm audit` (dashboard) | NOT AVAILABLE | No `node_modules` installed, no network path to run `npm install` verified in this sandbox |
+| `flutter analyze` / `flutter test` | NOT AVAILABLE | No Dart/Flutter SDK in this sandbox (confirmed: dart-archive download returns HTTP 403 through the egress proxy) — this specific limitation is unchanged from earlier in the sprint |
+| `pytest` (backend) | **RUN FOR REAL** (correction — see below) | `pip install -r requirements.txt` succeeded in this session (earlier "no Python environment" note was true for an earlier part of this sandbox session but not this one — corrected here rather than left standing). Full suite run against a local SQLite DB (never the real `.env` Postgres URL — that credential was never touched): **87 passed, 6 failed**. All 6 failures are **pre-existing**, confirmed by running the identical suite against commit `355e2ea` (before this security sprint) in a throwaway git worktree: `test_voice_status_reports_unavailable_without_whisper` + `test_voice_upload_returns_503_not_a_crash_when_unavailable` (openai-whisper/ffmpeg not installed in this sandbox, unrelated to this sprint), `test_all_new_routes_are_registered` (FastAPI/Starlette version mismatch: `route.path` isn't on `_IncludedRouter` in the installed version), `test_settings_have_sane_defaults` (asserts a hardcoded `postgresql://` prefix, fails under any non-Postgres `DATABASE_URL` including this run's SQLite override), and two pre-existing 422-vs-401 mismatches in `test_government_and_alerts.py` (`verify_responder_api_key`'s `Header(...)` returns 422 for a *missing* header by FastAPI's own default behavior, not the 401 those two tests assert — a pre-existing test/behavior mismatch, not something this sprint's changes caused). **Zero new failures from this sprint's changes.** |
+| `Backend/tests/test_security_hardening.py` (this sprint's new tests) | **RUN FOR REAL, ALL PASS** | 35 tests: unit tests for `security.py`/`rate_limit.py`/`packet.py`/`user_profile.py`, plus two real end-to-end tests through `TestClient` confirming `POST /auth/request-otp` actually 429s after its configured limit and confirming the body-size guard actually returns 413 on a real request through the full ASGI stack (not just at the unit level) |
+| Regression found + fixed by actually running the suite | Fixed | `InMemoryRateLimiter`'s module-level `_hits` state has no test-isolation reset, so an early OTP test's requests counted toward a later test's limit and caused 4 spurious 429 failures — same class of bug `conftest.py`'s pre-existing `_reset_duplicate_clusters` fixture solves for the AI dedup service. Fixed with a matching `_reset_rate_limiters` autouse fixture; re-run confirmed 0 regressions from this sprint after the fix. This is exactly why "test before/after a risky change" matters, and it would not have been caught by reading the code alone. |
+| `pip-audit` / dependency vulnerability scan | NOT RUN | `pip` itself works in this sandbox (see above), but `pip-audit` was not installed/run this pass — a real, actionable follow-up now that installing packages here is confirmed possible (see §11 in the final report) |
+| `npm audit` (dashboard) | NOT AVAILABLE | No Node/npm environment available in this sandbox session |
 | Static analysis / SAST tool | NOT AVAILABLE | No SAST tool installed or run |
-| Manual logic verification of pure-Dart algorithms (prior sprint's `PriorityRelayQueue`/`AdaptiveTtl`) | IMPLEMENTED (partial substitute) | Ported to Python, 27 assertions passed — explicitly documented as NOT equivalent to running the real Dart test suite |
-| This sprint's new Python code (`rate_limit.py`, `security.py`, `packet.py` validators) | NOT VERIFIED by execution | No Python environment available to import/run it; correctness was reasoned through by careful reading and manual trace, not proven by a passing test run |
+| Manual logic verification of pure-Dart algorithms (prior sprint's `PriorityRelayQueue`/`AdaptiveTtl`) | IMPLEMENTED (partial substitute) | Ported to Python, 27 assertions passed — explicitly documented as NOT equivalent to running the real Dart test suite (Dart/Flutter remains unavailable in this sandbox, unlike Python) |
 | Penetration testing | NOT PERFORMED | No live target to test against in this sandbox; this document is a design/code review, explicitly not a pentest |
 
 ## Highest-priority follow-ups (not fixed this sprint, ranked)
@@ -77,20 +80,28 @@ IMPLEMENTED**, **NOT IMPLEMENTED**, **NOT APPLICABLE**, **NOT VERIFIED**.
    message could cause a real new incident to be silently merged into an
    old one via the AI service's `is_duplicate` verdict. No safe fix
    attempted without a live AI service to test against.
-2. **A real release keystore has never been created for this app** —
+2. **`POST /register` accepts any caller who knows a target's public
+   `sender_id`** — no proof-of-possession, so citizen profile data
+   (including medical history and emergency contacts) can be
+   overwritten by anyone who has observed that device's public key.
+   Needs a coordinated backend + `setu_app` `ProfileSyncService` fix
+   (sign the registration payload, verify via the existing
+   `signature_service.py`), not a backend-only change.
+4. **A real release keystore has never been created for this app** —
    the signing mechanism is now wired up (see Mobile app table above),
    but the team must generate `android/key.properties` + a real
    `.keystore` before any build meant for distribution. Until that
    exists, `flutter build apk --release` still silently falls back to
    debug signing (now with a build-time warning, previously silent).
-3. **Shared single API key with no per-responder identity/revocation** —
+5. **Shared single API key with no per-responder identity/revocation** —
    architectural, needs a team decision.
-4. **Dashboard's embedded API key is always extractable from the built
+6. **Dashboard's embedded API key is always extractable from the built
    bundle** — architectural limitation of a public SPA with a shared
    secret; a real fix needs per-user auth (e.g. the OTP flow extended
    into an actual session token), not a patch.
-5. **No CSP on the dashboard** — needs a hosting-layer change this
-   sprint had no visibility into.
-6. **No dependency vulnerability scanning has ever been run** in this
+7. **No real (HTTP-header) CSP on the dashboard** — a meta-tag CSP was
+   added this sprint; a header-based one needs a hosting-layer change
+   this sprint had no visibility into.
+8. **No dependency vulnerability scanning has ever been run** in this
    environment — should be run in CI or any environment with real
    network/package-manager access before a production launch.

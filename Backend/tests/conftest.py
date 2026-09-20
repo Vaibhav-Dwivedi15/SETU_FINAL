@@ -40,3 +40,36 @@ def _reset_duplicate_clusters():
     reset_clusters()
     yield
     reset_clusters()
+
+
+@pytest.fixture(autouse=True)
+def _reset_rate_limiters():
+    """
+    SEP 2026 SECURITY HARDENING regression guard.
+
+    Same class of bug as _reset_duplicate_clusters above, found by
+    actually running this suite after adding app/core/rate_limit.py:
+    InMemoryRateLimiter's `_hits` dict is module-level, in-memory state
+    shared by the whole pytest process (TestClient requests all present
+    the same client identity, since there's no real per-request source
+    IP). Without a reset, an early test's OTP/responder/alert-respond
+    calls count toward later tests' limits and start failing them with
+    429 instead of whatever they actually expected (200, 400, 422) --
+    confirmed by running the suite both with and without this fixture.
+    Not a production bug (a real deployment has real distinct client
+    IPs) -- purely a test-isolation gap, fixed the same way the AI
+    dedup one was.
+    """
+    from app.core.rate_limit import (
+        auth_rate_limiter,
+        public_write_rate_limiter,
+        responder_action_rate_limiter,
+    )
+
+    auth_rate_limiter.reset()
+    responder_action_rate_limiter.reset()
+    public_write_rate_limiter.reset()
+    yield
+    auth_rate_limiter.reset()
+    responder_action_rate_limiter.reset()
+    public_write_rate_limiter.reset()

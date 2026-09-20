@@ -77,14 +77,44 @@ top follow-up.
 - `docs/SECURITY_SCORECARD.md`
 - `Backend/tests/test_security_hardening.py`
 
-## 7. What could not be run (NOT AVAILABLE, stated honestly)
+## 7. What was actually run, and what still could not be
 
-- `flutter analyze` / `flutter test` — no Dart/Flutter SDK in this sandbox (dart-archive download returns HTTP 403 through the egress proxy).
-- `pytest` — `fastapi`/`pydantic`/etc. not installed, no way to install them here.
-- `pip-audit`, `npm audit`, any SAST tool — same environment limitation.
+**Correction, made honestly rather than left standing**: an earlier pass
+of this same sprint recorded "no Python environment available" for the
+backend. That was true earlier in this sandbox session but not later —
+`pip install -r requirements.txt` succeeded, and the real test suite was
+then run for real, against a local SQLite database (the real `.env`
+Postgres credential was never touched). Results:
+
+- **`pytest tests/`: 87 passed, 6 failed.** All 6 failures were confirmed
+  **pre-existing** by running the identical suite against the pre-sprint
+  commit (`355e2ea`) in a throwaway git worktree — 2 are environment gaps
+  (no openai-whisper/ffmpeg here), 1 is a FastAPI/Starlette version
+  mismatch in a test helper, 1 is a test asserting a hardcoded
+  `postgresql://` URL prefix (fails under any non-Postgres DB, including
+  this run's SQLite), and 2 are a pre-existing 422-vs-401 status code
+  mismatch unrelated to this sprint's changes. **Zero new failures
+  introduced by this sprint.**
+- **`Backend/tests/test_security_hardening.py`: 35/35 passed**, including
+  two real end-to-end checks through `TestClient` (an actual 429 after
+  the configured OTP rate limit, an actual 413 from the body-size guard
+  middleware on a real request) — not just unit tests in isolation.
+- **A real regression was found and fixed by running the suite**: the
+  new rate limiter's module-level state had no test-isolation reset,
+  causing 4 spurious 429 failures in unrelated OTP tests. Fixed with an
+  autouse `_reset_rate_limiters` fixture in `conftest.py`, matching the
+  pattern the suite already used for the AI dedup service's own
+  in-memory state. Re-run confirmed the fix and zero remaining
+  regressions. This is precisely why the sprint brief's "test before/
+  after a risky change" instruction matters — this would not have been
+  caught by code review alone.
+
+Still genuinely NOT AVAILABLE in this sandbox:
+- `flutter analyze` / `flutter test` — no Dart/Flutter SDK (dart-archive download returns HTTP 403 through the egress proxy).
+- `pip-audit`, `npm audit`, any SAST tool — not installed/run this pass (pip itself now confirmed to work here, so `pip-audit` is a real, low-effort follow-up next time, unlike the Dart/Node gaps).
 - Any live penetration test — no reachable deployed target.
 
-None of these were simulated or faked. `docs/SECURITY_SCORECARD.md` marks each as **NOT AVAILABLE**, distinct from **NOT IMPLEMENTED**.
+None of these were simulated or faked. `docs/SECURITY_SCORECARD.md` reflects the corrected, real results.
 
 ## 8. Wire protocol / architecture preserved as instructed
 
@@ -113,11 +143,18 @@ Explicitly NOT one global arbitrary limit. Three tiers matched to actual risk an
 
 ## 12. Explicit statement on claims
 
-No penetration testing was performed. No dependency scan was run. No
-Flutter or backend automated test suite was executed in this sandbox —
-new tests were written but not run. Every "IMPLEMENTED" status in
-`docs/SECURITY_SCORECARD.md` reflects either a pre-existing control
-verified by direct code reading, or a new control added and reasoned
-through manually; none reflect a passing automated test run in this
-environment. All limitations are stated above and in the scorecard,
-not omitted.
+No penetration testing was performed. No dependency vulnerability scan
+(`pip-audit`/`npm audit`) was run. The **Flutter** test suite was not
+executed (no Dart/Flutter SDK available in this sandbox, confirmed by a
+blocked SDK download). The **backend Python** test suite, by contrast,
+**was** installed and run for real this pass: `pytest tests/` (87
+passed, 6 pre-existing failures, zero new ones) and the new
+`test_security_hardening.py` (35/35 passed, including two real
+end-to-end HTTP checks) — see §7 for the full account, including a real
+regression this run found and fixed. Every "IMPLEMENTED" status in
+`docs/SECURITY_SCORECARD.md` for a *backend* control now reflects either
+a passing automated test, a pre-existing control verified by direct code
+reading, or both; Flutter/Kotlin-side statuses still reflect manual code
+reading plus the prior sprint's Python logic-port substitute, not an
+executed Dart test run. All limitations are stated above and in the
+scorecard, not omitted.

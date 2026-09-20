@@ -1,28 +1,35 @@
 """
 Tests for the Sep 2026 security-hardening sprint's new/changed controls.
 
-STATUS: written this sprint but NOT EXECUTED -- this sandbox has no
-Python environment (fastapi/pydantic/etc. are not installed and could
-not be installed here; see docs/SECURITY_SCORECARD.md's "Testing &
-scanning" section). These tests are written to the same style and
-fixture conventions as the rest of Backend/tests/ (see conftest.py,
-test_config.py) so they should be runnable as-is in a real environment
-(`pytest Backend/tests/test_security_hardening.py`), but that has not
-been verified by an actual run. Do not treat this file's presence as
-evidence the controls were tested -- only that they were reasoned
-through carefully.
+STATUS: run for real (correction -- an earlier point in this same
+sprint recorded "no Python environment available" for the backend;
+that was true earlier in this sandbox session but not later once
+`pip install -r requirements.txt` succeeded). All 35 tests in this
+file pass, including two end-to-end checks through TestClient (a real
+429 from POST /auth/request-otp after its configured limit, a real
+413 from the body-size guard middleware) -- not just the unit-level
+checks against InMemoryRateLimiter/the Pydantic schemas directly. See
+docs/SECURITY_SCORECARD.md's "Testing & scanning" section for the
+full account, including a real test-isolation regression this run
+found in the rate limiter and fixed via conftest.py's
+_reset_rate_limiters fixture.
 """
 
 import hmac
 
 import pytest
 from fastapi import HTTPException
+from fastapi.testclient import TestClient
 from pydantic import ValidationError
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker
+from sqlalchemy.pool import StaticPool
 
 from app.core.config import Settings
-from app.core.rate_limit import InMemoryRateLimiter
+from app.core.rate_limit import InMemoryRateLimiter, auth_rate_limiter
 from app.core.security import _looks_like_default_key, verify_responder_api_key
 from app.schemas.packet import PacketBatchIn, PacketIn
+from app.schemas.user_profile import RegisterIn
 
 
 # --- app.core.security: default-key fail-fast + timing-safe comparison ---
@@ -234,7 +241,133 @@ def test_packet_batch_in_accepts_batch_at_the_boundary():
     assert len(batch.packets) == 500
 
 
+# --- app.schemas.user_profile: new field bounds on RegisterIn ---
+
+
+def _valid_register_kwargs(**overrides):
+    base = dict(sender_id="s1", name="Test User")
+    base.update(overrides)
+    return base
+
+
+def test_register_in_accepts_valid_fields():
+    payload = RegisterIn(**_valid_register_kwargs())
+    assert payload.name == "Test User"
+
+
+def test_register_in_rejects_oversized_sender_id():
+    with pytest.raises(ValidationError):
+        RegisterIn(**_valid_register_kwargs(sender_id="x" * 257))
+
+
+def test_register_in_rejects_oversized_name():
+    with pytest.raises(ValidationError):
+        RegisterIn(**_valid_register_kwargs(name="x" * 201))
+
+
+def test_register_in_rejects_oversized_medical_history():
+    with pytest.raises(ValidationError):
+        RegisterIn(**_valid_register_kwargs(medical_history="x" * 2001))
+
+
+def test_register_in_rejects_too_many_emergency_contacts():
+    with pytest.raises(ValidationError):
+        RegisterIn(**_valid_register_kwargs(emergency_contacts=["1"] * 6))
+
+
+def test_register_in_rejects_oversized_emergency_contact_entry():
+    with pytest.raises(ValidationError):
+        RegisterIn(**_valid_register_kwargs(emergency_contacts=["x" * 33]))
+
+
+def test_register_in_accepts_emergency_contacts_at_the_boundary():
+    payload = RegisterIn(**_valid_register_kwargs(emergency_contacts=["x" * 32] * 5))
+    assert len(payload.emergency_contacts) == 5
+
+
+def test_register_in_rejects_empty_sender_id():
+    with pytest.raises(ValidationError):
+        RegisterIn(**_valid_register_kwargs(sender_id=""))
+
+
 # --- Secrets hygiene (static checks, not runtime-dependent) ---
+
+
+# --- End-to-end: rate limiting and body-size guard on real HTTP routes ---
+#
+# The unit tests above exercise InMemoryRateLimiter and the Pydantic
+# schemas in isolation. These go one layer up and drive the actual
+# FastAPI app through TestClient, the same pattern test_auth_and_voice.py
+# already uses -- confirming the dependency is actually wired onto the
+# real route, not just that the class works standalone.
+
+
+@pytest.fixture()
+def http_client():
+    from app.db.base import Base, get_db
+    from app.main import app
+
+    engine = create_engine(
+        "sqlite:///:memory:",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+    Base.metadata.create_all(bind=engine)
+
+    def override_get_db():
+        db = TestingSessionLocal()
+        try:
+            yield db
+        finally:
+            db.close()
+
+    app.dependency_overrides[get_db] = override_get_db
+    test_client = TestClient(app)
+    yield test_client
+    app.dependency_overrides.clear()
+    Base.metadata.drop_all(bind=engine)
+
+
+def test_request_otp_gets_rate_limited_after_the_configured_max(http_client, monkeypatch):
+    """
+    Confirms enforce_auth_rate_limit is actually wired onto
+    POST /auth/request-otp (not just unit-tested in isolation): the
+    auth_rate_limiter's limit is small enough to trip within one test.
+    """
+    monkeypatch.setattr(auth_rate_limiter, "max_requests", 3)
+
+    for i in range(3):
+        resp = http_client.post(
+            "/auth/request-otp", json={"email": f"ratelimit{i}@example.com"}
+        )
+        assert resp.status_code == 200
+
+    blocked = http_client.post(
+        "/auth/request-otp", json={"email": "one-too-many@example.com"}
+    )
+    assert blocked.status_code == 429
+    assert "Retry-After" in blocked.headers
+
+
+def test_alerts_respond_rejects_oversized_body(http_client):
+    """
+    Confirms the global body-size guard middleware (app/main.py) is
+    actually wired into the real ASGI stack, not just present as a
+    function -- sends a request with a Content-Length header above
+    MAX_REQUEST_BODY_BYTES and expects 413, using a route that would
+    otherwise 404/422 quickly so the test isn't relying on any one
+    specific endpoint's own validation to produce the 413.
+    """
+    from app.main import MAX_REQUEST_BODY_BYTES
+
+    big_body = b"x" * 100  # actual body is small; only the header lies
+    resp = http_client.post(
+        "/alerts/1/respond",
+        content=big_body,
+        headers={"Content-Length": str(MAX_REQUEST_BODY_BYTES + 1)},
+    )
+    assert resp.status_code == 413
 
 
 def test_env_files_are_not_tracked_by_git():
