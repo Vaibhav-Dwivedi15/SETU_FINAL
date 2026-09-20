@@ -55,7 +55,8 @@ IMPLEMENTED**, **NOT IMPLEMENTED**, **NOT APPLICABLE**, **NOT VERIFIED**.
 | Exported component review | IMPLEMENTED (verified) | Only `MainActivity` is `exported=true` (required — it's the launcher); `MeshForegroundService` is `exported=false`; no broadcast receivers/content providers declared |
 | Cleartext traffic | IMPLEMENTED (verified) | No `usesCleartextTraffic="true"`, no custom network security config found; all backend base URLs in Dart source are `https://` |
 | TLS certificate pinning | NOT IMPLEMENTED | Standard platform TLS trust store only; not attempted this sprint (would need a real device/build to verify without breaking connectivity) |
-| ProGuard/R8 obfuscation config | NOT VERIFIED | Could not run a release build in this sandbox (no Flutter/Android SDK available) |
+| Release build signing | **WAS NOT IMPLEMENTED, PARTIALLY IMPLEMENTED (this sprint)** | **FOUND**: `android/app/build.gradle.kts` unconditionally signed release builds with the shared Flutter **debug** keystore — not a real release signature, and something Google Play itself would reject. Fixed by wiring a real `signingConfigs.release` sourced from a gitignored `android/key.properties` (template: `android/key.properties.example`, no real secret in it) when present; falls back to debug signing with a loud build-time warning when absent, rather than silently shipping a debug-signed "release." **A real keystore was not created or provided** — that's a deployment action for the team, not something to fabricate here. |
+| ProGuard/R8 obfuscation + shrinking on release | IMPLEMENTED (this sprint), NOT VERIFIED by an actual build | Was previously not enabled at all for release. Now `isMinifyEnabled`/`isShrinkResources = true` with an explicit `proguard-rules.pro` keeping Flutter, Play Services Nearby, and this app's own `com.setu.*` packages (channel handlers referenced by string name, not by a reference R8 can trace). No Android SDK/Gradle available in this sandbox to actually run a release build and confirm nothing breaks at runtime — flagged, not claimed as tested. |
 
 ## Testing & scanning
 
@@ -76,14 +77,20 @@ IMPLEMENTED**, **NOT IMPLEMENTED**, **NOT APPLICABLE**, **NOT VERIFIED**.
    message could cause a real new incident to be silently merged into an
    old one via the AI service's `is_duplicate` verdict. No safe fix
    attempted without a live AI service to test against.
-2. **Shared single API key with no per-responder identity/revocation** —
+2. **A real release keystore has never been created for this app** —
+   the signing mechanism is now wired up (see Mobile app table above),
+   but the team must generate `android/key.properties` + a real
+   `.keystore` before any build meant for distribution. Until that
+   exists, `flutter build apk --release` still silently falls back to
+   debug signing (now with a build-time warning, previously silent).
+3. **Shared single API key with no per-responder identity/revocation** —
    architectural, needs a team decision.
-3. **Dashboard's embedded API key is always extractable from the built
+4. **Dashboard's embedded API key is always extractable from the built
    bundle** — architectural limitation of a public SPA with a shared
    secret; a real fix needs per-user auth (e.g. the OTP flow extended
    into an actual session token), not a patch.
-4. **No CSP on the dashboard** — needs a hosting-layer change this
+5. **No CSP on the dashboard** — needs a hosting-layer change this
    sprint had no visibility into.
-5. **No dependency vulnerability scanning has ever been run** in this
+6. **No dependency vulnerability scanning has ever been run** in this
    environment — should be run in CI or any environment with real
    network/package-manager access before a production launch.
