@@ -41,6 +41,9 @@ top follow-up.
 | 4 | `PacketBatchIn.packets` had no upper bound | Medium | Capped at 500 |
 | 5 | No rate limiting anywhere in the API | Medium | New tiered in-memory limiter: AUTH (10/5min), RESPONDER ACTION (20/min), PUBLIC WRITE (30/min) on the six routes that need it; `/ingest` and other emergency-critical routes deliberately left uncapped |
 | 6 | No global request body-size guard | Low | New Content-Length-based middleware, 413 above 30MB |
+| 7 | **Android release builds were signed with the shared Flutter debug keystore** (`build.gradle.kts` unconditionally used `signingConfigs.getByName("debug")` for `release`) | **High** (a debug-signed release is not a real, verifiable publisher signature and would be rejected by Google Play outright) | Wired `signingConfigs.release` from a gitignored `android/key.properties` when present, with a loud build-time warning and safe debug fallback when it's absent — no real keystore fabricated, see §4 |
+| 8 | R8/ProGuard shrinking + obfuscation was not enabled for Android release builds | Low-Medium | `isMinifyEnabled`/`isShrinkResources = true` plus an explicit `proguard-rules.pro` keeping Flutter + Play Services Nearby + this app's own `com.setu.*` channel-handler packages |
+| 9 | No Content-Security-Policy anywhere in the dashboard | Low-Medium | Added a scoped `<meta http-equiv="Content-Security-Policy">` to `index.html` (real HTTP-header CSP still needs a hosting-layer change, see §4) |
 
 ## 4. Vulnerabilities found and NOT fixed (with reasons)
 
@@ -50,8 +53,9 @@ top follow-up.
 | 2 | Single shared API key for all responders, no per-responder revocation | Medium-High | Architectural change, needs a team decision, not a hardening patch |
 | 3 | Dashboard's `X-API-Key` is always extractable from the built JS bundle | Medium | Inherent to a public SPA + shared-secret model; a real fix is per-user session auth, out of scope |
 | 4 | CORS `allow_methods`/`allow_headers` are `*` | Low | Can't verify a narrower list against the live dashboard in this sandbox without risking breakage |
-| 5 | No CSP header on the dashboard | Low | Needs a hosting/CDN-layer change outside this sprint's visibility |
-| 6 | No dependency vulnerability scanning ever run | Unknown | No network/package-manager access in this sandbox — see §7 |
+| 5 | No real release keystore has ever been generated for the Android app | High (blocks any real release, not just a security nicety) | Signing is now wired (see §3, finding 7) but a real `.keystore`/`key.properties` must be created and kept by the team — never something to fabricate in an automated pass |
+| 6 | Real HTTP-header CSP for the dashboard (vs. the meta-tag version added this sprint) | Low | Needs a hosting/CDN-layer change outside this sprint's visibility |
+| 7 | No dependency vulnerability scanning ever run | Unknown | No network/package-manager access in this sandbox — see §7 |
 
 ## 5. Confirmed clean (verified, not assumed)
 
@@ -96,15 +100,16 @@ Explicitly NOT one global arbitrary limit. Three tiers matched to actual risk an
 
 ## 10. Git state
 
-Commit `42a6647` (this sprint) on top of the prior sprint's `355e2ea`. Working tree clean after commit; `.env` files and other untracked local files were reviewed and correctly excluded, never staged.
+`42a6647` (backend hardening) → `24c831b` (this doc) → `02e7e57` (Recovery module, Priority 8 — the last fully-unstarted item from the prior mesh-engineering sprint, closed out during this session) → `b349f27` (Android release-signing + R8) → `dc5573c` (dashboard CSP), all on top of the prior sprint's `355e2ea`. Working tree clean after each commit; `.env` files and other untracked local files were reviewed and correctly excluded, never staged.
 
 ## 11. Recommended next steps, ranked
 
 1. Design a safe test/mitigation for AI-dedup manipulation (T7) — ideally with a real (even sandboxed) Gemini call available to verify against.
-2. Move from a single shared responder API key to per-responder credentials with real revocation and an audit trail of who accessed what.
-3. Add a CSP header at the hosting layer for the dashboard.
-4. Run `pip-audit`/`npm audit`/`flutter pub outdated` in any environment with real network/package-manager access, and review results before a production launch.
-5. Revisit CORS `allow_methods`/`allow_headers` narrowing once the live dashboard's actual method/header usage can be observed and tested against.
+2. Generate a real Android release keystore and `android/key.properties` (see `android/key.properties.example`) — signing is wired but unusable for a real release without it.
+3. Move from a single shared responder API key to per-responder credentials with real revocation and an audit trail of who accessed what.
+4. Add a real HTTP-header CSP at the hosting layer for the dashboard (the meta-tag version added this sprint is real but weaker defense-in-depth).
+5. Run `pip-audit`/`npm audit`/`flutter pub outdated` in any environment with real network/package-manager access, and review results before a production launch — also run an actual `flutter build apk --release` once possible, to confirm the new ProGuard rules don't break the mesh layer at runtime.
+6. Revisit CORS `allow_methods`/`allow_headers` narrowing once the live dashboard's actual method/header usage can be observed and tested against.
 
 ## 12. Explicit statement on claims
 
