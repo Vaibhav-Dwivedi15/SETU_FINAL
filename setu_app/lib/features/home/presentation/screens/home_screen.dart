@@ -123,6 +123,16 @@ class _HomeScreenState extends State<HomeScreen> {
   ];
 
   static const _safetyTools = [
+    // PRIORITY 7 (BEFORE-disaster / preparedness): offline safety
+    // guides + on-demand device readiness check. Placed first in
+    // Safety Tools -- preparedness is what this section is for.
+    _ServiceItem(
+      icon: Icons.health_and_safety,
+      title: 'Preparedness',
+      description: 'Offline safety guides & device readiness check',
+      iconColor: AppColors.info,
+      route: '/preparedness',
+    ),
     _ServiceItem(
       icon: Icons.history,
       title: 'SOS History',

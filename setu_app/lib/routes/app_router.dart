@@ -24,6 +24,9 @@ import 'package:setu_app/features/onboarding/presentation/screens/permission_gat
 import 'package:setu_app/features/profile/presentation/screens/complete_profile_screen.dart';
 import 'package:setu_app/features/language/presentation/screens/language_selection_screen.dart';
 import 'package:setu_app/features/voice_sos/presentation/screens/voice_sos_screen.dart';
+import 'package:setu_app/features/preparedness/presentation/screens/preparedness_screen.dart';
+import 'package:setu_app/features/preparedness/presentation/screens/safety_guide_detail_screen.dart';
+import 'package:setu_app/features/preparedness/presentation/screens/readiness_check_screen.dart';
 
 final GoRouter appRouter = GoRouter(
   initialLocation: '/',
@@ -195,6 +198,23 @@ final GoRouter appRouter = GoRouter(
     GoRoute(
       path: '/voice-sos',
       builder: (context, state) => const VoiceSosScreen(),
+    ),
+
+    // PRIORITY 7 (BEFORE-disaster / preparedness) -- offline safety
+    // guides + on-demand device readiness check. See
+    // features/preparedness/ for the module.
+    GoRoute(
+      path: '/preparedness',
+      builder: (context, state) => const PreparednessScreen(),
+    ),
+    GoRoute(
+      path: '/preparedness/guide/:id',
+      builder: (context, state) =>
+          SafetyGuideDetailScreen(guideId: state.pathParameters['id']!),
+    ),
+    GoRoute(
+      path: '/preparedness/readiness',
+      builder: (context, state) => const ReadinessCheckScreen(),
     ),
   ],
 );
