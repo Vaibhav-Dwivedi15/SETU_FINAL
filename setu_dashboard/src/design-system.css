@@ -1,0 +1,166 @@
+/* ============================================================
+   SETU — Design System v2
+   Emergency Operations Console visual identity.
+
+   Extends (does not replace) the existing tokens in App.css --
+   the base --bg, --text, --border, --radius, --shadow and --font
+   custom properties stay as the foundation layer. This file adds:
+     - semantic status/domain colors (network, community, government,
+       offline, unknown) beyond the existing danger/warning/success
+     - a real typography scale (display down to supporting text)
+     - motion tokens (durations, easings) used consistently everywhere
+     - depth utilities (glow, layered surface, atmospheric gradient)
+
+   Import AFTER App.css so these tokens are available everywhere,
+   and BEFORE phase4.css (both already do that in App.jsx).
+   ============================================================ */
+
+:root{
+  /* ---------- Domain colors (beyond priority severity) ---------- */
+  --network:#38bdf8;        /* mesh / connectivity signal */
+  --network-dim:rgba(56,189,248,.14);
+  --community:#a78bfa;      /* community responders */
+  --community-dim:rgba(167,139,250,.14);
+  --government:#fb923c;     /* government adapter (always paired with SIMULATED marker) */
+  --government-dim:rgba(251,146,60,.14);
+  --offline:#70829d;        /* offline / no-signal state — bumped for contrast, see audit */
+  --offline-dim:rgba(91,107,133,.14);
+  --unknown:#73839a;        /* explicitly unverifiable data — bumped for contrast, see audit */
+  --unknown-dim:rgba(100,116,139,.14);
+
+  /* ---------- Typography scale ---------- */
+  --text-display:700 2.25rem/1.15 var(--font-ui);      /* rare: landing/hero moments only */
+  --text-page-title:700 1.5rem/1.25 var(--font-ui);
+  --text-section-title:600 .8rem/1.3 var(--font-ui);   /* uppercase, tracked -- section labels */
+  --text-card-title:600 .95rem/1.35 var(--font-ui);
+  --text-metadata:500 .72rem/1.4 var(--font-ui);       /* uppercase, tracked -- field labels */
+  --text-status:700 .68rem/1 var(--font-ui);           /* badges */
+  --text-body:400 .875rem/1.55 var(--font-ui);
+  --text-supporting:400 .78rem/1.5 var(--font-ui);
+  --tracking-label:.07em;
+  --tracking-eyebrow:.1em;
+
+  /* ---------- Motion ---------- */
+  --ease-standard:cubic-bezier(.4,0,.2,1);
+  --ease-emphasized:cubic-bezier(.16,1,.3,1);
+  --duration-fast:120ms;
+  --duration-base:180ms;
+  --duration-slow:280ms;
+
+  /* ---------- Depth ---------- */
+  --surface-gradient:linear-gradient(180deg,rgba(255,255,255,.03),rgba(255,255,255,0));
+  --atmosphere:radial-gradient(circle at 20% -10%,rgba(56,189,248,.06),transparent 45%),
+               radial-gradient(circle at 90% 0%,rgba(167,139,250,.05),transparent 40%);
+}
+
+:root[data-theme="light"]{
+  --network:#027ab8;
+  --network-dim:#e0f2fe;
+  --community:#7c3aed;
+  --community-dim:#ede9fe;
+  --government:#cd4d0b;
+  --government-dim:#ffedd5;
+  --offline:#5c6f8c;
+  --offline-dim:#f1f5f9;
+  --unknown:#5c6f8c;
+  --unknown-dim:#f1f5f9;
+  --surface-gradient:linear-gradient(180deg,rgba(15,23,42,.02),rgba(15,23,42,0));
+  --atmosphere:radial-gradient(circle at 20% -10%,rgba(37,99,235,.04),transparent 45%),
+               radial-gradient(circle at 90% 0%,rgba(124,58,237,.03),transparent 40%);
+}
+
+/* ---------- Reduced motion ---------- */
+@media (prefers-reduced-motion:reduce){
+  *{ animation-duration:.01ms !important; animation-iteration-count:1 !important; transition-duration:.01ms !important; }
+}
+
+/* ============================================================
+   Typography utility classes
+   ============================================================ */
+.ds-page-title{ font:var(--text-page-title); color:var(--text-primary); margin:0; letter-spacing:-.01em; }
+.ds-section-title{
+  font:var(--text-section-title); color:var(--text-secondary);
+  text-transform:uppercase; letter-spacing:var(--tracking-label); margin:0;
+}
+.ds-card-title{ font:var(--text-card-title); color:var(--text-primary); margin:0; }
+.ds-metadata{
+  font:var(--text-metadata); color:var(--text-dim);
+  text-transform:uppercase; letter-spacing:var(--tracking-label);
+}
+.ds-body{ font:var(--text-body); color:var(--text-primary); }
+.ds-supporting{ font:var(--text-supporting); color:var(--text-secondary); }
+.ds-mono{ font-family:var(--font-mono); }
+
+/* ============================================================
+   Layered surface — the base "panel" every card/section sits on.
+   Combines a flat surface color with a subtle top-edge gradient for
+   depth, without resorting to flashy glassmorphism.
+   ============================================================ */
+.ds-surface{
+  position:relative;
+  background:var(--bg-surface);
+  border:1px solid var(--border-subtle);
+  border-radius:var(--radius-md);
+  overflow:hidden;
+}
+.ds-surface::before{
+  content:"";
+  position:absolute; inset:0;
+  background:var(--surface-gradient);
+  pointer-events:none;
+}
+
+/* ---------- Atmospheric backdrop for full-page shells ---------- */
+.ds-atmosphere{
+  position:relative;
+}
+.ds-atmosphere::before{
+  content:"";
+  position:fixed; inset:0;
+  background:var(--atmosphere);
+  pointer-events:none;
+  z-index:0;
+}
+
+/* ============================================================
+   Icon sizing discipline — every icon in the product uses one of
+   these three sizes, consistent stroke width via react-icons/lu
+   (Lucide set — already installed via react-icons, no new dependency).
+   ============================================================ */
+.ds-icon-sm{ width:14px; height:14px; flex-shrink:0; }
+.ds-icon-md{ width:18px; height:18px; flex-shrink:0; }
+.ds-icon-lg{ width:24px; height:24px; flex-shrink:0; }
+
+/* ============================================================
+   Metric row — generic summary-tile grid shared by Analytics,
+   Resources (Response Capacity Center), and Teams. Added this pass so
+   those three pages' new MetricCard rows don't each reinvent their own
+   grid CSS (the exact duplication the redesign brief calls out).
+   ============================================================ */
+.ds-metric-row{
+  display:grid;
+  grid-template-columns:repeat(auto-fit,minmax(200px,1fr));
+  gap:16px;
+  margin-bottom:20px;
+}
+
+/* ---------- Generic page shell (used by pages with no bespoke wrapper class) ---------- */
+.resources-page-shell{
+  display:flex;
+  flex-direction:column;
+  gap:20px;
+}
+
+/* ============================================================
+   Focus states — accessibility requirement, applied globally to
+   anything interactive that doesn't already define its own.
+   ============================================================ */
+button:focus-visible,
+a:focus-visible,
+[role="button"]:focus-visible,
+input:focus-visible,
+select:focus-visible{
+  outline:2px solid var(--accent);
+  outline-offset:2px;
+  border-radius:4px;
+}

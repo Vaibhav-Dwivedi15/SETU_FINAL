@@ -1,0 +1,46 @@
+/* ============================================================
+   SETU — Live Map v2
+   Custom SVG divIcon markers (MapView.jsx) replace the old external
+   hotlinked PNG pin images. Leaflet's default .leaflet-div-icon class
+   adds its own white box-shadow background meant for text labels —
+   reset that here since our markers are self-contained SVG, not text.
+   ============================================================ */
+
+.setu-map-marker-wrapper{
+  background:transparent !important;
+  border:none !important;
+}
+
+.setu-map-marker{
+  position:relative;
+  display:flex;
+  align-items:flex-start;
+  justify-content:center;
+  filter:drop-shadow(0 2px 4px rgba(0,0,0,.35));
+}
+
+/* Restrained pulse ring, Critical incidents only -- a soft expanding
+   ring behind the marker dot, not a flashing/bouncing effect. */
+.setu-map-marker-pulse{
+  position:absolute;
+  top:6px;
+  left:50%;
+  transform:translateX(-50%);
+  width:13px;
+  height:13px;
+  border-radius:50%;
+  background:var(--danger, #ef4444);
+  opacity:.55;
+  animation:setu-marker-pulse 2s ease-out infinite;
+  pointer-events:none;
+}
+
+@keyframes setu-marker-pulse{
+  0%{ transform:translateX(-50%) scale(1); opacity:.55; }
+  70%{ transform:translateX(-50%) scale(2.6); opacity:0; }
+  100%{ transform:translateX(-50%) scale(2.6); opacity:0; }
+}
+
+@media (prefers-reduced-motion:reduce){
+  .setu-map-marker-pulse{ animation:none; opacity:.35; }
+}

@@ -1,0 +1,64 @@
+﻿message,urgency,incident,category
+Fire in my building,5,Fire,core
+"There is a fire in the kitchen, please help",5,Fire,core
+Massive fire spreading through the market,5,Fire,core
+"Smoke everywhere, the building is on fire",5,Fire,core
+aag lag gayi meri building mein madad karo,5,Fire,core
+dukaan mein aag lag gayi hai jaldi aao,5,Fire,core
+poori gali mein dhuan hi dhuan hai kuch jal raha hai,5,Fire,core
+Medical emergency at railway station,5,Medical,core
+My father is having a heart attack,5,Medical,core
+Someone collapsed and is unconscious,5,Medical,core
+"Need an ambulance urgently, heavy bleeding",5,Medical,core
+mummy ko dil ka daura pada hai ambulance bulao,5,Medical,core
+papa behosh ho gaye hain jaldi aao,5,Medical,core
+bahut khoon nikal raha hai chot lagi hai,5,Medical,core
+Major accident on highway,5,Accident,core
+"Car crash near the bridge, people injured",5,Accident,core
+"Truck collided with a bike, need help",5,Accident,core
+sadak par bada durghatna ho gaya,5,Accident,core
+gaadi ki takkar ho gayi bahut log ghayal hain,5,Accident,core
+Flood water entering my house,5,Flood,core
+"Heavy flooding, water level rising fast",5,Flood,core
+"River overflowing, entire street underwater",5,Flood,core
+baadh ka paani ghar mein ghus raha hai,5,Flood,core
+nadi ka paani sadak par aa gaya hai baadh jaisa lag raha hai,5,Flood,core
+Building collapse near the market,5,Building Collapse,core
+"Roof caved in, people trapped inside",5,Building Collapse,core
+"Wall collapsed, several people injured",5,Building Collapse,core
+imarat gir gayi log andar phans gaye hain,5,Building Collapse,core
+chhat gir gayi bahut malba hai,5,Building Collapse,core
+"Earthquake, building shaking violently",5,Earthquake,core
+"Strong earthquake felt, everyone evacuating",5,Earthquake,core
+bhukamp aa gaya sab log bahar bhaago,5,Earthquake,core
+zameen bahut zor se hil rahi hai bhukamp lag raha hai,5,Earthquake,core
+"Someone is following me, I feel unsafe",5,Women Safety,core
+"A man is stalking me, please help",5,Women Safety,core
+"I am being harassed, send help immediately",5,Women Safety,core
+bachao koi mujhe pareshan kar raha hai,5,Women Safety,core
+ek aadmi mera peecha kar raha hai bachao,5,Women Safety,core
+main akeli hoon aur asurakshit mehsoos kar rahi hoon madad karo,5,Women Safety,core
+woh aadmi mujhe ghoor raha hai bahut ajeeb lag raha hai,5,Women Safety,core
+ek ladka mujhe chhed raha hai bus stop par,5,Women Safety,core
+kal se koi mera peeche aa raha hai bahut dar lag raha hai,5,Women Safety,core
+Need assistance please,3,Unknown,core
+Can anyone guide me to the station?,2,Unknown,core
+"I am stuck in traffic, will be late",3,Unknown,core
+thoda sahayata chahiye phasa hua hoon,3,Unknown,core
+raasta batao station kaise jau,2,Unknown,core
+Good morning,1,Unknown,core
+Hello everyone,1,Unknown,core
+How are you doing today?,1,Unknown,core
+"Just checking in, all is well",1,Unknown,core
+Thanks for the update,1,Unknown,core
+sab theek hai bas hello bol raha tha,1,Unknown,core
+kaise ho aap sab log,1,Unknown,core
+aaj mausam bahut accha hai,1,Unknown,core
+I watched a movie about a building collapse last night,1,Unknown,hard_negative
+We did a fire safety drill at the office today,1,Unknown,hard_negative
+"My phone battery is critical, need to charge it",1,Unknown,hard_negative
+There was a flood of job applications this week,1,Unknown,hard_negative
+I read a book about an earthquake in Japan,1,Unknown,hard_negative
+Can you help me with my homework tonight,1,Unknown,hard_negative
+The bakery sells amazing fire-roasted bread,1,Unknown,hard_negative
+"He rescued the cat stuck in a tree, just a fun story",1,Unknown,hard_negative

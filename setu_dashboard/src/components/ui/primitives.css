@@ -1,0 +1,129 @@
+/* ============================================================
+   SETU — Core UI primitives styling
+   ============================================================ */
+
+/* ---------- Priority badge ---------- */
+.ds-priority-badge{
+  display:inline-flex; align-items:center; gap:6px;
+  padding:4px 10px; border-radius:999px;
+  font:var(--text-status); text-transform:uppercase; letter-spacing:var(--tracking-label);
+  border:1px solid transparent;
+  /* Redesign brief section 18 (motion design) — status transition. When
+     an incident's priority/status re-renders with a different tone
+     (e.g. AI re-assessment, or Active -> Closed), the badge's color
+     eases instead of hard-cutting to the new color every poll cycle. */
+  transition:background-color var(--duration-base) var(--ease-standard),
+             color var(--duration-base) var(--ease-standard),
+             border-color var(--duration-base) var(--ease-standard);
+}
+.ds-badge-sm{ padding:2px 8px; font-size:.62rem; }
+.ds-priority-dot{ width:6px; height:6px; border-radius:50%; }
+
+.ds-priority-critical{ background:var(--danger-dim); color:var(--danger-on-dim,var(--danger)); border-color:var(--danger); }
+.ds-priority-critical .ds-priority-dot{ background:var(--danger); box-shadow:0 0 0 3px var(--danger-dim); }
+
+.ds-priority-high{ background:var(--warning-dim); color:var(--warning-on-dim,var(--warning)); border-color:var(--warning); }
+.ds-priority-high .ds-priority-dot{ background:var(--warning); }
+
+.ds-priority-medium{ background:var(--caution-dim,var(--warning-dim)); color:var(--caution); border-color:var(--caution); }
+.ds-priority-medium .ds-priority-dot{ background:var(--caution); }
+
+.ds-priority-low{ background:var(--success-dim); color:var(--success-on-dim,var(--success)); border-color:var(--success); }
+.ds-priority-low .ds-priority-dot{ background:var(--success); }
+
+/* ---------- Status badge (confirmed/unknown/pending/etc) ---------- */
+.ds-status-badge{
+  display:inline-flex; align-items:center; gap:5px;
+  padding:3px 9px; border-radius:6px;
+  font:var(--text-metadata); text-transform:none; letter-spacing:0;
+  transition:background-color var(--duration-base) var(--ease-standard),
+             color var(--duration-base) var(--ease-standard);
+}
+.ds-status-confirmed{ background:var(--success-dim); color:var(--success-on-dim,var(--success)); }
+.ds-status-unknown{ background:var(--unknown-dim); color:var(--unknown); }
+.ds-status-pending{ background:var(--caution-dim,var(--warning-dim)); color:var(--caution); }
+.ds-status-active{ background:var(--danger-dim); color:var(--danger-on-dim,var(--danger)); }
+.ds-status-closed{ background:var(--success-dim); color:var(--success-on-dim,var(--success)); }
+.ds-status-failed{ background:var(--danger-dim); color:var(--danger-on-dim,var(--danger)); }
+
+/* ---------- Category chip ---------- */
+.ds-category-chip{
+  display:inline-flex; align-items:center; gap:6px;
+  padding:4px 10px; border-radius:999px;
+  background:var(--bg-surface-alt); border:1px solid var(--border-subtle);
+  font:var(--text-metadata); text-transform:none; letter-spacing:0;
+  color:var(--text-secondary);
+}
+.ds-category-chip-ai{
+  padding:1px 5px; border-radius:4px;
+  background:var(--community-dim); color:var(--community);
+  font-size:.6rem; font-weight:800; letter-spacing:.05em;
+}
+
+/* ---------- Empty state ---------- */
+.ds-empty-state{
+  display:flex; flex-direction:column; align-items:center; text-align:center;
+  padding:56px 24px; gap:10px;
+}
+.ds-empty-icon{
+  width:56px; height:56px; border-radius:50%;
+  display:flex; align-items:center; justify-content:center;
+  background:var(--bg-surface-alt); border:1px solid var(--border-subtle);
+  color:var(--text-dim);
+  margin-bottom:6px;
+}
+.ds-empty-title{ margin:0; font:var(--text-card-title); color:var(--text-primary); }
+.ds-empty-description{ margin:0; max-width:360px; font:var(--text-supporting); color:var(--text-dim); }
+.ds-empty-action{ margin-top:10px; }
+
+/* ---------- Section header ---------- */
+.ds-section-header{
+  display:flex; align-items:flex-start; justify-content:space-between;
+  gap:16px; margin-bottom:20px; flex-wrap:wrap;
+}
+.ds-section-header-actions{ display:flex; align-items:center; gap:8px; }
+
+/* ---------- Metric card ---------- */
+.ds-metric-card{
+  display:flex; align-items:flex-start; gap:12px;
+  padding:16px; z-index:1;
+}
+.ds-metric-icon{
+  width:36px; height:36px; border-radius:var(--radius-sm);
+  display:flex; align-items:center; justify-content:center;
+  background:var(--accent-glow); color:var(--accent);
+  flex-shrink:0;
+}
+.ds-metric-critical .ds-metric-icon{ background:var(--danger-dim); color:var(--danger); }
+.ds-metric-network .ds-metric-icon{ background:var(--network-dim); color:var(--network); }
+.ds-metric-community .ds-metric-icon{ background:var(--community-dim); color:var(--community); }
+
+.ds-metric-body{ display:flex; flex-direction:column; gap:4px; }
+.ds-metric-value{ font-size:1.5rem; font-weight:700; color:var(--text-primary); line-height:1; }
+.ds-metric-trend{ font:var(--text-supporting); color:var(--text-dim); }
+.ds-metric-trend.up{ color:var(--danger); }
+.ds-metric-trend.down{ color:var(--success); }
+
+/* ---------- Network status pill ---------- */
+.ds-network-pill{
+  display:flex; align-items:center; gap:10px;
+  padding:8px 12px; border-radius:var(--radius-sm);
+  background:var(--bg-surface-alt); border:1px solid var(--border-subtle);
+}
+.ds-network-pulse{
+  width:8px; height:8px; border-radius:50%; flex-shrink:0;
+  background:var(--offline);
+}
+.ds-network-pill.online .ds-network-pulse{
+  background:var(--success);
+  box-shadow:0 0 0 3px var(--success-dim);
+  animation:ds-pulse 2s ease-in-out infinite;
+}
+@keyframes ds-pulse{
+  0%,100%{ box-shadow:0 0 0 3px var(--success-dim); }
+  50%{ box-shadow:0 0 0 6px transparent; }
+}
+.ds-network-pill-text{ display:flex; flex-direction:column; gap:1px; }
+.ds-network-pill-label{ font:var(--text-metadata); color:var(--text-primary); }
+.ds-network-pill.offline .ds-network-pill-label{ color:var(--offline); }
+.ds-network-pill-sync{ font-size:.66rem; color:var(--text-dim); }

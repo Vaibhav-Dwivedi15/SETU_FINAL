@@ -1,0 +1,33 @@
+﻿fastapi
+uvicorn[standard]
+pydantic
+python-dotenv
+google-genai
+pandas
+scikit-learn
+pytest
+
+# --- Multilingual embedding-based dedup (models/embedding_similarity.py) ---
+# Soft dependency: if this isn't installed, duplicate_detector.py falls
+# back to lexical (difflib) matching automatically - nothing crashes.
+# First run needs internet once to download the ~120MB model from
+# Hugging Face; it's cached locally after that (works fully offline
+# from then on). If your demo machine won't have internet at all, skip
+# these two and set SETU_AI_EMBEDDING_DEDUP_ENABLED=false.
+sentence-transformers
+numpy
+
+# --- Voice message transcription (service/voice_service.py) ---
+# Needs ffmpeg installed on the system (not a pip package - see project
+# setup notes). First run downloads the Whisper "base" model (~150MB)
+# from OpenAI, cached locally after that.
+openai-whisper
+python-multipart
+
+# NOTE: versions intentionally unpinned (2026-08-02). Exact pins caused
+# build failures on Python 3.14 (too new - some packages, e.g.
+# pydantic-core and numpy, have no prebuilt wheels yet and fail to
+# build from source without a working Rust/C toolchain). Every package
+# here was confirmed already working on the dev machine at whatever
+# version pip resolves to. If reproducibility across machines becomes
+# important later, re-pin to versions that have Python 3.14 wheels.
