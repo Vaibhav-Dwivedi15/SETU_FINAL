@@ -133,6 +133,17 @@ class _HomeScreenState extends State<HomeScreen> {
       iconColor: AppColors.info,
       route: '/preparedness',
     ),
+    // PRIORITY 8 (AFTER-disaster / recovery): damage/missing-person/
+    // resource/status/community reports, sent as normal signed mesh
+    // packets. Placed right after Preparedness so the before/after
+    // pair reads together in Safety Tools.
+    _ServiceItem(
+      icon: Icons.restore,
+      title: 'Recovery',
+      description: 'Report damage, missing persons, resources & status',
+      iconColor: AppColors.info,
+      route: '/recovery',
+    ),
     _ServiceItem(
       icon: Icons.history,
       title: 'SOS History',

@@ -27,6 +27,9 @@ import 'package:setu_app/features/voice_sos/presentation/screens/voice_sos_scree
 import 'package:setu_app/features/preparedness/presentation/screens/preparedness_screen.dart';
 import 'package:setu_app/features/preparedness/presentation/screens/safety_guide_detail_screen.dart';
 import 'package:setu_app/features/preparedness/presentation/screens/readiness_check_screen.dart';
+import 'package:setu_app/features/recovery/data/models/recovery_report_type.dart';
+import 'package:setu_app/features/recovery/presentation/screens/recovery_screen.dart';
+import 'package:setu_app/features/recovery/presentation/screens/recovery_report_form_screen.dart';
 
 final GoRouter appRouter = GoRouter(
   initialLocation: '/',
@@ -215,6 +218,28 @@ final GoRouter appRouter = GoRouter(
     GoRoute(
       path: '/preparedness/readiness',
       builder: (context, state) => const ReadinessCheckScreen(),
+    ),
+
+    // PRIORITY 8 (AFTER-disaster / recovery) -- damage reporting,
+    // missing-person reporting, resource availability, recovery
+    // status, community updates. See features/recovery/ for the
+    // module. Every report travels as a normal signed EmergencyPacket
+    // (see RecoveryPacketBuilder) -- no new route param is needed for
+    // the form beyond which RecoveryReportType was tapped, passed as
+    // `extra` rather than encoded in the path since GoRoute path
+    // params are strings and RecoveryReportType.name round-trips fine
+    // that way if this route is ever deep-linked, but `extra` keeps
+    // the call site (recovery_screen.dart) simple for what is, for
+    // now, always an in-app push.
+    GoRoute(
+      path: '/recovery',
+      builder: (context, state) => const RecoveryScreen(),
+    ),
+    GoRoute(
+      path: '/recovery/report',
+      builder: (context, state) => RecoveryReportFormScreen(
+        type: state.extra as RecoveryReportType? ?? RecoveryReportType.communityUpdate,
+      ),
     ),
   ],
 );
