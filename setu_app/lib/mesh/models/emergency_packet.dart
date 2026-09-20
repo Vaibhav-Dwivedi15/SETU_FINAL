@@ -84,7 +84,8 @@ class EmergencyPacket extends MeshPacket {
   }
 
   @override
-  MeshPacket withRelayHop() => copyWith(ttl: ttl - 1, hopCount: hopCount + 1);
+  MeshPacket withRelayHop({int? ttlOverride}) =>
+      copyWith(ttl: ttlOverride ?? ttl - 1, hopCount: hopCount + 1);
 
   @override
   String get signaturePayload =>

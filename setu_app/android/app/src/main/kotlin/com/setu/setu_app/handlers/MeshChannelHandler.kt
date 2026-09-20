@@ -121,6 +121,19 @@ class MeshChannelHandler(
                         result.error("BAD_ARGS", "Missing scanIntervalMs, discoveryIntervalMs, or allowRelay", null)
                     }
                 }
+                // PRIORITY 1 -- lets Dart's MeshMetrics read the counters
+                // that only exist natively: duplicates filtered before
+                // Dart ever sees them, relays suppressed by storm
+                // protection, and discovery/connection-establishment
+                // timings. Read-only snapshot, polled once a minute by
+                // MeshService -- it must never become load of its own.
+                //
+                // Returns an empty map (not an error) when the service
+                // isn't bound yet, so Dart records "not measured" rather
+                // than treating it as a failure.
+                "getRelayStats" -> {
+                    result.success(meshService?.relayStats() ?: emptyMap<String, Any?>())
+                }
                 else -> result.notImplemented()
             }
         }

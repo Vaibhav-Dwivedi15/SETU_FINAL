@@ -198,11 +198,109 @@ class MeshForegroundService : Service(), NearbyConnectionsManager.Listener {
             return
         }
 
-        result.relayBytes?.let { connectionsManager.broadcastBytes(it) }
+        val relayBytes = result.relayBytes ?: return
+        scheduleRelay(relayBytes, result.packetId, result.isCritical)
     }
+
+    // =====================================================
+    // PRIORITY 4 — duplicate-storm protection
+    // =====================================================
+    //
+    // The problem this solves, concretely: 8 phones standing in a group
+    // all receive the same SOS in the same instant. Dedup already stops
+    // any ONE of them relaying it twice, but it does nothing about all 8
+    // rebroadcasting it simultaneously — 8 copies on the air, each of
+    // which every other device must receive, parse, verify the signature
+    // of, and then discard as a duplicate. That is the storm: wasted
+    // radio time and wasted battery on exactly the devices you most need
+    // still working an hour later.
+    //
+    // The fix is the classic bounded flooding suppression, and it is
+    // deliberately small — it does not touch the seen-cache, does not
+    // replace dedup, and adds no state beyond a pending-relay set:
+    //
+    //   1. Wait a short RANDOM delay before rebroadcasting. Random is
+    //      the point: it de-synchronises devices that received the
+    //      packet at the same moment, so they stop transmitting on top
+    //      of each other.
+    //   2. During that delay, count how many copies of the same packet
+    //      arrive from OTHER peers (PacketRelayEngine.recentEchoCount).
+    //   3. If enough neighbours have already rebroadcast it, our own
+    //      copy would reach devices that have demonstrably already been
+    //      reached — so skip it and count the suppression.
+    //
+    // Two safety properties, because getting this wrong loses packets:
+    //
+    //   * CRITICAL packets are never suppressed and get a much shorter
+    //      jitter. Saving radio time is not worth risking an SOS.
+    //   * Suppression requires having HEARD the echoes. A device at the
+    //      edge of the cluster hears nobody, suppresses nothing, and
+    //      relays normally — which is exactly the device that carries
+    //      the packet to the next cluster. Genuine multi-hop delivery
+    //      is therefore unaffected.
+    private val relayHandler = Handler(Looper.getMainLooper())
+    private val pendingRelayIds = mutableSetOf<String>()
+
+    /** Max jitter for routine traffic. One burst's worth, no more. */
+    private val relayJitterMaxMs = 400L
+
+    /** Critical traffic still gets a little jitter (collisions help
+     * nobody) but an order of magnitude less. */
+    private val criticalRelayJitterMaxMs = 40L
+
+    /** How many neighbours must have already rebroadcast before we skip
+     * our own copy. 2 rather than 1 so a single echo — which could be
+     * the original sender's own retransmission — is never enough. */
+    private val echoSuppressionThreshold = 2
+
+    private fun scheduleRelay(relayBytes: ByteArray, packetId: String?, isCritical: Boolean) {
+        if (packetId == null) {
+            connectionsManager.broadcastBytes(relayBytes)
+            return
+        }
+        // Already have a rebroadcast pending for this packet; a second
+        // scheduling would defeat the suppression it is waiting for.
+        if (!pendingRelayIds.add(packetId)) return
+
+        val jitterCeiling = if (isCritical) criticalRelayJitterMaxMs else relayJitterMaxMs
+        val delay = (0..jitterCeiling).random()
+
+        relayHandler.postDelayed({
+            pendingRelayIds.remove(packetId)
+
+            val echoes = relayEngine.recentEchoCount(packetId)
+            if (!isCritical && echoes >= echoSuppressionThreshold) {
+                relayEngine.noteSuppressedRelay()
+                Log.i(TAG, "Relay suppressed for $packetId — $echoes neighbour(s) already flooded it")
+                return@postDelayed
+            }
+
+            // Re-check the battery policy: power saver may have engaged
+            // while this relay sat in its jitter window.
+            if (!currentAllowRelay) {
+                Log.i(TAG, "Relay dropped at dispatch — power saver engaged during jitter window")
+                return@postDelayed
+            }
+
+            connectionsManager.broadcastBytes(relayBytes)
+        }, delay)
+    }
+
+    /** Counters + native-only timings, read by Dart's MeshMetrics through
+     * MeshChannelHandler's "getRelayStats". Read-only snapshot. */
+    fun relayStats(): Map<String, Any?> = mapOf(
+        "totalProcessed" to relayEngine.totalProcessed.toInt(),
+        "duplicatesFiltered" to relayEngine.duplicatesFiltered.toInt(),
+        "relaySuppressed" to relayEngine.relaySuppressed.toInt(),
+        "discoveryLatencyMicros" to connectionsManager.discoveryLatencyMicros.toInt(),
+        "connectionLatencyMicros" to connectionsManager.connectionLatencyMicros.toInt(),
+        "connectedPeers" to connectionsManager.connectedEndpoints.size
+    )
 
     override fun onDestroy() {
         dutyCycleRunnable?.let { dutyCycleHandler.removeCallbacks(it) }
+        relayHandler.removeCallbacksAndMessages(null)
+        pendingRelayIds.clear()
         connectionsManager.stopAll()
         super.onDestroy()
     }

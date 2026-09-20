@@ -16,6 +16,37 @@ class NearbyConnectionsManager(
 
     val connectedEndpoints: MutableSet<String> = mutableSetOf()
 
+    // =====================================================
+    // PRIORITY 1 -- discovery / connection latency
+    // =====================================================
+    //
+    // These two stages are owned entirely by this class: Dart only ever
+    // sees the resulting PeerConnected event, so without measuring here
+    // they cannot be measured at all and would have to be reported as
+    // "not measured" forever.
+    //
+    // Both are recorded as the latency of the FIRST peer found/connected
+    // after a discovery start, which is the number that actually matters
+    // in an emergency: how long from switching the mesh on to having
+    // somebody to relay through. Later peers in the same session do not
+    // overwrite it.
+    //
+    // 0 means "never measured" and is reported to Dart as null, never as
+    // a real zero-millisecond measurement.
+    @Volatile
+    var discoveryLatencyMicros: Long = 0L
+        private set
+
+    @Volatile
+    var connectionLatencyMicros: Long = 0L
+        private set
+
+    /** Nanotime at which the current discovery session started. */
+    private var discoveryStartedAtNanos: Long = 0L
+
+    /** endpointId -> nanotime at which we requested/accepted a connection. */
+    private val connectionStartedAtNanos = mutableMapOf<String, Long>()
+
     interface Listener {
         fun onPeerConnected(endpointId: String)
         fun onPeerDisconnected(endpointId: String)
@@ -31,6 +62,11 @@ class NearbyConnectionsManager(
     }
 
     fun startDiscovery() {
+        // Only stamp the first start of a discovery session -- duty
+        // cycling restarts discovery every burst, and restamping would
+        // silently turn "time to find a peer" into "time since the last
+        // burst", which is a different and much flattering number.
+        if (discoveryStartedAtNanos == 0L) discoveryStartedAtNanos = System.nanoTime()
         val options = DiscoveryOptions.Builder().setStrategy(strategy).build()
         connectionsClient
             .startDiscovery(serviceId, endpointDiscoveryCallback, options)
@@ -54,6 +90,10 @@ class NearbyConnectionsManager(
         connectionsClient.stopDiscovery()
         connectionsClient.stopAllEndpoints()
         connectedEndpoints.clear()
+        connectionStartedAtNanos.clear()
+        // Full shutdown ends the measurement session: the next
+        // startDiscovery() begins timing a genuinely new one.
+        discoveryStartedAtNanos = 0L
     }
 
     fun sendBytes(endpointId: String, bytes: ByteArray) {
@@ -67,6 +107,12 @@ class NearbyConnectionsManager(
     private val endpointDiscoveryCallback = object : EndpointDiscoveryCallback() {
         override fun onEndpointFound(endpointId: String, info: DiscoveredEndpointInfo) {
             Log.i(TAG, "Found endpoint: $endpointId (${info.endpointName})")
+
+            if (discoveryLatencyMicros == 0L && discoveryStartedAtNanos != 0L) {
+                discoveryLatencyMicros = (System.nanoTime() - discoveryStartedAtNanos) / 1_000L
+                Log.i(TAG, "Discovery latency: ${discoveryLatencyMicros / 1000}ms")
+            }
+            connectionStartedAtNanos[endpointId] = System.nanoTime()
 
             // TIE-BREAKER: without this, both devices request a connection
             // to each other simultaneously the moment they discover one
@@ -97,15 +143,22 @@ class NearbyConnectionsManager(
         override fun onConnectionResult(endpointId: String, result: ConnectionResolution) {
             if (result.status.statusCode == com.google.android.gms.nearby.connection.ConnectionsStatusCodes.STATUS_OK) {
                 connectedEndpoints.add(endpointId)
+                val startedAt = connectionStartedAtNanos.remove(endpointId)
+                if (connectionLatencyMicros == 0L && startedAt != null) {
+                    connectionLatencyMicros = (System.nanoTime() - startedAt) / 1_000L
+                    Log.i(TAG, "Connection establishment latency: ${connectionLatencyMicros / 1000}ms")
+                }
                 Log.i(TAG, "Connected to $endpointId")
                 listener.onPeerConnected(endpointId)
             } else {
+                connectionStartedAtNanos.remove(endpointId)
                 Log.w(TAG, "Connection to $endpointId failed: ${result.status}")
             }
         }
 
         override fun onDisconnected(endpointId: String) {
             connectedEndpoints.remove(endpointId)
+            connectionStartedAtNanos.remove(endpointId)
             Log.i(TAG, "Disconnected from $endpointId")
             listener.onPeerDisconnected(endpointId)
         }

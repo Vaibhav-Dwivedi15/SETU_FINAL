@@ -37,8 +37,23 @@ class PowerModeController {
     });
   }
 
+  /// Sep 2026: stops closing the shared broadcast controller.
+  ///
+  /// This is a process-wide singleton, but it is disposed by
+  /// MeshServiceImpl.dispose() — and the app builds more than one
+  /// MeshServiceImpl (MeshLocator and HomeScreen both do). Closing the
+  /// controller here meant the FIRST mesh service to be disposed
+  /// permanently broke power-mode delivery for every other one: a later
+  /// initialize() would hit "Cannot add new events after calling close"
+  /// and the surviving mesh service would silently stop reacting to
+  /// battery changes — so relay/upload gating would freeze at whatever
+  /// mode was last seen.
+  ///
+  /// Cancelling the upstream subscription is enough to release the
+  /// resource. A broadcast controller with no listeners costs nothing,
+  /// and leaving it open means initialize() can safely be called again.
   Future<void> dispose() async {
     await _subscription?.cancel();
-    await _controller.close();
+    _subscription = null;
   }
 }

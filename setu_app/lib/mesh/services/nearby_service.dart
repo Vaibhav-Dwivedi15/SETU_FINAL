@@ -41,6 +41,18 @@ abstract class NearbyService {
     required Duration discoveryInterval,
     required bool allowRelay,
   });
+
+  /// PRIORITY 1 -- reads the native engine's counters (duplicates
+  /// filtered, relays suppressed by storm protection, discovery and
+  /// connection-establishment timings). Those stages live entirely in
+  /// Kotlin -- Dart only ever sees the resulting PeerConnected event --
+  /// so without this they cannot be measured at all.
+  ///
+  /// Concrete default rather than an abstract method ON PURPOSE: existing
+  /// implementations (and test fakes) keep compiling untouched, and an
+  /// older native build that has no `getRelayStats` leaves those metrics
+  /// reading "not measured" instead of a fabricated zero.
+  Future<Map<dynamic, dynamic>?> fetchRelayStats() async => null;
 }
 
 class PlatformNearbyService implements NearbyService {
@@ -62,6 +74,18 @@ class PlatformNearbyService implements NearbyService {
         'discoveryIntervalMs': discoveryInterval.inMilliseconds,
         'allowRelay': allowRelay,
       });
+
+  @override
+  Future<Map<dynamic, dynamic>?> fetchRelayStats() async {
+    try {
+      final stats = await _methodChannel.invokeMethod('getRelayStats');
+      return stats is Map ? stats : null;
+    } on MissingPluginException {
+      return null;
+    } on PlatformException {
+      return null;
+    }
+  }
 
   @override
   Stream<NearbyEvent> get events {

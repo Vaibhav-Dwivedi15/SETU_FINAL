@@ -39,5 +39,17 @@ abstract class MeshPacket {
 
   String get signaturePayload;
 
-  MeshPacket withRelayHop();
+  /// Copy of this packet as it should go out on the next hop.
+  ///
+  /// [ttlOverride] was added for adaptive TTL (see
+  /// mesh/services/adaptive_ttl.dart): callers that pass nothing keep the
+  /// original flat `ttl - 1` behaviour exactly, so every existing call
+  /// site is unaffected. AdaptiveTtl.nextTtl() guarantees any value
+  /// passed here is <= SecurityConstants.maxTTL and strictly less than
+  /// the current ttl.
+  ///
+  /// Safe by construction: none of the four packet types include `ttl` or
+  /// `hop_count` in signaturePayload, so changing them on relay does not
+  /// invalidate the originator's signature.
+  MeshPacket withRelayHop({int? ttlOverride});
 }
