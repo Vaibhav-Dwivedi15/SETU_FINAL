@@ -61,8 +61,29 @@ import org.json.JSONObject
  *     "did my neighbours already flood this?" before spending a
  *     rebroadcast. The engine only counts; the decision and the delay
  *     live in the service, which owns the Handler.
+ *
+ * SEP 21 2026 (Vib, native-mesh hardening pass): [seen], [seenAtLocation]
+ * and [echoTimestamps] were plain, non-thread-safe LinkedHashSet/
+ * LinkedHashMap, and [totalProcessed]/[duplicatesFiltered]/
+ * [relaySuppressed] were @Volatile but incremented with a plain, non-
+ * atomic `++`. Nothing in this file enforced (or even documented) an
+ * assumption that Nearby Connections callbacks always arrive on one
+ * thread -- in practice GMS typically delivers them on the main looper,
+ * but nothing here relied on or asserted that, which is fragile. Fixed by
+ * synchronizing every method that reads or mutates this shared state on
+ * [lock], rather than swapping in synchronized/concurrent collections
+ * individually -- a synchronizedSet/Map wrapper still requires external
+ * synchronization for iteration (the FIFO-eviction `.iterator().next()`/
+ * `.keys.first()` calls below), and this engine's real correctness
+ * requirement is that "is this a duplicate" + "record it as seen" happen
+ * as one atomic step, not just that each individual map access is safe in
+ * isolation. This is purely a concurrency fix -- no dedup/TTL/relay LOGIC
+ * changed, confirmed by keeping every method's body identical, just
+ * wrapped.
  */
 class PacketRelayEngine(private val maxCacheSize: Int = 500) {
+    private val lock = Any()
+
     private val seen = LinkedHashSet<String>()
 
     // packetId -> (lat, lon) this device was at when it last saw that
@@ -76,6 +97,10 @@ class PacketRelayEngine(private val maxCacheSize: Int = 500) {
     private val echoTimestamps = LinkedHashMap<String, MutableList<Long>>()
 
     // ---- counters, read by MeshForegroundService.relayStats() ----
+    // Sep 21 2026: reads/writes now happen inside `synchronized(lock)`
+    // blocks (see process()/noteSuppressedRelay() below), so the plain
+    // `++` is no longer a race -- @Volatile kept for cheap external reads
+    // of the current value without needing to take the lock.
     @Volatile
     var totalProcessed: Long = 0L
         private set
@@ -88,7 +113,9 @@ class PacketRelayEngine(private val maxCacheSize: Int = 500) {
     var relaySuppressed: Long = 0L
         private set
 
-    fun noteSuppressedRelay() { relaySuppressed++ }
+    fun noteSuppressedRelay() {
+        synchronized(lock) { relaySuppressed++ }
+    }
 
     companion object {
         private const val EARTH_RADIUS_METERS = 6_371_000.0
@@ -191,19 +218,19 @@ class PacketRelayEngine(private val maxCacheSize: Int = 500) {
         val isCritical: Boolean = false
     )
 
-    fun process(bytes: ByteArray, currentLat: Double? = null, currentLon: Double? = null): RelayResult {
+    fun process(bytes: ByteArray, currentLat: Double? = null, currentLon: Double? = null): RelayResult = synchronized(lock) {
         totalProcessed++
 
         val json: JSONObject
         try {
             json = JSONObject(String(bytes))
         } catch (e: Exception) {
-            return RelayResult(isNew = false, relayBytes = null)
+            return@synchronized RelayResult(isNew = false, relayBytes = null)
         }
 
         val packetId = json.optString("packet_id", "")
         if (packetId.isEmpty()) {
-            return RelayResult(isNew = false, relayBytes = null)
+            return@synchronized RelayResult(isNew = false, relayBytes = null)
         }
 
         if (seen.contains(packetId)) {
@@ -214,7 +241,7 @@ class PacketRelayEngine(private val maxCacheSize: Int = 500) {
             val eligibleForReentry = hasMovedSignificantly(packetId, currentLat, currentLon)
             if (!eligibleForReentry) {
                 duplicatesFiltered++
-                return RelayResult(isNew = false, relayBytes = null, packetId = packetId)
+                return@synchronized RelayResult(isNew = false, relayBytes = null, packetId = packetId)
             }
             // Falls through to relay again — location changed enough
             // that this device is being treated as a fresh relay
@@ -232,7 +259,7 @@ class PacketRelayEngine(private val maxCacheSize: Int = 500) {
 
         val ttl = json.optInt("ttl", 0)
         if (ttl <= 0) {
-            return RelayResult(isNew = true, relayBytes = null, packetId = packetId, isCritical = isCritical)
+            return@synchronized RelayResult(isNew = true, relayBytes = null, packetId = packetId, isCritical = isCritical)
         }
 
         val sentAt = parseTimestampMillis(json.optString("timestamp", "").ifEmpty { null })
@@ -240,12 +267,12 @@ class PacketRelayEngine(private val maxCacheSize: Int = 500) {
 
         val newTtl = nextTtl(ttl, priority, ageMillis)
         if (newTtl <= 0) {
-            return RelayResult(isNew = true, relayBytes = null, packetId = packetId, isCritical = isCritical)
+            return@synchronized RelayResult(isNew = true, relayBytes = null, packetId = packetId, isCritical = isCritical)
         }
 
         json.put("ttl", newTtl)
         json.put("hop_count", json.optInt("hop_count", 0) + 1)
-        return RelayResult(
+        RelayResult(
             isNew = true,
             relayBytes = json.toString().toByteArray(),
             packetId = packetId,
@@ -253,21 +280,21 @@ class PacketRelayEngine(private val maxCacheSize: Int = 500) {
         )
     }
 
-    fun rememberOriginated(packetId: String) = remember(packetId)
+    fun rememberOriginated(packetId: String) = synchronized(lock) { remember(packetId) }
 
     /**
      * How many duplicate copies of [packetId] arrived within the last
      * [ECHO_WINDOW_MS]. MeshForegroundService uses this to decide whether
      * its own pending rebroadcast is still worth sending.
      */
-    fun recentEchoCount(packetId: String, now: Long = System.currentTimeMillis()): Int {
-        val stamps = echoTimestamps[packetId] ?: return 0
+    fun recentEchoCount(packetId: String, now: Long = System.currentTimeMillis()): Int = synchronized(lock) {
+        val stamps = echoTimestamps[packetId] ?: return@synchronized 0
         stamps.removeAll { now - it > ECHO_WINDOW_MS }
         if (stamps.isEmpty()) {
             echoTimestamps.remove(packetId)
-            return 0
+            return@synchronized 0
         }
-        return stamps.size
+        stamps.size
     }
 
     private fun noteEcho(packetId: String, now: Long = System.currentTimeMillis()) {

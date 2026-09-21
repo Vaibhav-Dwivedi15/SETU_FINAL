@@ -4,6 +4,7 @@ import android.content.Context
 import android.util.Log
 import com.google.android.gms.nearby.Nearby
 import com.google.android.gms.nearby.connection.*
+import java.util.Collections
 
 class NearbyConnectionsManager(
     private val context: Context,
@@ -14,7 +15,17 @@ class NearbyConnectionsManager(
     private val strategy = Strategy.P2P_CLUSTER
     private val localEndpointName: String = "setu-" + (1000..9999).random()
 
-    val connectedEndpoints: MutableSet<String> = mutableSetOf()
+    // Sep 21 2026 (Vib, native-mesh hardening pass): Nearby Connections
+    // callbacks are not guaranteed by the API contract to all fire on one
+    // thread, and nothing here previously asserted that -- these were
+    // plain mutableSetOf()/mutableMapOf() before. Collections.synchronized*
+    // makes individual get/add/remove calls safe; broadcastBytes() below
+    // additionally synchronizes on connectedEndpoints for the duration of
+    // its iteration, since the java.util docs are explicit that even a
+    // synchronized wrapper needs external synchronization while iterating.
+    // No behavior change -- same set/map contents, same eviction, just
+    // safe under concurrent callback delivery.
+    val connectedEndpoints: MutableSet<String> = Collections.synchronizedSet(mutableSetOf())
 
     // =====================================================
     // PRIORITY 1 -- discovery / connection latency
@@ -45,7 +56,7 @@ class NearbyConnectionsManager(
     private var discoveryStartedAtNanos: Long = 0L
 
     /** endpointId -> nanotime at which we requested/accepted a connection. */
-    private val connectionStartedAtNanos = mutableMapOf<String, Long>()
+    private val connectionStartedAtNanos: MutableMap<String, Long> = Collections.synchronizedMap(mutableMapOf())
 
     interface Listener {
         fun onPeerConnected(endpointId: String)
@@ -101,12 +112,31 @@ class NearbyConnectionsManager(
     }
 
     fun broadcastBytes(bytes: ByteArray) {
-        connectedEndpoints.forEach { endpointId -> sendBytes(endpointId, bytes) }
+        // Manual synchronization required while iterating even a
+        // Collections.synchronizedSet -- see the field's own comment.
+        synchronized(connectedEndpoints) {
+            connectedEndpoints.forEach { endpointId -> sendBytes(endpointId, bytes) }
+        }
     }
 
     private val endpointDiscoveryCallback = object : EndpointDiscoveryCallback() {
         override fun onEndpointFound(endpointId: String, info: DiscoveredEndpointInfo) {
             Log.i(TAG, "Found endpoint: $endpointId (${info.endpointName})")
+
+            // Sep 21 2026 (Vib): guard against re-requesting an endpoint
+            // we're already connected to. Duty-cycling stops/restarts
+            // discovery every burst while a connection persists, so
+            // Nearby Connections re-firing onEndpointFound for an
+            // already-connected peer is a real, reachable case, not a
+            // hypothetical -- previously nothing here checked for it
+            // before calling requestConnection again. Nearby Connections
+            // itself generally no-ops or rejects a redundant request
+            // gracefully, but there is no reason to rely on that silently
+            // when the check is one line.
+            if (connectedEndpoints.contains(endpointId)) {
+                Log.i(TAG, "Ignoring rediscovery of already-connected endpoint: $endpointId")
+                return
+            }
 
             if (discoveryLatencyMicros == 0L && discoveryStartedAtNanos != 0L) {
                 discoveryLatencyMicros = (System.nanoTime() - discoveryStartedAtNanos) / 1_000L
