@@ -4,6 +4,36 @@ Owner: Vib (Mesh/Architecture). Source-level audit as of Sep 21 2026.
 **No TTL values or signature semantics were changed this pass** — this
 document records current behavior, it does not propose changes to it.
 
+> **Correction (Bulk Sprint 2, native audit pass)**: TTL decrement is **not**
+> Dart-exclusive. `PacketRelayEngine.kt` has its own `nextTtl()` — a
+> hand-maintained mirror of `AdaptiveTtl.nextTtl`, same invariants (`result
+> <= MAX_TTL`, `result < input`, `result >= 0`), same stale-packet extra
+> decrement rule — and it runs on every relay decision made while Dart is
+> not attached (app backgrounded/killed, native foreground service still
+> alive). Native declares its own `MAX_TTL = 5` constant separately from
+> Dart's `SecurityConstants.maxTTL`, with a code comment noting they "must
+> stay in sync" — **there is no compile-time or runtime mechanism enforcing
+> that**, so if one is ever changed without the other, native and Dart would
+> silently apply different hop ceilings to the same packet type. See
+> `NATIVE_MESH_AUDIT.md` §7 and §22 of the final report. Not fixed this
+> pass — introducing a single shared source of truth across a Dart file and
+> a Kotlin file (codegen, a build-time constant sync check, or a value read
+> from a shared config asset) is a real infrastructure change, not a
+> one-line patch, and both values are currently `5`, so there is no live
+> drift today.
+>
+> **Update (Bulk Sprint 3)**: a smallest-practical mitigation was added --
+> Dart now pushes `SecurityConstants.maxTTL` alongside every
+> `updateMeshPolicy` call (`nearby_service.dart`), and native
+> (`MeshForegroundService.updateMeshPolicy`) logs a loud `Log.e` warning if
+> the received value doesn't match its own `PacketRelayEngine.MAX_TTL`.
+> This is diagnostic only -- it does not change TTL behavior, does not
+> reject anything, does not enforce anything at build time. It just makes
+> a future accidental drift visible in logs instead of silent. Not a
+> replacement for real shared-constant infrastructure (still recommended
+> as future work), but a real, working, zero-new-dependency improvement
+> over the previous silent-drift-risk state.
+
 ## Current Implementation
 
 - **Actual default TTL in use: 5** (`SecurityConstants.defaultTTL = 5`,

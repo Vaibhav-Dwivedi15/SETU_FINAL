@@ -14,11 +14,25 @@ blocks on a specific peer, so queued packets keep draining to whoever is
 still connected — this satisfies "a failed node must not block the
 pipeline."
 
-**Not verifiable from this audit**: Nearby Connections requires a
-tie-break strategy when two devices discover each other simultaneously
-(who calls `requestConnection`). Nothing in the reviewed Dart code shows
-this, because it would live entirely in native Kotlin, which was out of
-this pass's file scope. **Flagged as unverified, not as broken.**
+**Resolved (Bulk Sprint 2, native audit pass)** — this was previously flagged
+as unverified because it lives entirely in native Kotlin, which was out of
+Sprint 1's file scope. It has now been directly audited: a lexicographic
+tie-break (`localEndpointName < info.endpointName` in
+`NearbyConnectionsManager.onEndpointFound`) correctly decides which device
+calls `requestConnection` vs. waits to `acceptConnection`, with an explicit
+in-code comment describing exactly the failure mode it fixes. **Confirmed
+correct, not broken.** One real gap found alongside it and fixed this pass:
+nothing previously guarded against re-requesting a connection to an
+endpoint already present in `connectedEndpoints` — duty-cycling stops and
+restarts discovery every burst while a connection persists, so Nearby
+Connections re-firing `onEndpointFound` for an already-connected peer was a
+reachable case, not hypothetical. See `NATIVE_MESH_AUDIT.md` §2 and §12.
+
+**Also confirmed this pass**: connection acceptance (`onConnectionInitiated`)
+auto-accepts every incoming connection unconditionally, with no
+authentication/token check on the peer. Not fixed — this is a real feature
+addition with UX implications (some form of peer trust/pairing), not a
+mechanical patch. See `NATIVE_MESH_AUDIT.md` §3.
 
 **CONFIRMED, but in dead code — not fixed, documented instead**:
 `lib/screens/home/home_screen.dart` constructs its own independent
@@ -136,3 +150,8 @@ described in Store-and-Forward above (same underlying mechanism, since
 | App restart with pending queue | Queue survives, retry resumes | SQLite-backed, persists across restart by construction; `_retryPendingUploads()` is also called once immediately in the constructor | None found | — |
 | Emergency terminated (TerminationPacket) | Stop relaying/uploading for that emergency | Durable queue AND in-memory relay queue are both swept (`markEmergencyClosed` + `_relayQueue.removeEmergency`) | None found | — |
 | Registry not yet synced, termination received | Documented fail-open (MVP gap, not a bug) | `ResponderRegistry.checkResponder` returns `(true, false)` when no registry has synced, i.e. an unauthenticated termination is currently accepted before first backend sync | Known, pre-existing, documented in source already | Not addressed this pass — this is a policy/security decision (accept-unverified-until-first-sync vs. reject-until-verified), not something to silently change |
+| Foreground service killed and restarted (`START_STICKY`) | Relay/dedup state should survive, or at least not misbehave | Native `PacketRelayEngine` rebuilt fresh (empty `seen` cache) and `currentAllowRelay`/`currentDiscoveryIntervalMs` reset to full-power defaults until Dart re-syncs via `updateMeshPolicy` | Real gap (native audit, Bulk Sprint 2) | Not fixed — persisting policy/location across process death is a scoped feature addition (e.g. SharedPreferences), not a one-line patch. See `NATIVE_MESH_AUDIT.md` §16 |
+| Concurrent native callback delivery (dedup cache / connection set touched from multiple Nearby Connections threads) | Read-check-write sequences must be atomic | Previously unsynchronized (`PacketRelayEngine`'s `seen`/counters, `NearbyConnectionsManager`'s `connectedEndpoints`/`connectionStartedAtNanos`) | Real gap (native audit, Bulk Sprint 2) | **Fixed** — wrapped in `synchronized(lock)` / `Collections.synchronized*` + explicit iteration locking in `broadcastBytes()`. See `NATIVE_MESH_AUDIT.md` §17 |
+| Bluetooth/Wi-Fi toggled off then back on while service is running | Advertising/discovery should resume automatically | Previously: silently stayed inactive until the app/service was manually restarted -- no listener for radio state changes existed | Real gap (Bulk Sprint 3) | **Fixed** — `MeshForegroundService` now registers a `BroadcastReceiver` for `BluetoothAdapter.ACTION_STATE_CHANGED` and Wi-Fi's `WIFI_STATE_CHANGED` and calls the existing `startDutyCycle()` on a transition to ON. No new permissions needed (both already declared). Not validated on real hardware. |
+| Flapping Nearby connection (repeated failed connection attempts to the same endpoint) | Should back off, not hammer the same endpoint immediately | Previously: no backoff at all -- a failed `requestConnection` could be retried on every discovery burst with no delay | Real gap (Bulk Sprint 3) | **Fixed for the connection-attempt-failure case only** — bounded exponential backoff (2s initial, doubling, 30s ceiling, reset on success) in `NearbyConnectionsManager`. Deliberately does NOT cover a connection that succeeds then disconnects quickly (see `NATIVE_FAILURE_MATRIX.md` row 7) -- no real-device data to pick a duration threshold from. Backoff values themselves not validated on real hardware. |
+| Foreground service killed and restarted, dedup cache / battery policy amnesia (see row above) | Should restore last-known state, not reset to defaults | Previously: full reset to hardcoded defaults every restart | Real gap (Bulk Sprint 2, addressed Bulk Sprint 3) | **Fixed** — `MeshStateStore` (SharedPreferences) persists the current policy on every explicit change and a bounded snapshot of the dedup cache on a 30s timer + best-effort on `onDestroy()`. `onCreate()` restores both before starting discovery. An abrupt OOM-kill (no `onDestroy()` guarantee) can still lose up to one persistence interval's worth of dedup history -- accepted, documented trade-off, not a correctness bug (still bounded by TTL and every other device's own dedup). See `MeshStateStore.kt`'s doc comment for the full reasoning. |
