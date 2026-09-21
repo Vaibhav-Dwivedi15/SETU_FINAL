@@ -15,8 +15,8 @@ confirmed without a real device — flagged honestly rather than guessed.
 
 | # | Input / Condition | Expected Behavior | Current Behavior (source-verified) | Status | Recommended Action |
 |---|---|---|---|---|---|
-| 1 | Bluetooth turned OFF | Discovery/advertising fails gracefully, no crash | `startAdvertising()`/`startDiscovery()` attach `addOnFailureListener { e -> Log.e(...) }` — failure is logged, not thrown. No retry-on-toggle-back-on logic exists (nothing listens for a Bluetooth state-changed broadcast to auto-resume). | Gap | Not fixed this pass — needs a `BroadcastReceiver` for `BluetoothAdapter.ACTION_STATE_CHANGED` to auto-retry `startAdvertising`/`startDiscovery`; a real feature addition, not a one-line patch |
-| 2 | Wi-Fi turned OFF | Same as above (Nearby Connections uses both Bluetooth and Wi-Fi Direct depending on strategy) | Same failure-listener pattern as row 1 — logged, no crash, no auto-resume | Gap | Same as row 1 |
+| 1 | Bluetooth turned OFF, then back ON | Discovery/advertising fails gracefully, no crash, and resumes automatically once the radio is back | `startAdvertising()`/`startDiscovery()` attach `addOnFailureListener { e -> Log.e(...) }` — failure is logged, not thrown, no crash. **Bulk Sprint 3: FIXED the resume half** — `MeshForegroundService` now registers a `BroadcastReceiver` for `BluetoothAdapter.ACTION_STATE_CHANGED` and calls `startDutyCycle()` again on a transition to `STATE_ON`. No new permissions needed (BLUETOOTH already declared for Nearby Connections itself). Not validated on real hardware. | **Fixed this pass** (unvalidated) | None further planned; real-device validation is the remaining step |
+| 2 | Wi-Fi turned OFF, then back ON | Same as above (Nearby Connections uses both Bluetooth and Wi-Fi Direct depending on strategy) | Same failure-listener pattern as row 1 for the OFF case. **Bulk Sprint 3: FIXED the resume half** — the same `BroadcastReceiver` also listens for Wi-Fi's `WIFI_STATE_CHANGED_ACTION` and resumes on `WIFI_STATE_ENABLED`. | **Fixed this pass** (unvalidated) | None further planned; real-device validation is the remaining step |
 | 3 | Nearby Connections API unavailable (Play Services missing/outdated) | App should not crash; mesh should degrade to "unavailable" rather than silently do nothing | `Nearby.getConnectionsClient(context)` is called once in the constructor with no try/catch around it. If this throws (e.g. `Nearby` module not present), it would propagate up through `NearbyConnectionsManager`'s constructor, which is called from `MeshForegroundService.onCreate()`, which — as an unguarded exception during service creation — would crash the app process. **Not verifiable from source alone whether `getConnectionsClient` can actually throw in this way**; the GMS API contract is not fully documented in the reviewed files. | Unverified / possible gap | Flagged, not fixed — wrapping the constructor call in try/catch and surfacing a "mesh unavailable" state to Dart would be the safe fix, but doing so without being able to actually trigger the failure on a device risks masking a real crash with a silent no-op instead. Needs real-device testing before changing. |
 | 4 | Permission denied (nearby devices / location, depending on Android version) | Advertising/discovery calls fail cleanly | Same `addOnFailureListener` pattern as row 1 covers this at the Nearby Connections API level (a permission failure surfaces as a failed task, same as any other). **Not verified**: whether `MainActivity`/the app's permission-request flow actually requests all permissions Nearby Connections needs on the OS versions SETU targets — that is a Dart/platform-config concern, out of this native-file-scope audit. | Partially verified | Out of scope for this pass — belongs in a permissions/platform-config audit, not the mesh-relay audit |
 | 5 | No peers ever found | App should remain functional, not hang | `discoveryLatencyMicros` simply stays `0L` forever (reported to Dart as "not measured", never a fake zero). No timeout, no error state — this is not a failure, it's a valid steady state for an isolated device | Confirmed OK | None |
@@ -31,17 +31,28 @@ confirmed without a real device — flagged honestly rather than guessed.
 | 14 | Duplicate packet arriving from two different peers near-simultaneously | Should be deduped once, not race into double-relay | This is exactly the race the thread-safety fix in row 13 closes — previously two concurrent `process()` calls could both pass the `seen.contains()` check before either inserted, both relaying. Now serialized via `synchronized(lock)`, so the second call sees the first's insertion | **Fixed this pass** | None further |
 | 15 | TTL expired (`ttl <= 0` after decrement) | Not relayed further | `nextTtl()` clamps to `>= 0`; the relay-decision logic in `process()` does not return relay bytes when the resulting TTL would not allow further relay (mirrors `AdaptiveTtl.canRelay`'s intent). Confirmed by reading the decrement/relay-gating logic | Confirmed OK | None |
 | 16 | Device battery low / power-saver mode | Relay/discovery behavior should change | Native has **zero direct battery checks** — purely driven by the `allowRelay`/`allowDiscoveryIntervalMs` values Dart pushes via `updateMeshPolicy`. If Dart never sends an update (e.g. the app was killed before ever attaching), native runs at hardcoded full-power defaults indefinitely | Confirmed by design, with one gap: see row 17 | None for the design itself; see row 17 for the restart interaction |
-| 17 | App/process killed and native foreground service restarted (`START_STICKY`) | Should resume with the last-known policy, or fail safe | `onCreate()` rebuilds everything fresh: `PacketRelayEngine` gets an empty `seen` cache, `lastKnownLat/Lon` reset to null, `currentAllowRelay`/`currentDiscoveryIntervalMs` reset to hardcoded full-power defaults — until Dart reattaches and re-syncs policy. In the meantime the service runs at full power regardless of what battery tier was active before the kill | Real gap (documented, not fixed) | Persist last-known policy/location via SharedPreferences before applying — a scoped, real feature addition, not a one-line patch. See `NATIVE_MESH_AUDIT.md` §16 |
+| 17 | App/process killed and native foreground service restarted (`START_STICKY`) | Should resume with the last-known policy, or fail safe | Previously: `onCreate()` rebuilt everything fresh, full-power defaults until Dart re-synced. **Bulk Sprint 3: FIXED for policy + dedup cache** — `MeshStateStore` persists both (30s timer + on explicit policy change + best-effort on `onDestroy()`), and `onCreate()` restores them before discovery starts. `lastKnownLat/Lon` still reset to null (deliberately not persisted — degrades gracefully, see `NATIVE_MESH_AUDIT.md` §16 update). An abrupt OOM-kill can still lose up to one persistence interval's worth of dedup history — accepted, documented trade-off | **Fixed this pass** (unvalidated) for policy/dedup; location intentionally still not persisted | Real-device validation of restore-on-restart behavior is the remaining step |
 | 18 | Multiple simultaneous packets arriving from several peers at once | Must all be processed correctly, no lost/corrupted state | This is the general case rows 13/14's thread-safety fix protects — `process()`'s full body (dedup, location tracking, echo tracking, counters) is now atomic per-call via `synchronized(lock)`. Throughput is serialized (no genuine parallelism inside `process()`), which is the correct trade-off for correctness over raw throughput at mesh-relay volumes | Confirmed OK (fixed this pass) | None |
 
-## Summary
+## Summary (updated Bulk Sprint 3)
 
 - **Confirmed OK, unchanged**: rows 5, 6, 8, 9, 10, 11 (re-verified), 15.
-- **Fixed this pass**: rows 13, 14, 18 (thread-safety), and the reconnection
-  guard underlying row 7's "already-connected" sub-case (full backoff still
-  a gap).
-- **Real gaps, documented but not fixed** (each requires a scoped feature
-  addition or a product/security decision, not a mechanical patch): rows 1,
-  2, 7 (backoff), 12, 16/17 (restart amnesia).
+- **Fixed in Bulk Sprint 2**: rows 13, 14, 18 (thread-safety), and the
+  reconnection guard underlying row 7's "already-connected" sub-case.
+- **Fixed in Bulk Sprint 3**: rows 1, 2 (Bluetooth/Wi-Fi auto-resume), 7
+  (bounded backoff for failed connection attempts, though the "connects
+  then quickly disconnects" flapping sub-case is still explicitly not
+  covered), 17 (policy + dedup-cache persistence across `START_STICKY`
+  restart, though `lastKnownLat/Lon` is deliberately still not persisted).
+  **None of these are validated on real hardware** — fixed at the
+  source-review level, per this sandbox's confirmed lack of any
+  build/device toolchain.
+- **Real gaps, still documented but not fixed** (each requires a scoped
+  feature addition or a product/security decision this sandbox cannot
+  make alone): connection-level authentication (`NATIVE_MESH_AUDIT.md` §3,
+  see `docs/security/NATIVE_CONNECTION_AUTH_DESIGN.md`), native signature
+  verification (row 12 -- `NATIVE_MESH_AUDIT.md` §5, see
+  `docs/security/NATIVE_SIGNATURE_VERIFICATION_DESIGN.md` — blocked on an
+  unresolvable Maven dependency in this sandbox, not a design gap).
 - **Out of this audit's scope**: rows 3 (GMS availability) and 4
   (permission flow) — platform/config concerns, not mesh-relay logic.

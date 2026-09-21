@@ -85,6 +85,16 @@ An `AckPacket`'s bytes are just another payload to `PacketRelayEngine.process()`
 
 Previously unguarded against re-requesting an already-connected endpoint — see §2 (fixed). No backoff/cooldown exists for a flapping connection (rapid connect/disconnect, e.g. marginal BLE range); nothing throttles reconnection attempts. **Not fixed this pass** — a real fix here (exponential backoff per endpoint) is more than a one-line guard and risks changing reconnection behavior in ways that need testing against real hardware this sandbox doesn't have. Documented as a known gap.
 
+**Update (Bulk Sprint 3): FIXED for the failed-connection-attempt case.**
+`NearbyConnectionsManager` now tracks per-endpoint failure counts and
+applies a bounded exponential backoff (2s initial, doubling, 30s ceiling,
+reset on success) before retrying a `requestConnection` to an endpoint
+whose last attempt failed. Deliberately scoped to NOT cover a connection
+that succeeds and then disconnects quickly — see
+`NATIVE_FAILURE_MATRIX.md` row 7 for why that case was left out. Backoff
+values are a reasonable starting point, not validated against real
+hardware.
+
 ## 13. Store-and-Forward
 
 Native has no durable persistence of its own — `LocalQueueService` (SQLite) is entirely Dart-side. Native's only "memory" of a packet is the in-process `seen` cache, which does not survive a process restart (see §14). This is a reasonable division: native's job is moving bytes reliably while alive, not durable storage.
@@ -102,6 +112,21 @@ Not a native concept at all — "exit node" is purely "this device currently has
 - **Current code**: `onStartCommand` returns `START_STICKY`. On a system-triggered restart after being killed, `onCreate()` re-runs fully — rebuilds `PacketRelayEngine` (fresh, empty `seen` cache), resets `lastKnownLat/Lon` to null, and resets `currentAllowRelay`/`currentDiscoveryIntervalMs` to hardcoded defaults until Dart re-sends `updateMeshPolicy`.
 - **Risk**: a restarted service briefly (a) has amnesia about what it's already relayed (dedup cache wiped — could re-relay something it already forwarded before the restart, though this is bounded by the same TTL/loop protections as any duplicate), and (b) runs at full power ignoring whatever battery tier was in effect, until Dart reconnects and re-syncs.
 - **Action**: **not fixed this pass.** Persisting last-known policy/location across process death (e.g. via SharedPreferences) is a real, scoped feature addition, not a one-line fix — documented for a future pass.
+
+**Update (Bulk Sprint 3): FIXED for policy and dedup-cache state (not
+location).** `MeshStateStore` (new, SharedPreferences-backed) persists
+`currentDiscoveryIntervalMs`/`currentAllowRelay` on every explicit policy
+change, and a bounded snapshot of the dedup `seen` cache every 30s + best-
+effort on a graceful `onDestroy()`. `onCreate()` restores both before
+`startDutyCycle()`/discovery begins. `lastKnownLat`/`lastKnownLon` (used
+only for the location-based dedup re-entry feature, not for correctness)
+were deliberately left unpersisted — losing them just means re-entry
+detection restarts cold, degrading gracefully to plain packet-id dedup
+until a fresh location update arrives, which is not worth the extra
+persisted-state surface for what it buys. An abrupt OOM-kill (no
+`onDestroy()` guarantee) can still lose up to one 30s interval's worth of
+dedup history — accepted, documented trade-off (see `MeshStateStore.kt`),
+not a correctness bug.
 
 ## 17. Thread Safety — Summary
 

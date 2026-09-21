@@ -21,6 +21,18 @@ document records current behavior, it does not propose changes to it.
 > from a shared config asset) is a real infrastructure change, not a
 > one-line patch, and both values are currently `5`, so there is no live
 > drift today.
+>
+> **Update (Bulk Sprint 3)**: a smallest-practical mitigation was added --
+> Dart now pushes `SecurityConstants.maxTTL` alongside every
+> `updateMeshPolicy` call (`nearby_service.dart`), and native
+> (`MeshForegroundService.updateMeshPolicy`) logs a loud `Log.e` warning if
+> the received value doesn't match its own `PacketRelayEngine.MAX_TTL`.
+> This is diagnostic only -- it does not change TTL behavior, does not
+> reject anything, does not enforce anything at build time. It just makes
+> a future accidental drift visible in logs instead of silent. Not a
+> replacement for real shared-constant infrastructure (still recommended
+> as future work), but a real, working, zero-new-dependency improvement
+> over the previous silent-drift-risk state.
 
 ## Current Implementation
 

@@ -18,6 +18,15 @@ Owner: Vib (Mesh/Architecture). Source-level audit as of Sep 21 2026.
 > now wrapped in `synchronized(lock)` (native fix, see final report). No
 > eviction policy, cache size, or key scheme was changed — only the
 > concurrency guarantee around the existing logic.
+>
+> **Update (Bulk Sprint 3)**: the native `seen` cache is now periodically
+> (every 30s) and best-effort-on-shutdown snapshotted to SharedPreferences
+> via `MeshStateStore`, and restored on the next `MeshForegroundService`
+> startup before any packet is processed. This partially closes the
+> "restart wipes dedup history" gap from `NATIVE_MESH_AUDIT.md` §16 (see
+> `MeshStateStore.kt`'s own doc comment for the OOM-kill edge case it
+> still can't cover). Nothing about the cache's size, eviction policy, or
+> key scheme changed — this only adds a way to seed it from a prior run.
 
 ## Current Implementation
 
