@@ -113,6 +113,18 @@ class PacketRelayEngine(private val maxCacheSize: Int = 500) {
     var relaySuppressed: Long = 0L
         private set
 
+    /**
+     * Sep 21 2026 (Vib, Bulk Sprint 4): count of packets rejected by
+     * [SignatureVerifier], counted separately from [duplicatesFiltered]
+     * so a spike in forged/corrupted traffic is visible on its own rather
+     * than hiding inside the ordinary duplicate-rate metric. See
+     * docs/security/NATIVE_SIGNATURE_VERIFICATION_DESIGN.md §10, which
+     * originally recommended this counter.
+     */
+    @Volatile
+    var signatureFailures: Long = 0L
+        private set
+
     fun noteSuppressedRelay() {
         synchronized(lock) { relaySuppressed++ }
     }
@@ -221,9 +233,10 @@ class PacketRelayEngine(private val maxCacheSize: Int = 500) {
     fun process(bytes: ByteArray, currentLat: Double? = null, currentLon: Double? = null): RelayResult = synchronized(lock) {
         totalProcessed++
 
+        val rawJson = String(bytes)
         val json: JSONObject
         try {
-            json = JSONObject(String(bytes))
+            json = JSONObject(rawJson)
         } catch (e: Exception) {
             return@synchronized RelayResult(isNew = false, relayBytes = null)
         }
@@ -231,6 +244,30 @@ class PacketRelayEngine(private val maxCacheSize: Int = 500) {
         val packetId = json.optString("packet_id", "")
         if (packetId.isEmpty()) {
             return@synchronized RelayResult(isNew = false, relayBytes = null)
+        }
+
+        // Sep 21 2026 (Vib, Bulk Sprint 4): signature verification happens
+        // here -- after basic structural checks (parseable JSON, non-empty
+        // packet_id) but BEFORE the packet is admitted to the dedup cache
+        // or considered for relay at all. This is deliberate: an
+        // unverified/forged packet must never be inserted into [seen]
+        // (that would let an attacker "poison" the cache and suppress a
+        // later legitimate copy of the same packet_id as a duplicate) and
+        // must never be relayed. [rawJson] (the original, unparsed wire
+        // bytes) is passed through rather than json.toString(), because
+        // [json] has not been mutated yet at this point anyway, but more
+        // importantly because SignatureVerifier itself depends on reading
+        // latitude/longitude from the ORIGINAL text (see its own doc
+        // comment on the double.toString() interop risk) -- reusing
+        // [rawJson] here keeps that guarantee obvious at the call site
+        // rather than implicit. This matches the migration point recommended
+        // in docs/security/NATIVE_SIGNATURE_VERIFICATION_DESIGN.md §12 and
+        // the Sprint 4 brief's own required flow (parse -> validate fields
+        // -> construct payload -> decode keys -> verify -> dedup -> TTL ->
+        // relay).
+        if (!SignatureVerifier.verifyPacket(rawJson, json)) {
+            signatureFailures++
+            return@synchronized RelayResult(isNew = false, relayBytes = null, packetId = packetId)
         }
 
         if (seen.contains(packetId)) {

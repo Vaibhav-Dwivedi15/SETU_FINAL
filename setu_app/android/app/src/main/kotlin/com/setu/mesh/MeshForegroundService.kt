@@ -444,6 +444,9 @@ class MeshForegroundService : Service(), NearbyConnectionsManager.Listener {
         "totalProcessed" to relayEngine.totalProcessed.toInt(),
         "duplicatesFiltered" to relayEngine.duplicatesFiltered.toInt(),
         "relaySuppressed" to relayEngine.relaySuppressed.toInt(),
+        // Sep 21 2026 (Vib, Bulk Sprint 4): packets rejected by native
+        // Ed25519 verification -- see PacketRelayEngine.signatureFailures.
+        "signatureFailures" to relayEngine.signatureFailures.toInt(),
         "discoveryLatencyMicros" to connectionsManager.discoveryLatencyMicros.toInt(),
         "connectionLatencyMicros" to connectionsManager.connectionLatencyMicros.toInt(),
         "connectedPeers" to connectionsManager.connectedEndpoints.size

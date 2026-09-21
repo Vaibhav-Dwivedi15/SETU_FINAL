@@ -120,6 +120,38 @@ kotlin {
 
 dependencies {
     implementation("com.google.android.gms:play-services-nearby:19.3.0")
+
+    // Sep 21 2026 (Vib, Bulk Sprint 4): native Ed25519 signature
+    // verification (see com.setu.mesh.SignatureVerifier). Declared as the
+    // standard Maven Central coordinate, NOT the sandbox-local file path
+    // used to validate the verification logic offline (see
+    // docs/security/NATIVE_SIGNATURE_TEST_VECTOR.md and
+    // docs/security/NATIVE_SIGNATURE_VERIFICATION_DESIGN.md) -- that
+    // local jar (/usr/share/java/bcprov-1.77.jar) was only ever a
+    // standalone javac/java test harness outside Gradle, and hardcoding
+    // its sandbox-specific path here would silently break on a real
+    // developer machine or CI, where this must resolve from Maven
+    // Central (or a mirror) normally. This exact build has NOT been
+    // compiled with the real Android/Gradle toolchain in this sandbox
+    // (no Flutter/Android SDK present, and Maven Central itself is
+    // network-blocked here -- see docs/BUILD_AND_VALIDATION.md) --
+    // flagged explicitly rather than claimed as a working build.
+    implementation("org.bouncycastle:bcprov-jdk18on:1.78.1")
+
+    // Sep 21 2026 (Vib, Bulk Sprint 4): local JVM unit tests for
+    // src/test/kotlin (see PacketRelayEngineTest.kt). org.json:json is
+    // needed here specifically because Android's REAL bundled org.json
+    // implementation is a stub that throws UnsupportedOperationException
+    // outside an actual device/emulator -- this standalone Maven artifact
+    // provides a real, working implementation for local (non-instrumented)
+    // unit tests, which is the standard, well-known workaround for this
+    // exact situation (not something invented for this project). Neither
+    // of these two test dependencies has been resolved/verified in this
+    // sandbox -- Maven Central remains network-blocked here (see
+    // docs/BUILD_AND_VALIDATION.md) -- so this is a documented-intent
+    // addition, not a confirmed-working one.
+    testImplementation("junit:junit:4.13.2")
+    testImplementation("org.json:json:20231013")
 }
 
 flutter {
