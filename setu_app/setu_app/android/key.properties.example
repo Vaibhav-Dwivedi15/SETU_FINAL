@@ -1,0 +1,18 @@
+# Copy this file to android/key.properties (already gitignored -- see
+# android/.gitignore and the repo root .gitignore) and fill in real
+# values before building a release APK/AAB meant to be distributed.
+#
+# Generate a real release keystore with:
+#   keytool -genkey -v -keystore ~/setu-release.keystore -keyalg RSA \
+#     -keysize 2048 -validity 10000 -alias setu
+#
+# NEVER commit android/key.properties or the .keystore/.jks file it
+# points at. If this file is missing, app/build.gradle.kts falls back
+# to debug signing and prints a build-time warning -- see that file's
+# own comment for why that fallback exists and why it must not be used
+# for a real release.
+
+storePassword=REPLACE_ME
+keyPassword=REPLACE_ME
+keyAlias=setu
+storeFile=/absolute/path/to/setu-release.keystore

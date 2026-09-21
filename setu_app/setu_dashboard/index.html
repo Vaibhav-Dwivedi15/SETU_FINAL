@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <!--
+      SEP 2026 SECURITY HARDENING: meta-tag CSP.
+      FOUND: no Content-Security-Policy anywhere (docs/SECURITY_SCORECARD.md
+      previously marked this NOT IMPLEMENTED). A real HTTP response-header
+      CSP is stronger (can't be stripped by a MITM the way a <meta> tag's
+      surrounding HTML could be, and supports report-uri) but requires a
+      hosting/CDN-layer change this sprint has no visibility into (unknown
+      where this static build is actually deployed/served from). This
+      meta-tag version is real defense-in-depth in the meantime, not a
+      placeholder -- it does restrict what a successful XSS could load.
+      Origins allowed below are every one this app actually uses, read
+      directly out of src/ (react-leaflet tile servers, marker icon CDNs,
+      Google Fonts, and the backend API) -- not a generic template:
+        - img-src: CARTO basemap tiles (MapView.jsx/IncidentDetailDrawer.jsx),
+          raw.githubusercontent.com + unpkg.com (colored marker icons,
+          IncidentDetailDrawer.jsx), data: (inline SVG/data URIs)
+        - connect-src: the deployed backend (see src/services/api.js) plus
+          localhost:8000 for local dev against a local backend
+        - style-src 'unsafe-inline' is required -- React/leaflet/recharts
+          all set inline `style` attributes at runtime; a nonce-based
+          approach would need real testing against a running build, which
+          isn't possible in this sandbox, so 'unsafe-inline' is the
+          honest, working choice here rather than an untested nonce setup
+        - script-src has NO 'unsafe-inline'/'unsafe-eval' -- the build is
+          plain ES module script tags, no inline scripts needed
+      KNOWN LIMITATION, stated plainly: if VITE_BACKEND_URL is ever pointed
+      at a different backend origin at build time, connect-src below must
+      be updated to match, or API calls will be silently blocked by this
+      policy. Not auto-derived from the env var here since a <meta> tag is
+      static HTML, not templated per-build.
+
+      SECOND KNOWN LIMITATION: this same index.html serves both `npm run
+      dev` and `npm run build`. Vite's dev-mode HMR client can need
+      'unsafe-eval' and a ws:// connection this policy does not allow --
+      NOT verified against a running `vite dev` session in this sandbox
+      (no Node/npm environment available here). If local dev breaks under
+      this CSP, loosen it for dev only (e.g. strip this meta tag via a
+      dev-only index.html, or move to a real header-based CSP that the
+      dev server and the production host set differently) rather than
+      permanently weakening the production policy above.
+    -->
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: https://*.basemaps.cartocdn.com https://raw.githubusercontent.com https://unpkg.com; connect-src 'self' https://setu-backend-cy78.onrender.com http://localhost:8000; object-src 'none'; base-uri 'self'; frame-ancestors 'self'"
+    />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet" />
+    <title>SETU — Emergency Response Dashboard</title>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.jsx"></script>
+  </body>
+</html>

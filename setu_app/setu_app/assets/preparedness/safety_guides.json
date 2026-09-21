@@ -1,0 +1,96 @@
+{
+  "version": 1,
+  "guides": [
+    {
+      "id": "flood",
+      "title": "Flood",
+      "summary": "Before, during and after a flood",
+      "steps": [
+        "Move important documents, medicines and phone chargers to a waterproof bag now, before water rises.",
+        "Know your building's highest safe floor and the fastest route to it.",
+        "If water is rising, move to higher ground immediately — do not wait for it to enter your home.",
+        "Never walk or drive through moving flood water. 15cm of fast water can knock an adult down.",
+        "Avoid contact with flood water where possible — it can be contaminated.",
+        "After the flood, do not return home until authorities say it is safe. Check for structural damage before entering.",
+        "Boil or treat drinking water until you know the local supply is safe again."
+      ]
+    },
+    {
+      "id": "fire",
+      "title": "Fire",
+      "summary": "Before, during and after a fire emergency",
+      "steps": [
+        "Know two exit routes from your home or building, not just one.",
+        "Keep a fire extinguisher and a torch somewhere you can reach in the dark.",
+        "If you smell smoke, stay low — cleaner air is near the floor.",
+        "Check doors for heat before opening them. If a door is hot, use your second exit.",
+        "Never use a lift during a fire — always take the stairs.",
+        "Once outside, stay outside. Do not go back in for belongings.",
+        "Call emergency services as soon as you are safe, and use SETU's SOS if the network is down."
+      ]
+    },
+    {
+      "id": "earthquake",
+      "title": "Earthquake",
+      "summary": "Before, during and after an earthquake",
+      "steps": [
+        "Identify solid furniture near you (a sturdy table, an interior wall corner) you could shelter under or against.",
+        "Secure heavy furniture and shelves that could fall.",
+        "When shaking starts: Drop, Cover, Hold On. Get under sturdy furniture and hold on until shaking stops.",
+        "Stay away from windows, mirrors and anything that could shatter.",
+        "If outdoors, move to an open area away from buildings, trees and power lines.",
+        "After shaking stops, expect aftershocks. Check yourself and others for injuries before moving around.",
+        "Exit the building calmly if it is damaged — do not use lifts."
+      ]
+    },
+    {
+      "id": "accident",
+      "title": "Accident / General Emergency",
+      "summary": "What to do at the scene of an accident",
+      "steps": [
+        "Check for danger to yourself before approaching — oncoming traffic, fire, unstable structures.",
+        "Call for help immediately. Use SETU's SOS if you have no signal.",
+        "Do not move an injured person unless they are in immediate danger (fire, traffic, flood).",
+        "If someone is bleeding heavily, apply firm, steady pressure with a clean cloth.",
+        "Keep the person calm and still until help arrives.",
+        "Note the location clearly — a nearby landmark helps responders find you faster."
+      ]
+    },
+    {
+      "id": "women_safety",
+      "title": "Women's Safety",
+      "summary": "Staying safe and reaching help quickly",
+      "steps": [
+        "Share your live location with a trusted contact when travelling alone, especially at night.",
+        "Keep SETU's SOS quick-access enabled — a hold or volume-button trigger can call for help silently.",
+        "Trust your instincts. If a situation feels wrong, move to a public, well-lit place.",
+        "Memorise or save at least two emergency contacts who can act quickly.",
+        "If you are being followed, head toward the nearest open shop, guard post or crowd, not home."
+      ]
+    },
+    {
+      "id": "child_safety",
+      "title": "Child Safety",
+      "summary": "Preparing children and reporting a missing child",
+      "steps": [
+        "Teach children their full name, a parent's phone number, and how to find a trusted adult (police, guard, shopkeeper) if lost.",
+        "Add your child's profile in SETU's Child Safety section so it's ready if needed.",
+        "Agree on a family meeting point in case you get separated during an emergency.",
+        "If a child goes missing, report it immediately — do not wait. Use SETU's lost child broadcast to alert nearby devices.",
+        "Give a clear, recent description: height, clothing, and where they were last seen."
+      ]
+    },
+    {
+      "id": "senior_citizen",
+      "title": "Senior Citizen Emergency",
+      "summary": "Preparedness for elderly family members",
+      "steps": [
+        "Keep a list of current medications, dosages and doctor contact details somewhere accessible.",
+        "Save emergency contacts in SETU with clear labels (e.g. \"Son — Ravi\").",
+        "If a senior lives alone, agree on a daily check-in method with family.",
+        "Know the route to the nearest hospital and keep it saved offline.",
+        "During a disaster, mobility may be limited — plan an evacuation route that does not rely on stairs where possible."
+      ]
+    }
+  ]
+}

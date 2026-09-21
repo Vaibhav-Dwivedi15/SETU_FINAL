@@ -21,10 +21,16 @@
 // The phone number field is KEPT (not removed) — it's still used
 // elsewhere (emergency contact display, profile), just no longer the
 // login/verification channel.
-
+//
+// COLD-START UX: _wakingUp is kept separate from _sendError on purpose
+// — a Render free-tier cold start (up to ~50s) is not an error, it's
+// the server starting up. Showing it as a red error banner would look
+// broken; showing it as its own informational state during the
+// service's automatic 45s retry keeps the screen honest about what's
+// actually happening. See services/email_otp_service.dart's
+// _withColdStartRetry / onRetrying for where this is triggered from.
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
-
 import 'package:setu_app/core/design_system/app_colors.dart';
 import 'package:setu_app/core/design_system/app_radius.dart';
 import 'package:setu_app/core/design_system/app_spacing.dart';
@@ -46,8 +52,8 @@ class _LoginScreenState extends State<LoginScreen> {
   final _emailController = TextEditingController();
   final _phoneController = TextEditingController();
   final _otpService = EmailOtpService();
-
   bool _isSending = false;
+  bool _wakingUp = false;
   String? _sendError;
 
   @override
@@ -72,18 +78,24 @@ class _LoginScreenState extends State<LoginScreen> {
 
   Future<void> _sendOtp() async {
     if (!_formKey.currentState!.validate()) return;
-
     setState(() {
       _isSending = true;
+      _wakingUp = false;
       _sendError = null;
     });
-
     final email = _emailController.text.trim();
-    final result = await _otpService.requestOtp(email: email);
-
+    final result = await _otpService.requestOtp(
+      email: email,
+      onRetrying: () {
+        if (!mounted) return;
+        setState(() => _wakingUp = true);
+      },
+    );
     if (!mounted) return;
-    setState(() => _isSending = false);
-
+    setState(() {
+      _isSending = false;
+      _wakingUp = false;
+    });
     if (!result.delivered) {
       // Honest failure: the backend accepted the request but no email
       // actually went out (SMTP not configured server-side, or the send
@@ -91,7 +103,6 @@ class _LoginScreenState extends State<LoginScreen> {
       setState(() => _sendError = result.detail);
       return;
     }
-
     context.push(
       '/otp',
       extra: {
@@ -115,7 +126,6 @@ class _LoginScreenState extends State<LoginScreen> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 const SizedBox(height: AppSpacing.xl),
-
                 Container(
                   height: 72,
                   width: 72,
@@ -129,9 +139,7 @@ class _LoginScreenState extends State<LoginScreen> {
                     color: AppColors.primary,
                   ),
                 ),
-
                 const SizedBox(height: AppSpacing.lg),
-
                 Text(AppStrings.of(context).t('login.title'), style: AppTypography.headline),
                 const SizedBox(height: AppSpacing.xs),
                 Text(
@@ -140,9 +148,7 @@ class _LoginScreenState extends State<LoginScreen> {
                     color: AppColors.neutral500,
                   ),
                 ),
-
                 const SizedBox(height: AppSpacing.xl),
-
                 Text(AppStrings.of(context).t('login.fullName'), style: AppTypography.subtitle),
                 const SizedBox(height: AppSpacing.sm),
                 TextFormField(
@@ -153,9 +159,7 @@ class _LoginScreenState extends State<LoginScreen> {
                       ? 'Name is required'
                       : null,
                 ),
-
                 const SizedBox(height: AppSpacing.lg),
-
                 Text(AppStrings.of(context).t('login.email'), style: AppTypography.subtitle),
                 const SizedBox(height: AppSpacing.sm),
                 TextFormField(
@@ -165,9 +169,7 @@ class _LoginScreenState extends State<LoginScreen> {
                   decoration: const InputDecoration(hintText: 'you@example.com'),
                   validator: _validateEmail,
                 ),
-
                 const SizedBox(height: AppSpacing.lg),
-
                 Text(
                   AppStrings.of(context).t('login.phone'),
                   style: AppTypography.subtitle,
@@ -184,7 +186,34 @@ class _LoginScreenState extends State<LoginScreen> {
                   textInputAction: TextInputAction.done,
                   decoration: const InputDecoration(hintText: 'Phone number (optional)'),
                 ),
-
+                if (_wakingUp) ...[
+                  const SizedBox(height: AppSpacing.md),
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(AppSpacing.sm),
+                    decoration: BoxDecoration(
+                      color: AppColors.primaryContainer,
+                      borderRadius: AppRadius.mdRadius,
+                    ),
+                    child: Row(
+                      children: [
+                        const SizedBox(
+                          width: 18,
+                          height: 18,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        ),
+                        const SizedBox(width: AppSpacing.sm),
+                        Expanded(
+                          child: Text(
+                            'Connecting... the server was idle and is waking up, '
+                            'this can take up to 30s.',
+                            style: AppTypography.caption.copyWith(color: AppColors.neutral900),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
                 if (_sendError != null) ...[
                   const SizedBox(height: AppSpacing.md),
                   Container(
@@ -208,12 +237,12 @@ class _LoginScreenState extends State<LoginScreen> {
                     ),
                   ),
                 ],
-
                 const SizedBox(height: AppSpacing.xl),
-
                 AppButton(
                   label: _isSending
-                      ? AppStrings.of(context).t('login.sendingCode')
+                      ? (_wakingUp
+                          ? 'Waking up server...'
+                          : AppStrings.of(context).t('login.sendingCode'))
                       : AppStrings.of(context).t('login.sendCode'),
                   onPressed: _isSending ? null : _sendOtp,
                 ),

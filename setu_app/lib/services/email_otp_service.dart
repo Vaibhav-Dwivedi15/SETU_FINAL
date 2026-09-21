@@ -17,18 +17,26 @@
 // claiming success — showing "code sent!" over an email that went
 // nowhere is exactly the kind of thing this project's honesty rules
 // exist to prevent.
-
+//
+// COLD-START FIX: the backend runs on Render's free tier, which sleeps
+// after ~15 minutes idle and can take 20-50s to wake on the next
+// request (see SETU_Ayush_ColdStart_Fix.md). The original 10s timeout
+// was shorter than a real cold start, so a sleeping backend always
+// looked like "could not reach the server" even though it was actually
+// just waking up. Both request/verify now try a normal 10s timeout
+// first, and — only if THAT specific attempt times out — retry once
+// with a 45s timeout before giving up for real. A real connection
+// failure or non-2xx response is not retried (retrying those would
+// just double the wait on a request that was never going to succeed).
 import 'dart:async';
 import 'dart:convert';
 import 'dart:developer' as developer;
-
 import 'package:http/http.dart' as http;
 
 class OtpRequestResult {
   final bool delivered;
   final String detail;
   final int expiresInMinutes;
-
   const OtpRequestResult({
     required this.delivered,
     required this.detail,
@@ -40,7 +48,6 @@ class OtpVerifyResult {
   final bool verified;
   final String detail;
   final String? senderId;
-
   const OtpVerifyResult({
     required this.verified,
     required this.detail,
@@ -50,8 +57,28 @@ class OtpVerifyResult {
 
 class EmailOtpService {
   EmailOtpService({this.baseUrl = 'https://setu-backend-cy78.onrender.com'});
-
   final String baseUrl;
+
+  /// Cold-start safety net — see file header. [onRetrying] fires right
+  /// before the slow retry begins, so a caller (e.g. the login screen)
+  /// can show a "waking up the server..." message instead of leaving
+  /// the button looking frozen for up to 45s with no explanation.
+  Future<http.Response> _withColdStartRetry(
+    Future<http.Response> Function(Duration timeout) request, {
+    void Function()? onRetrying,
+  }) async {
+    try {
+      return await request(const Duration(seconds: 10));
+    } on TimeoutException {
+      developer.log(
+        'Request timed out at 10s — retrying once with a 45s cold-start '
+        'timeout before giving up',
+        name: 'EmailOtpService',
+      );
+      onRetrying?.call();
+      return await request(const Duration(seconds: 45));
+    }
+  }
 
   /// Requests a code for [email]. Optionally binds it to this device's
   /// [senderId] (hex Ed25519 public key) so a verified email can be tied
@@ -64,19 +91,22 @@ class EmailOtpService {
   Future<OtpRequestResult> requestOtp({
     required String email,
     String? senderId,
+    void Function()? onRetrying,
   }) async {
     try {
-      final response = await http
-          .post(
-            Uri.parse('$baseUrl/auth/request-otp'),
-            headers: {'Content-Type': 'application/json'},
-            body: jsonEncode({
-              'email': email,
-              if (senderId != null) 'sender_id': senderId,
-            }),
-          )
-          .timeout(const Duration(seconds: 10));
-
+      final response = await _withColdStartRetry(
+        (timeout) => http
+            .post(
+              Uri.parse('$baseUrl/auth/request-otp'),
+              headers: {'Content-Type': 'application/json'},
+              body: jsonEncode({
+                'email': email,
+                if (senderId != null) 'sender_id': senderId,
+              }),
+            )
+            .timeout(timeout),
+        onRetrying: onRetrying,
+      );
       if (response.statusCode < 200 || response.statusCode >= 300) {
         developer.log(
           'OTP request rejected: ${response.statusCode} ${response.body}',
@@ -86,7 +116,6 @@ class EmailOtpService {
             'Could not request a verification code (server error ${response.statusCode}).';
         return OtpRequestResult(delivered: false, detail: detail, expiresInMinutes: 10);
       }
-
       final decoded = jsonDecode(response.body) as Map<String, dynamic>;
       return OtpRequestResult(
         delivered: decoded['delivered'] as bool? ?? false,
@@ -108,16 +137,19 @@ class EmailOtpService {
   Future<OtpVerifyResult> verifyOtp({
     required String email,
     required String code,
+    void Function()? onRetrying,
   }) async {
     try {
-      final response = await http
-          .post(
-            Uri.parse('$baseUrl/auth/verify-otp'),
-            headers: {'Content-Type': 'application/json'},
-            body: jsonEncode({'email': email, 'code': code}),
-          )
-          .timeout(const Duration(seconds: 10));
-
+      final response = await _withColdStartRetry(
+        (timeout) => http
+            .post(
+              Uri.parse('$baseUrl/auth/verify-otp'),
+              headers: {'Content-Type': 'application/json'},
+              body: jsonEncode({'email': email, 'code': code}),
+            )
+            .timeout(timeout),
+        onRetrying: onRetrying,
+      );
       if (response.statusCode < 200 || response.statusCode >= 300) {
         final detail = _extractDetail(response.body) ?? 'That code is incorrect.';
         developer.log(
@@ -126,7 +158,6 @@ class EmailOtpService {
         );
         return OtpVerifyResult(verified: false, detail: detail);
       }
-
       final decoded = jsonDecode(response.body) as Map<String, dynamic>;
       return OtpVerifyResult(
         verified: decoded['verified'] as bool? ?? false,
