@@ -162,3 +162,60 @@ an unexpected repeated relay, crash, or ANR. This data is exactly what
 `SETU_VIB_NATIVE_MESH_FINAL_REPORT.md`'s "Real-Device Results" section
 needs and currently cannot contain, because no hardware was available to
 this sandbox session.
+
+## Sprint 4 addition — Compact Operator Checklist (14 scenarios)
+
+Sep 21 2026 (Vib, Bulk Sprint 4, §18/§33). Scenarios 1-4 above are
+detailed, narrative walkthroughs — good for a first careful run, but
+slow to repeat. This section is the same underlying test surface
+condensed into a single table an operator can work through quickly on a
+real 4-device pass (or a smaller subset with fewer devices — most rows
+only need 2-3), still with nothing executed, since no hardware exists in
+this sandbox — same disclaimer as every other line in this document.
+
+**Roles** (fixed for the whole checklist, matches Scenarios 1-4's
+topology):
+- **Device A — Originator.** Always the device that triggers the
+  SOS/emergency packet. Never relays anyone else's packet in these
+  scenarios (kept simple on purpose — a real deployment has no fixed
+  roles, but a fixed role per device makes results comparable run to
+  run).
+- **Device B — Relay.** First hop. Not in direct range of C (verify
+  before starting, exactly as Scenario 1 says).
+- **Device C — Exit Node.** Has real internet connectivity (the other
+  three devices should not, so "reached the backend" only happens through
+  C).
+- **Device D — optional loop participant.** Only needed for the ring
+  scenarios (#4, #13 below); can be left out of a 3-device pass, with
+  those two rows marked "not run — no Device D" rather than skipped
+  silently.
+
+**Per-row fields to record** (columns for the table below): Timestamp,
+Device(s) involved, Android version, Battery % at start, Topology note
+(any deviation from the fixed A/B/C/D roles above), Result
+(PASS/FAIL/BLOCKED), Latency (origination → "Delivered", if applicable),
+Logs (any logcat line worth keeping — crash, ANR, unexpected repeated
+relay, signature rejection).
+
+| # | Scenario | Devices | What to do | Pass criteria |
+|---|---|---|---|---|
+| 1 | Single-hop (direct) | A, C | Put A in direct range of C only (no B). A originates. | C receives directly, uploads, acks; A shows "Delivered". |
+| 2 | Two-hop relay | A, B, C | Scenario 1 above (this file's main §"Scenario 1"). | A shows "Delivered" via B→C round trip. |
+| 3 | Three-hop relay | A, B, C, D (chain, not ring: A↔B↔C↔D, D also has internet or forwards to C) | Chain topology, A originates, D or C is the only exit node. | Packet reaches the exit node and acks back across all 3 hops. |
+| 4 | Four-device ring (loop protection) | A, B, C, D | This file's Scenario 4. | No device relays the same `packet_id` more than once; no ANR/crash. |
+| 5 | Mid-relay disconnect | A, B, C | This file's Scenario 3. | Packet not silently lost; reaches C once B reconnects or A comes into direct range. |
+| 6 | Exit-node internet loss | A, B, C | This file's Scenario 2. | Packet queues and uploads once C's connectivity returns; A eventually shows "Delivered". |
+| 7 | Internet restoration mid-queue | B or C | Start with NO device having internet; originate; bring C online after a delay. | Same as #6, from a colder start (nobody had connectivity at origination time). |
+| 8 | Duplicate packet (dedup) | A, B | A originates; immediately re-send the exact same packet_id a second time (e.g. via app restart replay, or a debug hook if one exists) to B. | B's `duplicatesFiltered` counter increments; the packet is not relayed twice. |
+| 9 | Invalid signature (Sprint 4, NEW) | A (modified client or hand-crafted packet), B | Send B a packet with a tampered/invalid `signature` field (needs a way to inject a malformed packet — a debug/test hook, since the real app always signs correctly; document however this was actually done on the day). | B's `signatureFailures` counter increments; packet is neither relayed nor added to B's dedup cache (a subsequent valid copy of the same packet_id should still be accepted — see `PacketRelayEngineTest.kt`'s `process_invalidSignature_isNotAdmittedToDedupCache` for the same assertion at the unit level). |
+| 10 | App restart (START_STICKY persistence) | Any one device (B recommended, mid-relay) | Force-stop the app process on B while it has active dedup state; let `START_STICKY` restart the service; re-send a packet B had already seen before the restart. | B does NOT re-relay a packet it had already relayed before the restart (persisted `seen` cache survived) — see `MeshStateStore`/`SPRINT4_EDGE_CASE_REVIEW.md` §1. |
+| 11 | Bluetooth OFF/ON | Any one device (B recommended) | Toggle Bluetooth off, wait, toggle back on. | Mesh resumes advertising/discovery automatically without restarting the app — see `SPRINT4_EDGE_CASE_REVIEW.md` §2. |
+| 12 | Wi-Fi OFF/ON | Any one device | Same as #11, for Wi-Fi. | Same pass criteria as #11. |
+| 13 | Low battery / power-saver duty cycle | Any one device, genuinely low battery or simulated via `updateMeshPolicy` | Trigger the power-saver tier; confirm the device is still discoverable, just on a longer duty-cycle interval. | Packets still relay, with acceptable (documented, not zero) added latency — not a hard pass/fail number, a recorded observation. |
+| 14 | Recovery ACK round trip | A, C | After Scenario 1/2 succeeds and C's `AckPacket` returns to A, confirm the emergency's full lifecycle status (not just "Delivered", but any Recovery/responder-facing state the app exposes) updates correctly. | A's history screen reflects the correct terminal state, matching what `ACK_LIFECYCLE.md` documents. |
+
+Rows 9-13 are new to this sprint (signature verification, START_STICKY
+persistence, and radio-resume did not exist before Sprint 3/4); rows 1-8
+and 14 restate this file's original four narrative scenarios plus two
+additional decompositions (single-hop and internet-restoration-from-cold)
+in the same compact format for faster repeat runs.
