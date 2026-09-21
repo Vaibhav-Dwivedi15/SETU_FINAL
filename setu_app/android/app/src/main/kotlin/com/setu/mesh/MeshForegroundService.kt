@@ -335,7 +335,27 @@ class MeshForegroundService : Service(), NearbyConnectionsManager.Listener {
     }
 
     override fun onPayloadReceived(endpointId: String, bytes: ByteArray) {
+        // Sep 21 2026 (Vib, Bulk Sprint 5, Phase 12 — observability):
+        // PacketRelayEngine.process() itself deliberately has NO
+        // android.util.Log import (that independence from the Android SDK
+        // is exactly what let its real, unmodified source compile and run
+        // outside Gradle this sprint — see
+        // docs/mesh/SPRINT5_INTEGRATION_VALIDATION.md §11 for why that
+        // matters and stays that way). Before this sprint, a signature
+        // rejection was observable ONLY by polling relayStats()'s
+        // signatureFailures counter -- there was no logcat line at all, so
+        // a rejection happening right now was invisible without actively
+        // watching a counter delta. This delta check adds exactly that
+        // visibility, here in the service (which already owns Log/TAG),
+        // without adding any Android dependency to the engine itself.
+        // Deliberately logs only packetId and the fixed reason string --
+        // never the raw signature, public key, or packet message/location
+        // content, per the "no verbose sensitive logging" rule.
+        val signatureFailuresBefore = relayEngine.signatureFailures
         val result = relayEngine.process(bytes, lastKnownLat, lastKnownLon)
+        if (relayEngine.signatureFailures > signatureFailuresBefore) {
+            Log.w(TAG, "signature verification failed packet_id=${result.packetId ?: "unknown"} reason=INVALID_SIGNATURE")
+        }
         if (!result.isNew) return // duplicate — native engine already filtered it
 
         // Hand the packet to Dart/UI for display + eventual backend upload.
