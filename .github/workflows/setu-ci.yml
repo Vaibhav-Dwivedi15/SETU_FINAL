@@ -19,6 +19,18 @@
 # validate a safe configuration for) -- adding those without real secrets
 # management in place would be a bigger, riskier change than this sprint's
 # scope, not a smaller one.
+#
+# Sep 21 2026 (Vib, Bulk Sprint 5, Phase 10): reviewed this workflow again.
+# One real, project-derived fact was found and is noted below
+# (setu_app/pubspec.yaml's `environment: sdk: ^3.12.2` constraint) --
+# still not enough to safely pin an exact Flutter version here (that needs
+# knowing which Flutter release ships that Dart SDK version, which this
+# sandbox has no way to look up without network access to confirm), so the
+# `channel: stable` placeholder and its TODO remain, per the explicit
+# instruction not to invent a Flutter version. The Android SDK setup TODO
+# also remains unresolved -- nothing in this project's own files
+# determines that action's exact configuration, and this sandbox has no
+# way to test-run it.
 
 name: SETU CI
 
@@ -38,7 +50,11 @@ jobs:
       # TODO: pin this to the project's actual Flutter version once one
       # is confirmed on a real developer machine (see
       # docs/BUILD_AND_VALIDATION.md §1) -- 'stable' is a reasonable
-      # placeholder, not a verified-correct pin.
+      # placeholder, not a verified-correct pin. Known constraint from the
+      # project itself (setu_app/pubspec.yaml): `sdk: ^3.12.2` -- whichever
+      # Flutter version is pinned here must bundle a Dart SDK satisfying
+      # that, but this sandbox cannot look up that Flutter<->Dart mapping
+      # without network access, so 'stable' stays as the placeholder.
       - name: Set up Flutter
         uses: subosito/flutter-action@v2
         with:
