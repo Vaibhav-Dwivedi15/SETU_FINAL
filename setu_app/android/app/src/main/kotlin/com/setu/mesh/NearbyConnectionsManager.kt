@@ -58,6 +58,58 @@ class NearbyConnectionsManager(
     /** endpointId -> nanotime at which we requested/accepted a connection. */
     private val connectionStartedAtNanos: MutableMap<String, Long> = Collections.synchronizedMap(mutableMapOf())
 
+    // =====================================================
+    // Sep 21 2026 (Vib, Bulk Sprint 3) -- bounded reconnection backoff
+    // =====================================================
+    //
+    // Scoped narrowly on purpose. This only backs off the case that's
+    // unambiguous from source review: a connection attempt WE initiated
+    // (the tie-break "we go first" branch below) that Nearby Connections
+    // itself reports as failed (onConnectionResult, non-OK status) --
+    // e.g. the peer moved out of range mid-handshake, or the handshake
+    // simply timed out. Repeatedly retrying that exact case with no
+    // delay is the clearest flapping-storm risk this file has.
+    //
+    // Deliberately NOT covered this pass: a connection that succeeds and
+    // then disconnects quickly afterward (onDisconnected). Distinguishing
+    // "flapping" from "a normal, useful, but short-lived relay contact"
+    // would need a real duration threshold, and picking one without any
+    // device to observe actual real-world connection durations against
+    // is exactly the kind of arbitrary-value guess this sprint's rules
+    // say not to make. Left as a documented gap, not silently ignored --
+    // see NATIVE_FAILURE_MATRIX.md row 7.
+    //
+    // Values below (initial delay, multiplier, ceiling) are a reasonable
+    // starting point, not a validated one -- this sandbox has no hardware
+    // to observe real reconnection timing against. They intentionally:
+    //   - never delay a FIRST attempt to a newly-discovered endpoint
+    //     (failure count starts at 0 -- "do not sacrifice emergency
+    //     connectivity" from a device we've never even tried yet), and
+    //   - reset to zero the moment a connection actually succeeds, so a
+    //     peer that reconnects cleanly is never penalized for an old,
+    //     unrelated failure.
+    // Needs real-device validation before the specific numbers are
+    // trusted -- flagged explicitly in the final report, not claimed as
+    // tested.
+    private val connectionFailureCount: MutableMap<String, Int> = Collections.synchronizedMap(mutableMapOf())
+    private val lastConnectionAttemptAtNanos: MutableMap<String, Long> = Collections.synchronizedMap(mutableMapOf())
+
+    private fun backoffDelayMs(failureCount: Int): Long {
+        if (failureCount <= 0) return 0L
+        val exponential = INITIAL_BACKOFF_MS * (1L shl (failureCount - 1).coerceAtMost(10))
+        return exponential.coerceAtMost(MAX_BACKOFF_MS)
+    }
+
+    /** True if we're allowed to attempt a connection to [endpointId] right
+     * now; false if a prior failure's backoff window hasn't elapsed yet. */
+    private fun canAttemptConnection(endpointId: String): Boolean {
+        val failures = connectionFailureCount[endpointId] ?: 0
+        if (failures <= 0) return true
+        val delayNanos = backoffDelayMs(failures) * 1_000_000L
+        val lastAttempt = lastConnectionAttemptAtNanos[endpointId] ?: return true
+        return System.nanoTime() - lastAttempt >= delayNanos
+    }
+
     interface Listener {
         fun onPeerConnected(endpointId: String)
         fun onPeerDisconnected(endpointId: String)
@@ -102,6 +154,8 @@ class NearbyConnectionsManager(
         connectionsClient.stopAllEndpoints()
         connectedEndpoints.clear()
         connectionStartedAtNanos.clear()
+        connectionFailureCount.clear()
+        lastConnectionAttemptAtNanos.clear()
         // Full shutdown ends the measurement session: the next
         // startDiscovery() begins timing a genuinely new one.
         discoveryStartedAtNanos = 0L
@@ -152,6 +206,12 @@ class NearbyConnectionsManager(
             // the device whose name sorts first initiates; the other side
             // just waits to accept.
             if (localEndpointName < info.endpointName) {
+                if (!canAttemptConnection(endpointId)) {
+                    val failures = connectionFailureCount[endpointId] ?: 0
+                    Log.i(TAG, "Backoff active for $endpointId (failure #$failures) -- skipping connection attempt this discovery cycle")
+                    return
+                }
+                lastConnectionAttemptAtNanos[endpointId] = System.nanoTime()
                 Log.i(TAG, "Requesting connection to $endpointId (we go first: $localEndpointName < ${info.endpointName})")
                 connectionsClient.requestConnection(localEndpointName, endpointId, connectionLifecycleCallback)
             } else {
@@ -178,11 +238,19 @@ class NearbyConnectionsManager(
                     connectionLatencyMicros = (System.nanoTime() - startedAt) / 1_000L
                     Log.i(TAG, "Connection establishment latency: ${connectionLatencyMicros / 1000}ms")
                 }
+                // Reset backoff -- a successful connection means whatever
+                // was causing prior failures (if any) is no longer
+                // happening, so this endpoint shouldn't keep paying for
+                // past trouble.
+                connectionFailureCount.remove(endpointId)
+                lastConnectionAttemptAtNanos.remove(endpointId)
                 Log.i(TAG, "Connected to $endpointId")
                 listener.onPeerConnected(endpointId)
             } else {
                 connectionStartedAtNanos.remove(endpointId)
-                Log.w(TAG, "Connection to $endpointId failed: ${result.status}")
+                val failures = (connectionFailureCount[endpointId] ?: 0) + 1
+                connectionFailureCount[endpointId] = failures
+                Log.w(TAG, "Connection to $endpointId failed: ${result.status} (failure #$failures, next retry backoff ~${backoffDelayMs(failures)}ms)")
             }
         }
 
@@ -206,5 +274,10 @@ class NearbyConnectionsManager(
 
     companion object {
         private const val TAG = "NearbyConnectionsManager"
+
+        /** See the reconnection-backoff block above for the full
+         * rationale. Not validated on real hardware. */
+        private const val INITIAL_BACKOFF_MS = 2_000L
+        private const val MAX_BACKOFF_MS = 30_000L
     }
 }
