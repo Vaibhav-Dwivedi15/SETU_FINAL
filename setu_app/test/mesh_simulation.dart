@@ -327,9 +327,8 @@ class _FakeLocalQueue extends LocalQueueService {
   Future<void> pruneUploaded({Duration maxAge = const Duration(days: 3)}) async {}
 
   @override
-  Future<void> markEmergencyClosed(String emergencyId, {String? keepPacketId}) async {
-    _packets.removeWhere((packetId, packet) {
-      if (keepPacketId != null && packetId == keepPacketId) return false;
+  Future<void> markEmergencyClosed(String emergencyId) async {
+    _packets.removeWhere((_, packet) {
       final json = packet.toJson();
       return json['emergency_id'] == emergencyId;
     });
