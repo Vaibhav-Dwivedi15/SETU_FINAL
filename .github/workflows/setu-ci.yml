@@ -1,0 +1,114 @@
+# SETU CI — Sep 21 2026 (Vib, Bulk Sprint 4, §32).
+#
+# This workflow has NOT been run anywhere (no GitHub Actions runner is
+# reachable from the sandbox this was authored in — see
+# docs/BUILD_AND_VALIDATION.md for the exact, confirmed network/toolchain
+# blockers this engagement hit). It is written from the same real
+# commands documented there (flutter analyze/test, gradlew
+# testDebugUnitTest/assembleDebug), using only well-known, stable
+# third-party actions and no hardcoded secrets, so it should be safe to
+# merge and let a real GitHub-hosted runner execute for the first time --
+# but "should be safe" is a review-based claim, not a claim that this
+# exact YAML has ever actually run and gone green. The Flutter/Dart
+# version pins below are placeholders (see the TODO) since this sandbox
+# has no working Flutter install to read the real pinned version from.
+#
+# Scope, deliberately narrow: lint/analyze + unit tests only. No release
+# signing, no Play Store upload, no device farm / instrumented tests (all
+# of which need real secrets or real hardware this sandbox has no way to
+# validate a safe configuration for) -- adding those without real secrets
+# management in place would be a bigger, riskier change than this sprint's
+# scope, not a smaller one.
+
+name: SETU CI
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+jobs:
+  flutter-analyze-and-test:
+    name: Flutter analyze + test (setu_app)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # TODO: pin this to the project's actual Flutter version once one
+      # is confirmed on a real developer machine (see
+      # docs/BUILD_AND_VALIDATION.md §1) -- 'stable' is a reasonable
+      # placeholder, not a verified-correct pin.
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: flutter pub get
+        working-directory: setu_app
+        run: flutter pub get
+
+      - name: flutter analyze
+        working-directory: setu_app
+        run: flutter analyze
+
+      - name: flutter test
+        working-directory: setu_app
+        run: flutter test
+
+  native-unit-tests:
+    name: Native Kotlin unit tests (setu_app/android)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      # TODO: this step needs the Android SDK on the runner (the
+      # android-actions/setup-android action, or Flutter's own bundled
+      # SDK setup) for anything beyond a plain JVM unit-test run -- left
+      # as a follow-up rather than guessed here, since getting this
+      # exactly right needs a real run to confirm, which this sandbox
+      # cannot do (see docs/BUILD_AND_VALIDATION.md).
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Run native unit tests
+        working-directory: setu_app/android
+        run: ./gradlew testDebugUnitTest --no-daemon
+
+  build-debug-apk:
+    name: Build debug APK (compile validation only)
+    runs-on: ubuntu-latest
+    needs: [flutter-analyze-and-test]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: flutter pub get
+        working-directory: setu_app
+        run: flutter pub get
+
+      # Debug build only -- no signing config needed/used, so this job
+      # deliberately does not touch android/key.properties or any secret.
+      # This is the step that would, for the first time in this
+      # engagement, actually confirm PacketRelayEngine.kt /
+      # SignatureVerifier.kt / MeshForegroundService.kt compile for real.
+      - name: flutter build apk --debug
+        working-directory: setu_app
+        run: flutter build apk --debug
