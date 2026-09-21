@@ -1,4 +1,5 @@
 import 'package:flutter/services.dart';
+import 'package:setu_app/security/security_constants.dart';
 
 sealed class NearbyEvent {
   const NearbyEvent();
@@ -73,6 +74,19 @@ class PlatformNearbyService implements NearbyService {
         'scanIntervalMs': scanInterval.inMilliseconds,
         'discoveryIntervalMs': discoveryInterval.inMilliseconds,
         'allowRelay': allowRelay,
+        // Sep 21 2026 (Vib, Bulk Sprint 3): SecurityConstants.maxTTL is
+        // declared separately in Kotlin (PacketRelayEngine.MAX_TTL) with
+        // no compile-time or runtime mechanism enforcing the two stay
+        // equal -- see docs/mesh/TTL.md and
+        // docs/security/NATIVE_SIGNATURE_VERIFICATION_DESIGN.md's sibling
+        // doc for the fuller discussion. Rather than build shared-constant
+        // infra (out of scope -- "do not rewrite architecture" per this
+        // sprint's rules), this piggybacks on the policy channel that
+        // already exists: native compares this against its own MAX_TTL
+        // and logs a loud warning on mismatch, so a future accidental
+        // drift is at least VISIBLE in logs instead of silent. Does not
+        // change TTL behavior in any way -- purely a diagnostic value.
+        'maxTtl': SecurityConstants.maxTTL,
       });
 
   @override

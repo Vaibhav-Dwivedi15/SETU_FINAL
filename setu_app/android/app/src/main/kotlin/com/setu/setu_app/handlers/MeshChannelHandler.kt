@@ -110,11 +110,19 @@ class MeshChannelHandler(
                     val scanIntervalMs = call.argument<Int>("scanIntervalMs")
                     val discoveryIntervalMs = call.argument<Int>("discoveryIntervalMs")
                     val allowRelay = call.argument<Boolean>("allowRelay")
+                    // Sep 21 2026 (Vib, Bulk Sprint 3): optional, diagnostic
+                    // only -- see nearby_service.dart's comment on the
+                    // Dart side and PacketRelayEngine.MAX_TTL's own
+                    // "must stay in sync" comment. A null/missing value
+                    // (older Dart build) is silently fine; the mismatch
+                    // check below simply doesn't run.
+                    val dartMaxTtl = call.argument<Int>("maxTtl")
                     if (scanIntervalMs != null && discoveryIntervalMs != null && allowRelay != null) {
                         meshService?.updateMeshPolicy(
                             scanIntervalMs.toLong(),
                             discoveryIntervalMs.toLong(),
-                            allowRelay
+                            allowRelay,
+                            dartMaxTtl
                         )
                         result.success(null)
                     } else {
