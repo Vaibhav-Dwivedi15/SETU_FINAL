@@ -283,6 +283,35 @@ class PacketRelayEngine(private val maxCacheSize: Int = 500) {
     fun rememberOriginated(packetId: String) = synchronized(lock) { remember(packetId) }
 
     /**
+     * Sep 21 2026 (Vib, Bulk Sprint 3): bounded snapshot of the current
+     * dedup cache, for MeshForegroundService to periodically persist via
+     * MeshStateStore so a START_STICKY restart doesn't start with a
+     * completely empty seen-cache (see NATIVE_MESH_AUDIT.md §16). Does
+     * NOT include [seenAtLocation]/[echoTimestamps] -- location-based
+     * re-entry and echo-suppression are short-lived, in-the-moment
+     * signals (a few minutes at most) that are of no value restored after
+     * a restart; only the durable "have I already relayed this packet_id
+     * at all" fact is worth persisting.
+     */
+    fun snapshotSeen(): List<String> = synchronized(lock) { seen.toList() }
+
+    /**
+     * Seeds the dedup cache from a previous run's persisted snapshot.
+     * Intended to be called exactly once, immediately after construction
+     * and before [process] is ever called -- calling it later would not
+     * corrupt anything (it goes through the same bounded [remember] path,
+     * respecting maxCacheSize/FIFO eviction) but has no defined ordering
+     * against concurrently-arriving packets, so the service is expected
+     * to call this synchronously during onCreate() before Nearby
+     * Connections is started.
+     */
+    fun restoreSeen(ids: Collection<String>) = synchronized(lock) {
+        for (id in ids) {
+            if (id.isNotEmpty()) remember(id)
+        }
+    }
+
+    /**
      * How many duplicate copies of [packetId] arrived within the last
      * [ECHO_WINDOW_MS]. MeshForegroundService uses this to decide whether
      * its own pending rebroadcast is still worth sending.

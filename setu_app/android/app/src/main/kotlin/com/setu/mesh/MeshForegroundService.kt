@@ -4,8 +4,13 @@ import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.Service
+import android.bluetooth.BluetoothAdapter
+import android.content.BroadcastReceiver
+import android.content.Context
 import android.content.Intent
+import android.content.IntentFilter
 import android.content.pm.ServiceInfo
+import android.net.wifi.WifiManager
 import android.os.Binder
 import android.os.Build
 import android.os.Handler
@@ -23,6 +28,7 @@ class MeshForegroundService : Service(), NearbyConnectionsManager.Listener {
 
     private lateinit var connectionsManager: NearbyConnectionsManager
     private lateinit var relayEngine: PacketRelayEngine
+    private lateinit var stateStore: MeshStateStore
     private val binder = LocalBinder()
 
     /** Set by MainActivity when attached, cleared when detached — events
@@ -39,8 +45,96 @@ class MeshForegroundService : Service(), NearbyConnectionsManager.Listener {
         super.onCreate()
         connectionsManager = NearbyConnectionsManager(applicationContext, this)
         relayEngine = PacketRelayEngine()
+        stateStore = MeshStateStore(applicationContext)
+
+        // Sep 21 2026 (Vib, Bulk Sprint 3): restore last-known policy and
+        // dedup cache BEFORE starting discovery, so a START_STICKY restart
+        // doesn't briefly run at full power / with an empty seen-cache
+        // while waiting for Dart to reattach. See NATIVE_MESH_AUDIT.md §16
+        // and NATIVE_FAILURE_MATRIX.md row 17 for the gap this closes.
+        // If nothing was ever persisted (fresh install, or a build
+        // predating this change), loadPolicy() returns null and the
+        // pre-existing hardcoded defaults below are used unchanged.
+        val persistedPolicy = stateStore.loadPolicy()
+        if (persistedPolicy != null) {
+            currentDiscoveryIntervalMs = persistedPolicy.discoveryIntervalMs
+            currentAllowRelay = persistedPolicy.allowRelay
+            Log.i(TAG, "Restored persisted mesh policy: discoveryIntervalMs=$currentDiscoveryIntervalMs allowRelay=$currentAllowRelay")
+        }
+        relayEngine.restoreSeen(stateStore.loadSeenIds())
+
         startForegroundWithNotification()
         startDutyCycle()
+        startStatePersistenceTimer()
+        registerRadioStateReceiver()
+    }
+
+    // =====================================================
+    // Sep 21 2026 (Vib, Bulk Sprint 3) -- Bluetooth / Wi-Fi resume
+    // =====================================================
+    //
+    // PRIOR BEHAVIOR (confirmed by source review, not assumed): startAdvertising()/
+    // startDiscovery() attach only addOnFailureListener { Log.e(...) } --
+    // if Bluetooth or Wi-Fi is off when these are called, or gets turned
+    // off afterward, the failure is logged and NOTHING resumes advertising/
+    // discovery automatically once the radio comes back on. The mesh
+    // would stay silently inactive until the app/service was manually
+    // restarted (e.g. by the user re-opening the app) -- a real gap for
+    // exactly the scenario this app exists for (a bystander whose
+    // Bluetooth happened to be off, or who toggled airplane mode and back).
+    //
+    // FIX: a BroadcastReceiver for both radios' state-changed broadcasts,
+    // registered once in onCreate() and unregistered in onDestroy() (no
+    // duplicate registration risk -- this service has exactly one
+    // instance per process, and onCreate()/onDestroy() are each called
+    // at most once per instance). On a transition to Bluetooth STATE_ON
+    // or Wi-Fi WIFI_STATE_ENABLED, restart the duty cycle -- this is
+    // exactly what startDutyCycle() already does on every policy update,
+    // so no new advertising/discovery logic was written, only a new
+    // trigger for calling the existing one.
+    //
+    // Scoped narrowly: this does NOT attempt to distinguish "radio came
+    // back on because the user re-enabled it" from "radio came back on
+    // for some other reason" -- any transition to ON is treated the same
+    // way calling startDutyCycle() already is idempotent-safe to call
+    // (STATUS_ALREADY_ADVERTISING is already handled by the existing
+    // "don't double start in full-power tier" logic). No permission
+    // beyond what Nearby Connections already requires is needed to
+    // listen for these two system broadcasts.
+    private var radioStateReceiver: BroadcastReceiver? = null
+
+    private fun registerRadioStateReceiver() {
+        val receiver = object : BroadcastReceiver() {
+            override fun onReceive(context: Context?, intent: Intent?) {
+                when (intent?.action) {
+                    BluetoothAdapter.ACTION_STATE_CHANGED -> {
+                        val state = intent.getIntExtra(BluetoothAdapter.EXTRA_STATE, -1)
+                        if (state == BluetoothAdapter.STATE_ON) {
+                            Log.i(TAG, "Bluetooth turned back on -- resuming duty cycle")
+                            startDutyCycle()
+                        }
+                    }
+                    "android.net.wifi.WIFI_STATE_CHANGED" -> {
+                        val state = intent.getIntExtra(WifiManager.EXTRA_WIFI_STATE, -1)
+                        if (state == WifiManager.WIFI_STATE_ENABLED) {
+                            Log.i(TAG, "Wi-Fi turned back on -- resuming duty cycle")
+                            startDutyCycle()
+                        }
+                    }
+                }
+            }
+        }
+        val filter = IntentFilter().apply {
+            addAction(BluetoothAdapter.ACTION_STATE_CHANGED)
+            addAction("android.net.wifi.WIFI_STATE_CHANGED")
+        }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            registerReceiver(receiver, filter, Context.RECEIVER_NOT_EXPORTED)
+        } else {
+            @Suppress("UnspecifiedRegisterReceiverFlag")
+            registerReceiver(receiver, filter)
+        }
+        radioStateReceiver = receiver
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int = START_STICKY
@@ -129,11 +223,69 @@ class MeshForegroundService : Service(), NearbyConnectionsManager.Listener {
      * Dart's PowerMode changes. Restarts the duty cycle with the new
      * timing immediately rather than waiting for the current cycle to
      * finish, so a battery drop is reflected right away. */
-    fun updateMeshPolicy(scanIntervalMs: Long, discoveryIntervalMs: Long, allowRelay: Boolean) {
+    fun updateMeshPolicy(scanIntervalMs: Long, discoveryIntervalMs: Long, allowRelay: Boolean, dartMaxTtl: Int? = null) {
         currentDiscoveryIntervalMs = discoveryIntervalMs
         currentAllowRelay = allowRelay
         Log.i(TAG, "Mesh policy updated: discoveryIntervalMs=$discoveryIntervalMs allowRelay=$allowRelay")
         startDutyCycle()
+        // Persist immediately on an explicit policy change (a real
+        // battery-tier transition) rather than waiting for the next
+        // periodic tick -- this is a low-frequency event (Dart only calls
+        // this on an actual PowerMode change), so writing right away is
+        // cheap and means a restart moments after a battery-tier drop
+        // still restores the CORRECT tier, not a stale one.
+        stateStore.savePolicy(currentDiscoveryIntervalMs, currentAllowRelay)
+
+        // Sep 21 2026 (Vib, Bulk Sprint 3) -- MAX_TTL drift check.
+        // PacketRelayEngine.MAX_TTL and Dart's SecurityConstants.maxTTL
+        // are two separately-maintained constants with no shared source
+        // of truth (see docs/mesh/TTL.md). This does NOT change TTL
+        // behavior or enforce anything -- it only makes a future drift
+        // impossible to miss in logs, which is strictly better than the
+        // previous silent-drift-risk state without inventing shared-
+        // constant build infrastructure this sprint has no safe way to
+        // validate (no working build in this environment).
+        if (dartMaxTtl != null && dartMaxTtl != PacketRelayEngine.MAX_TTL) {
+            Log.e(
+                TAG,
+                "MAX_TTL MISMATCH: Dart SecurityConstants.maxTTL=$dartMaxTtl but native " +
+                    "PacketRelayEngine.MAX_TTL=${PacketRelayEngine.MAX_TTL}. These must be kept " +
+                    "equal by hand until a shared source of truth exists -- see docs/mesh/TTL.md."
+            )
+        }
+    }
+
+    // =====================================================
+    // Sep 21 2026 (Vib, Bulk Sprint 3) — bounded state persistence
+    // =====================================================
+    //
+    // Periodically (not per-packet -- see MeshStateStore's own doc
+    // comment for why) snapshots the dedup cache to SharedPreferences so
+    // a START_STICKY restart has something better than an empty cache to
+    // start from. 30s chosen to match the existing cadence already used
+    // elsewhere in this codebase for periodic background work (Dart's
+    // own upload-retry timer), not derived from any measurement -- a
+    // reasonable default, not a tuned one; if real-device battery
+    // measurements (see MULTI_DEVICE_TEST_PLAN.md's future performance
+    // work) ever show this write cadence matters, it should change based
+    // on that data, not be re-guessed again.
+    private val statePersistenceHandler = Handler(Looper.getMainLooper())
+    private var statePersistenceRunnable: Runnable? = null
+    private val statePersistenceIntervalMs = 30_000L
+
+    private fun startStatePersistenceTimer() {
+        val runnable = object : Runnable {
+            override fun run() {
+                persistSeenSnapshot()
+                statePersistenceHandler.postDelayed(this, statePersistenceIntervalMs)
+            }
+        }
+        statePersistenceRunnable = runnable
+        statePersistenceHandler.postDelayed(runnable, statePersistenceIntervalMs)
+    }
+
+    private fun persistSeenSnapshot() {
+        stateStore.saveSeenIds(relayEngine.snapshotSeen())
     }
 
     private fun startDutyCycle() {
@@ -300,6 +452,25 @@ class MeshForegroundService : Service(), NearbyConnectionsManager.Listener {
     override fun onDestroy() {
         dutyCycleRunnable?.let { dutyCycleHandler.removeCallbacks(it) }
         relayHandler.removeCallbacksAndMessages(null)
+        statePersistenceRunnable?.let { statePersistenceHandler.removeCallbacks(it) }
+        radioStateReceiver?.let {
+            try {
+                unregisterReceiver(it)
+            } catch (e: IllegalArgumentException) {
+                // Already unregistered (or never successfully registered) --
+                // not a real error, nothing else to clean up.
+            }
+        }
+        radioStateReceiver = null
+        // Best-effort final save on a graceful stop -- explicitly NOT
+        // relied upon as the only persistence path, since an abrupt
+        // OOM-kill does not guarantee onDestroy() runs at all. The
+        // periodic timer above is the real safety net; this just shaves
+        // the worst-case staleness down to whatever's changed since the
+        // last tick, for the common case of a clean stop/restart.
+        if (::stateStore.isInitialized && ::relayEngine.isInitialized) {
+            persistSeenSnapshot()
+        }
         pendingRelayIds.clear()
         connectionsManager.stopAll()
         super.onDestroy()
