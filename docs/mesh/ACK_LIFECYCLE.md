@@ -47,6 +47,21 @@ change per hop. Confirmed stable end-to-end.
 - Origin-side ("is this ack mine"): `_originatedEmergencyIds.contains(ack.emergencyId)` — a `Set<String>` populated on `originate()`, string equality only.
 - Local-status-side (History/Recovery): `entry.emergencyId == ack.emergencyId` — also string equality.
 
+## Native Layer (Bulk Sprint 2 correction)
+
+The "Any relay hop" step above ("AckPacket is relayed exactly like any
+other packet type") is confirmed true one layer deeper than Sprint 1 could
+verify: native Kotlin's `PacketRelayEngine.process()` has **no special
+case for ack packets at all** — an `AckPacket`'s bytes are just another
+JSON blob to dedup-check, TTL-decrement, and relay. Native also **never
+generates an ack itself** — `_originateAck()` is Dart-only, confirmed by
+grepping all 8 native files for ack-construction logic and finding none.
+This means: while a device is backgrounded with only the native service
+alive, it will faithfully relay an ack it receives, but it cannot
+originate a new one — ack generation only happens when Dart is attached
+and processes a payload through `_handlePayload`. See
+`NATIVE_MESH_AUDIT.md` §9–§10.
+
 ## Known Limitations (honestly stated, not fixed this pass)
 
 1. **`_originatedEmergencyIds` grows unbounded for the life of the process**

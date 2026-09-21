@@ -2,6 +2,23 @@
 
 Owner: Vib (Mesh/Architecture). Source-level audit as of Sep 21 2026.
 
+> **Correction (Bulk Sprint 2, native audit pass)**: this document's original
+> version treated the native seen-ID cache as an opaque black box "out of
+> scope." It is no longer out of scope — see `NATIVE_MESH_AUDIT.md` §4/§6 for
+> the actual implementation, now confirmed by direct source reading rather
+> than inferred. Summary of what changed in understanding: the native cache
+> is a `LinkedHashSet<String>` in `PacketRelayEngine.kt`, keyed on `packet_id`,
+> bounded at **500** entries (not the `MeshConstants.duplicateCacheSize = 1000`
+> the Dart-side dead constant implies — the two numbers were never the same
+> value and nothing enforces them being related), FIFO-evicted. Insertion
+> happens **before** any TTL check and with **no signature check at all**
+> (there is none to order against — see `NATIVE_MESH_AUDIT.md` §5). This
+> cache's read-check-write sequence was **not thread-safe** against
+> concurrent Nearby Connections callback delivery before this sprint; it is
+> now wrapped in `synchronized(lock)` (native fix, see final report). No
+> eviction policy, cache size, or key scheme was changed — only the
+> concurrency guarantee around the existing logic.
+
 ## Current Implementation
 
 There are **two separate identifiers in play**, and they are NOT the same
@@ -68,6 +85,28 @@ Not a single Dart-side dedup cache — a combination of:
    (`test/mesh_simulation.dart`) explicitly models the native seen-cache's
    *expected* behavior for the purpose of testing Dart-side relay/priority
    logic — it does not, and cannot, verify the real Kotlin implementation.
+   Confirmed unchanged this sprint: still zero `androidTest`/`test` coverage
+   of `PacketRelayEngine.kt` itself (see `NATIVE_MESH_AUDIT.md` §18).
+
+5. **Native's 500-entry cap can be evicted under high-traffic flood exactly
+   like `NonceCache`'s (independent) 500-entry cap above** — the two caches
+   are sized coincidentally the same but are unrelated code, unrelated
+   languages, unrelated eviction triggers. A late-arriving legitimate
+   duplicate under sustained high traffic could be re-accepted as "new" by
+   native once its `packet_id` falls out of the FIFO window. Not fixed this
+   pass for the same reason as #2 above — no evidence from real traffic that
+   500 is actually being hit, and blindly raising it was explicitly out of
+   scope per both sprint briefs.
+
+6. **No signature check gates native's dedup-cache insertion or relay
+   decision** (see `NATIVE_MESH_AUDIT.md` §5). While the app is backgrounded
+   with only the foreground service alive, native will insert into `seen`
+   and relay any well-formed JSON blob claiming a `packet_id`/`ttl`, whether
+   or not the Dart signature layer would ever have accepted it. This is the
+   most significant native-layer gap found across both sprints — flagged,
+   not fixed, since porting Ed25519 verification into Kotlin is a real
+   feature addition outside "smallest safe fix" scope and outside this
+   sprint's rule against crypto changes without a concrete, scoped decision.
 
 ## Future Design (not implemented)
 

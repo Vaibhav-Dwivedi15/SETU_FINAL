@@ -48,6 +48,22 @@ scope creep without a concrete consumer asking for it. If a future need
 appears (e.g. exporting structured events to the backend for cross-device
 correlation), that is a real design task, not a mechanical addition.
 
+## Native Layer (Bulk Sprint 2)
+
+`_pullNativeStats()` reads native counters (`totalProcessed`,
+`duplicatesFiltered`, `relaySuppressed`) that were previously `@Volatile`
+but incremented with a non-atomic `++` — under concurrent callback
+delivery this could under-count (a classic lost-update race, not a crash).
+**Fixed this pass**: `noteSuppressedRelay()` and the counter increments
+inside `process()` now run inside the same `synchronized(lock)` block as
+the dedup check itself, so the counts `_pullNativeStats()` reads are now
+exact, not approximate. `discoveryLatencyMicros`/`connectionLatencyMicros`
+(read by the same stats pull) have a benign check-then-set race that was
+**not** fixed — worst case is an occasional slightly-stale latency sample,
+never a wrong value that persists, and fixing it would add synchronization
+overhead to a one-shot "time to first peer" measurement for no real
+accuracy gain. See `NATIVE_MESH_AUDIT.md` §17.
+
 ## Logging Hygiene Check
 
 Grepped all mesh-layer `developer.log`/`RelayLogRepository.log` calls
