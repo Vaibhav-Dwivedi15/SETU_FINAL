@@ -50,7 +50,16 @@ class MeshServiceImpl implements MeshService {
         _relayQueue = relayQueue ?? PriorityRelayQueue() {
     _subscription = _nearby.events.listen(_handleNearbyEvent);
     _retryTimer = Timer.periodic(const Duration(seconds: 30), (_) => _retryPendingUploads());
-    _registryTimer = Timer.periodic(const Duration(minutes: 5), (_) => _syncResponderRegistry());
+    // Sep 21 2026 (Vib): also prunes already-uploaded rows older than 3
+    // days on the same cadence as the registry sync -- LocalQueueService
+    // .pruneUploaded() existed but was never called from anywhere, so the
+    // durable queue's uploaded rows only ever grew. Cheap (DELETE with an
+    // indexed-by-nature boolean + timestamp filter) and safe to run every
+    // 5 minutes; never touches rows still pending upload.
+    _registryTimer = Timer.periodic(const Duration(minutes: 5), (_) {
+      _syncResponderRegistry();
+      unawaited(_queue.pruneUploaded());
+    });
     // Sep 2026 (PRIORITY 1): pulls duplicate/suppression counters and
     // discovery/connection timings up from the native engine. Read-only,
     // once a minute -- it must not become a source of load itself.
@@ -83,6 +92,18 @@ class MeshServiceImpl implements MeshService {
 
   final AckPacketBuilder _ackBuilder = AckPacketBuilder();
   final Set<String> _originatedEmergencyIds = {};
+
+  /// Sep 21 2026 (Vib, mesh-hardening pass): guards against the SAME
+  /// packetId being uploaded twice concurrently. _tryUpload() fires on
+  /// every freshly received/originated packet, and _retryPendingUploads()
+  /// independently re-reads getPendingPackets() every 30s -- without this
+  /// guard, nothing stops both from calling _backend.uploadPacket() for
+  /// the same packet if the 30s timer fires while an in-flight upload for
+  /// that same packet hasn't yet reached markUploaded(). Client-side only:
+  /// this does not depend on (or replace) backend-side idempotency, it
+  /// just stops the Dart layer from *causing* the race in the first place.
+  final Set<String> _uploadingPacketIds = {};
+
   final _acknowledgmentsController = StreamController<AckPacket>.broadcast();
   late final StreamSubscription<NearbyEvent> _subscription;
   late final StreamSubscription<PowerMode> _policySub;
@@ -199,6 +220,28 @@ class MeshServiceImpl implements MeshService {
     // PRIORITY 1: measures what THIS device adds to a multi-hop route --
     // decode + validate + verify + queue admission.
     final receiveStopwatch = Stopwatch()..start();
+
+    // Sep 21 2026 (Vib, mesh-hardening pass): SecurityConstants
+    // .maxPacketSize existed but was never actually enforced anywhere --
+    // checked here, before touching jsonDecode, so an oversized payload
+    // is rejected on raw byte length alone rather than being handed to
+    // the JSON parser first. Cheapest possible place for this check, and
+    // it can never reject a legitimate packet: real EmergencyPacket JSON
+    // is well under 1KB even with a full emergency_contacts list.
+    if (bytes.length > SecurityConstants.maxPacketSize) {
+      developer.log(
+        'Dropped oversized payload: ${bytes.length} bytes (max ${SecurityConstants.maxPacketSize})',
+        name: 'MeshService',
+      );
+      MeshMetrics.instance.dropped++;
+      MeshMetrics.instance.notify();
+      unawaited(RelayLogRepository.instance.log(
+        type: RelayLogType.dropped,
+        packetId: 'unknown',
+        detail: 'Oversized payload (${bytes.length} bytes)',
+      ));
+      return;
+    }
 
     final MeshPacket packet;
     try {
@@ -495,30 +538,55 @@ class MeshServiceImpl implements MeshService {
   void _tryUpload(MeshPacket packet) {
     if (packet is AckPacket || packet is AlertPacket) return;
 
+    // In-flight guard: if _retryPendingUploads() (or another concurrent
+    // call to _tryUpload for the same packet -- e.g. relayed twice before
+    // dedup) is already uploading this packetId, skip. Released in the
+    // `finally` below regardless of outcome, so a failed upload doesn't
+    // permanently block a later retry.
+    if (!_uploadingPacketIds.add(packet.packetId)) {
+      developer.log('Upload already in flight for ${packet.packetId} — skipping', name: 'MeshService');
+      return;
+    }
+
     unawaited(() async {
-      final online = await _backend.hasRealInternet();
-      if (!online) return;
+      try {
+        final online = await _backend.hasRealInternet();
+        if (!online) return;
 
-      final upload = Stopwatch()..start();
-      final ok = await _backend.uploadPacket(packet);
-      upload.stop();
-      MeshMetrics.instance.backendUpload.addMicros(upload.elapsedMicroseconds);
+        final upload = Stopwatch()..start();
+        final ok = await _backend.uploadPacket(packet);
+        upload.stop();
+        MeshMetrics.instance.backendUpload.addMicros(upload.elapsedMicroseconds);
 
-      if (ok) {
-        await _queue.markUploaded(packet.packetId);
-        MeshMetrics.instance.uploaded++;
-        _recordEndToEnd(packet);
-        MeshMetrics.instance.notify();
-        unawaited(RelayLogRepository.instance.log(
-          type: RelayLogType.uploaded,
-          packetId: packet.packetId,
-          detail: 'Delivered to backend',
-        ));
-        if (packet is EmergencyPacket) {
-          unawaited(_originateAck(packet));
+        if (ok) {
+          await _markPacketDelivered(packet, detail: 'Delivered to backend');
         }
+      } finally {
+        _uploadingPacketIds.remove(packet.packetId);
       }
     }());
+  }
+
+  /// Shared "this packet reached the backend" bookkeeping -- used by both
+  /// _tryUpload (first-attempt path) and _retryPendingUploads (30s retry
+  /// path). Previously only _tryUpload did this, which meant a packet
+  /// delivered exclusively via the retry loop (e.g. no internet on first
+  /// receive) never originated an ack, leaving the sender's local status
+  /// stuck at "Sent" forever even though the backend had it. Recovery and
+  /// SOS both go through this same path, so both get the fix.
+  Future<void> _markPacketDelivered(MeshPacket packet, {required String detail}) async {
+    await _queue.markUploaded(packet.packetId);
+    MeshMetrics.instance.uploaded++;
+    _recordEndToEnd(packet);
+    MeshMetrics.instance.notify();
+    unawaited(RelayLogRepository.instance.log(
+      type: RelayLogType.uploaded,
+      packetId: packet.packetId,
+      detail: detail,
+    ));
+    if (packet is EmergencyPacket) {
+      unawaited(_originateAck(packet));
+    }
   }
 
   /// Origin timestamp -> backend delivery. This is the only end-to-end
@@ -572,20 +640,30 @@ class MeshServiceImpl implements MeshService {
 
     final pending = await _queue.getPendingPackets();
     for (final packet in pending) {
-      final upload = Stopwatch()..start();
-      final ok = await _backend.uploadPacket(packet);
-      upload.stop();
-      MeshMetrics.instance.backendUpload.addMicros(upload.elapsedMicroseconds);
-      if (ok) {
-        await _queue.markUploaded(packet.packetId);
-        MeshMetrics.instance.uploaded++;
-        _recordEndToEnd(packet);
-        MeshMetrics.instance.notify();
-        unawaited(RelayLogRepository.instance.log(
-          type: RelayLogType.uploaded,
-          packetId: packet.packetId,
-          detail: 'Delivered to backend (retry)',
-        ));
+      // Same in-flight guard as _tryUpload -- if an immediate upload for
+      // this exact packet is already running (e.g. it was just received
+      // moments before this 30s tick fired), skip it here rather than
+      // uploading it a second time concurrently.
+      if (!_uploadingPacketIds.add(packet.packetId)) {
+        developer.log('Retry skipped, upload already in flight: ${packet.packetId}', name: 'MeshService');
+        continue;
+      }
+      try {
+        final upload = Stopwatch()..start();
+        final ok = await _backend.uploadPacket(packet);
+        upload.stop();
+        MeshMetrics.instance.backendUpload.addMicros(upload.elapsedMicroseconds);
+        if (ok) {
+          // Sep 21 2026 (Vib): previously this path did NOT call
+          // _originateAck -- a packet delivered only via retry (e.g. no
+          // internet on first receive/originate) never acked the sender,
+          // so History/Recovery status stayed at "Sent" forever even
+          // though the backend had it. Now shares _markPacketDelivered
+          // with _tryUpload so both paths behave identically.
+          await _markPacketDelivered(packet, detail: 'Delivered to backend (retry)');
+        }
+      } finally {
+        _uploadingPacketIds.remove(packet.packetId);
       }
     }
   }
@@ -600,6 +678,11 @@ class MeshServiceImpl implements MeshService {
     _registryTimer.cancel();
     _statsTimer.cancel();
     _acknowledgmentsController.close();
+    // Sep 21 2026 (Vib): was previously never closed here, unlike
+    // _acknowledgmentsController -- a StreamController with no listeners
+    // left open isn't a functional bug, but it's an asymmetry with no
+    // reason behind it and a real (if minor) resource-cleanliness gap.
+    _incomingController.close();
     PowerModeController.instance.dispose();
   }
 }
