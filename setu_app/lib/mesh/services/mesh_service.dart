@@ -320,7 +320,20 @@ class MeshServiceImpl implements MeshService {
         developer.log('WARNING: termination accepted without registry enforcement (no backend sync yet)', name: 'MeshService');
       }
       _closedEmergencyIds.add(packet.emergencyId);
-      await _queue.markEmergencyClosed(packet.emergencyId);
+      // Enqueue the termination packet itself BEFORE sweeping the durable
+      // queue for this emergency_id, and exclude it from that sweep --
+      // otherwise the generic `_queue.enqueue(packet)` further below
+      // (which runs for every packet type, unconditionally) would insert
+      // this same termination packet right after the sweep already ran,
+      // leaving it stuck in the queue forever with nothing left to ever
+      // clear it. `enqueue` is a conflict-ignore insert on packetId, so
+      // this is safe to call again when execution reaches that later
+      // line. Found via real `flutter test` execution on real hardware,
+      // Bulk Sprint 5 Phase 18 (docs/mesh/SPRINT5_INTEGRATION_VALIDATION.md
+      // §15) -- prior sprints could only source-review this path, since
+      // no Dart SDK was ever available in the sandbox they ran in.
+      await _queue.enqueue(packet);
+      await _queue.markEmergencyClosed(packet.emergencyId, keepPacketId: packet.packetId);
       // Sweep the in-memory relay queue too, not just the durable one --
       // otherwise packets for a closed incident would keep going out on
       // the radio after the SQLite queue had already been cleared.

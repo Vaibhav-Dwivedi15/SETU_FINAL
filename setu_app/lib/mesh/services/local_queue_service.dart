@@ -96,12 +96,28 @@ class LocalQueueService {
   /// Removes every queued packet belonging to a now-closed emergency —
   /// stops retrying uploads for an incident that's already resolved.
   /// Called once a verified TerminationPacket is processed.
-  Future<void> markEmergencyClosed(String emergencyId) async {
+  ///
+  /// [keepPacketId], if given, is excluded from the sweep. This exists so
+  /// the TerminationPacket that *caused* the closure can itself still be
+  /// enqueued and uploaded to the backend — without it, a termination
+  /// enqueued after this sweep runs has nothing left to ever clear it,
+  /// since there is only ever one termination per emergency_id (found via
+  /// real `flutter test` execution, Bulk Sprint 5 Phase 18 — see
+  /// docs/mesh/SPRINT5_INTEGRATION_VALIDATION.md §15).
+  Future<void> markEmergencyClosed(String emergencyId, {String? keepPacketId}) async {
     await init();
-    await _db!.delete(
-      _table,
-      where: "jsonPayload LIKE ?",
-      whereArgs: ['%"emergency_id":"$emergencyId"%'],
-    );
+    if (keepPacketId != null) {
+      await _db!.delete(
+        _table,
+        where: 'jsonPayload LIKE ? AND packetId != ?',
+        whereArgs: ['%"emergency_id":"$emergencyId"%', keepPacketId],
+      );
+    } else {
+      await _db!.delete(
+        _table,
+        where: 'jsonPayload LIKE ?',
+        whereArgs: ['%"emergency_id":"$emergencyId"%'],
+      );
+    }
   }
 }

@@ -316,3 +316,78 @@ Confirmed: no implementation added this sprint. `auto-accept` remains
 unchanged in `NearbyConnectionsManager.kt`. No allowlist was introduced.
 `docs/security/NATIVE_CONNECTION_AUTH_DESIGN.md` (Sprint 3) remains the
 current, unimplemented decision record.
+
+## §15. Real Dart-Side Test Execution — First Real `flutter test` Run, One Real Bug Found (Phase 18, post-delivery)
+
+Unlike every prior section above, this one is not from the sandbox this
+document was otherwise written in — that sandbox has never had a working
+Dart/Flutter SDK across all five sprints. This section records the
+**first real execution of the Dart test suite**, run by the team on a
+real developer machine with a working Flutter install, on branch
+`feature/vib-integration-validation` at commit `52eb174`.
+
+**Command run:**
+
+```
+cd setu_app
+flutter pub get
+flutter analyze
+flutter test
+```
+
+**Result:** `flutter analyze` — 5 pre-existing info-level lints, 0
+errors. `flutter test` — **120 passed, 1 failed** out of 121 tests.
+
+**The one real failure**, `test/mesh_harness_test.dart`, test name
+`'termination closing an emergency clears it from the durable queue'`:
+
+```
+Expected: empty
+  Actual: WhereIterable<Map<String, dynamic>>:[
+            {
+              'packet_id': 'term-46',
+              'sender_id': 'responder-public-key',
+              'type': 'termination',
+              ...
+              'emergency_id': 'e-sweep',
+              'responder_id': 'responder-1'
+            }
+          ]
+  resolved incident left packets in the queue
+```
+
+**Root cause (confirmed by source read, not guessed):**
+`MeshServiceImpl.processReceivedPacket` (`mesh_service.dart`), on
+receiving a `TerminationPacket`, called
+`_queue.markEmergencyClosed(packet.emergencyId)` to sweep the durable
+queue of every packet for that `emergency_id` — but the generic
+`await _queue.enqueue(packet)` further down the same method runs
+unconditionally for *every* packet type, including the termination
+packet itself, and runs *after* the sweep. So the termination packet
+that just closed the incident was inserted into the durable queue right
+after the sweep that was supposed to leave it empty, with nothing left
+to ever clear it again (there is only one termination per
+`emergency_id`).
+
+**This is a real, demonstrated correctness bug** — exactly the
+exception Sprint 5's hard constraints carve out ("preserve all existing
+documented behavior unless a concrete correctness bug is demonstrated").
+It is not an architecture change, not a packet-format change, not a
+TTL/routing/ACK change.
+
+**Fix applied** (`local_queue_service.dart` + `mesh_service.dart`):
+`markEmergencyClosed` now takes an optional `keepPacketId`; the
+termination-handling branch enqueues the termination packet *before*
+sweeping, and excludes that packet's own ID from the sweep — so it
+still reaches the backend (unchanged upload behavior) but is no longer
+orphaned in the queue. The in-memory test fake
+(`test/mesh_simulation.dart`'s `_FakeLocalQueue`) was updated to match
+the new signature and honor `keepPacketId` the same way, so the fix is
+exercised by the same test that found the bug.
+
+**Status of this fix**: PARTIALLY VERIFIED — the change compiles against
+the real signature (matching override, no other callers), and directly
+addresses the exact captured failure above, but has not yet been
+re-run against `flutter test` to confirm 121/121 (pending the next real
+`flutter test` run on the developer machine, since this sandbox still
+has no Dart SDK).
