@@ -29,16 +29,16 @@ class DuplicateInfo(BaseModel):
 
 class DamageAssessment(BaseModel):
     has_damage: bool = False
-    asset_type: Optional[str] = None  # e.g., Building, Bridge, Road, Hospital, School
-    severity: str = "NONE"             # NONE, MINOR, MODERATE, SEVERE, CATASTROPHIC
+    asset_type: Optional[str] = None
+    severity: str = "NONE"
     estimated_affected: Optional[int] = None
     details: Optional[str] = None
 
 
 class ResourceAssessment(BaseModel):
     needs_resources: bool = False
-    categories: List[str] = []         # Food, Water, Medical, Shelter, Clothing, Power
-    urgency: str = "STANDARD"          # IMMEDIATE, HIGH, STANDARD
+    categories: List[str] = []
+    urgency: str = "STANDARD"
     details: Optional[str] = None
 
 
@@ -48,6 +48,16 @@ class MissingPersonAssessment(BaseModel):
     age: Optional[int] = None
     gender: Optional[str] = None
     last_seen: Optional[str] = None
+
+
+class SecurityAudit(BaseModel):
+    is_flagged: bool = False
+    threats: List[str] = []
+
+
+class ResponderBrief(BaseModel):
+    summary: str
+    action_items: List[str] = []
 
 
 class EmergencyResponse(BaseModel):
@@ -60,5 +70,7 @@ class EmergencyResponse(BaseModel):
     damage_assessment: Optional[DamageAssessment] = None
     resource_assessment: Optional[ResourceAssessment] = None
     missing_person_assessment: Optional[MissingPersonAssessment] = None
+    responder_brief: Optional[ResponderBrief] = None
+    security_audit: Optional[SecurityAudit] = None
     ai_enhanced: bool = False
     gemini_note: Optional[str] = None
