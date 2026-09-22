@@ -1,116 +1,79 @@
-"""
+﻿"""
 SETU AI - Incident Classification Engine
-
-This module identifies the type of emergency
-reported in an incoming message.
-
-Author : SETU Team
-Version : 2.0
-""" 
+Classifies incoming emergency messages into 10 key disaster categories.
+"""
 
 import re
 from typing import Dict, List
 
 # ==========================
-# Incident Types
+# 10 Incident Types (Per Specification)
 # ==========================
-
-FIRE = "Fire"
-MEDICAL = "Medical"
-ACCIDENT = "Accident"
 FLOOD = "Flood"
+EARTHQUAKE = "Earthquake"
+FIRE = "Fire"
+LANDSLIDE = "Landslide"
+CYCLONE = "Cyclone"
 BUILDING_COLLAPSE = "Building Collapse"
+ROAD_BLOCKAGE = "Road Blockage"
+MEDICAL = "Medical Emergency"
+MISSING_PERSON = "Missing Person"
+RESOURCE_SHORTAGE = "Resource Shortage"
 UNKNOWN = "Unknown"
 
 # ==========================
-# Incident Rule Database
+# Keyword Rule Database
 # ==========================
-
-INCIDENT_RULES = {
+INCIDENT_RULES: Dict[str, List[str]] = {
     FIRE: [
-        "fire",
-        "flames",
-        "smoke",
-        "burning",
-        "blaze"
+        "fire", "flames", "smoke", "burning", "blaze", "cylinder blast", "explosion"
     ],
-
     MEDICAL: [
-        "medical",
-        "ambulance",
-        "heart attack",
-        "unconscious",
-        "bleeding"
+        "medical", "ambulance", "heart attack", "unconscious", "bleeding", "injured",
+        "injury", "fracture", "oxygen", "breathing difficulty", "snake bite", "pregnant"
     ],
-
-    ACCIDENT: [
-        "accident",
-        "crash",
-        "collision",
-        "vehicle",
-        "truck",
-        "bike"
-    ],
-
     FLOOD: [
-        "flood",
-        "waterlogging",
-        "overflow"
+        "flood", "waterlogging", "water rising", "submerged", "drowning", "inundated", "overflow"
     ],
-
     BUILDING_COLLAPSE: [
-        "collapse",
-        "building collapse",
-        "debris",
-        "trapped"
-    ]
+        "collapse", "building collapse", "debris", "trapped under", "rubble", "crushed"
+    ],
+    EARTHQUAKE: [
+        "earthquake", "tremor", "aftershock", "quake", "shakes", "ground shaking"
+    ],
+    LANDSLIDE: [
+        "landslide", "mudslide", "rockfall", "debris flow", "hill collapse"
+    ],
+    CYCLONE: [
+        "cyclone", "hurricane", "typhoon", "storm", "high winds", "tornado", "gale"
+    ],
+    ROAD_BLOCKAGE: [
+        "road blocked", "bridge collapsed", "tree fallen", "blocked path", "no access", "highway blocked"
+    ],
+    MISSING_PERSON: [
+        "missing", "lost child", "cannot find", "separated", "untraceable", "last seen"
+    ],
+    RESOURCE_SHORTAGE: [
+        "food shortage", "no water", "drinking water", "starving", "rations", "blankets", "need food", "dry ration"
+    ],
 }
-
-# ==========================
-# Helper Functions
-# ==========================
-
-def contains_keyword(message: str, keyword: str) -> bool:
-    """
-    Check whether a keyword exists
-    as a complete word.
-    """
-    return re.search(rf"\b{re.escape(keyword)}\b", message) is not None
 
 
 def normalize_message(message: str) -> str:
-    """
-    Normalize the incoming message.
-    """
     return message.lower().strip()
 
-# ==========================
-# Incident Detection Engine
-# ==========================
+
+def contains_keyword(message: str, keyword: str) -> bool:
+    return re.search(rf"\b{re.escape(keyword)}\b", message) is not None
+
 
 def detect_incident(message: str) -> str:
-    """
-    Detect the type of emergency incident
-    from the incoming message.
-    """
+    normalized = normalize_message(message)
 
-    message = normalize_message(message)
-
+    # Check multi-word keywords first, then single words
     for incident, keywords in INCIDENT_RULES.items():
-        for word in keywords:
-            if contains_keyword(message, word):
+        for keyword in sorted(keywords, key=len, reverse=True):
+            if contains_keyword(normalized, keyword):
                 return incident
 
     return UNKNOWN
-
-# ==========================
-# Local Testing
-# ==========================
-
-if __name__ == "__main__":
-    print(detect_incident("Fire in my building"))
-    print(detect_incident("Major accident on highway"))
-    print(detect_incident("Medical emergency"))
-    print(detect_incident("Flood water rising"))
-    print(detect_incident("Building collapse"))
-    print(detect_incident("Hello"))

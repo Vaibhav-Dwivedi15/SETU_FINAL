@@ -1,8 +1,13 @@
+﻿"""
+SETU AI - End-to-End Processing Pipeline
+"""
+
+from typing import Optional, Dict, Any
 from config import GEMINI_ENABLED
 from models.baseline_rules import classify_message
 from models.incident_classifier import detect_incident, UNKNOWN
 from models.duplicate_detector import check_duplicate
-from models.priority_adjuster import adjust_priority
+from models.priority_adjuster import adjust_priority, get_priority_tier
 from utils.logger import get_logger
 
 logger = get_logger(__name__)
@@ -13,51 +18,51 @@ def process_message(
     relay_count: int,
     age_seconds: int,
     emergency_id: str,
-) -> dict:
+    latitude: Optional[float] = None,
+    longitude: Optional[float] = None,
+) -> Dict[str, Any]:
 
-    dup_result = check_duplicate(message, emergency_id)
-
+    # 1. Incident Classification
     incident = detect_incident(message)
+
+    # 2. Geolocation-aware Deduplication (P0 Boundary)
+    dup_result = check_duplicate(
+        message=message,
+        emergency_id=emergency_id,
+        incident_type=incident,
+        latitude=latitude,
+        longitude=longitude,
+    )
+
+    # 3. Urgency and Priority Tier Calculation
     urgency = classify_message(message)
+    numeric_priority = adjust_priority(urgency, relay_count, age_seconds, incident)
+    priority_tier = get_priority_tier(numeric_priority)
 
+    # 4. Optional AI Enrichment
     gemini_note = None
+    ai_enhanced = False
     if incident == UNKNOWN and GEMINI_ENABLED:
-        # Rule-based keyword matching couldn't classify this one — only
-        # now do we pay the latency/cost of a live Gemini call, and only
-        # because the feature flag is explicitly on. Never on the
-        # default/critical path.
-        from service.gemini_service import analyze_with_gemini
-        gemini_note = analyze_with_gemini(message)
-        logger.info(f"Gemini fallback used for unclassified message: {emergency_id}")
-
-    priority = adjust_priority(urgency, relay_count, age_seconds, incident)
+        try:
+            from service.gemini_service import analyze_with_gemini
+            gemini_note = analyze_with_gemini(message)
+            ai_enhanced = True
+            logger.info(f"Gemini fallback used for unclassified message: {emergency_id}")
+        except Exception as e:
+            logger.warning(f"Gemini service unavailable, falling back to rule baseline: {e}")
 
     logger.info(
         f"Processed {emergency_id}: incident={incident} urgency={urgency} "
-        f"priority={priority} duplicate={dup_result['is_duplicate']}"
+        f"priority_score={numeric_priority} tier={priority_tier} duplicate={dup_result['is_duplicate']}"
     )
 
-    result = {
-        "message": message,
+    return {
         "emergency_id": emergency_id,
+        "message": message,
         "incident": incident,
-        "urgency": urgency,
-        "priority": priority,
-        "is_duplicate": dup_result["is_duplicate"],
-        "matched_cluster_id": dup_result["matched_cluster_id"],
-        "similarity": dup_result["similarity"],
+        "urgency": str(urgency),
+        "priority": priority_tier,
+        "duplicate_info": dup_result,
+        "ai_enhanced": ai_enhanced,
+        "gemini_note": gemini_note,
     }
-    if gemini_note:
-        result["gemini_note"] = gemini_note
-
-    return result
-
-
-if __name__ == "__main__":
-    result = process_message(
-        "Fire in my building",
-        relay_count=2,
-        age_seconds=30,
-        emergency_id="test-e1",
-    )
-    print(result)
