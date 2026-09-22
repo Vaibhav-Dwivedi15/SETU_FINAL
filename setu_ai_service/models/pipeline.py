@@ -5,9 +5,21 @@ SETU AI - End-to-End Processing Pipeline
 from typing import Optional, Dict, Any
 from config import GEMINI_ENABLED
 from models.baseline_rules import classify_message
-from models.incident_classifier import detect_incident, UNKNOWN
+from models.incident_classifier import (
+    detect_incident,
+    UNKNOWN,
+    BUILDING_COLLAPSE,
+    ROAD_BLOCKAGE,
+    RESOURCE_SHORTAGE,
+    MISSING_PERSON,
+)
 from models.duplicate_detector import check_duplicate
 from models.priority_adjuster import adjust_priority, get_priority_tier
+from models.disaster_intelligence import (
+    extract_damage_info,
+    extract_resource_info,
+    extract_missing_person_info,
+)
 from utils.logger import get_logger
 
 logger = get_logger(__name__)
@@ -39,7 +51,12 @@ def process_message(
     numeric_priority = adjust_priority(urgency, relay_count, age_seconds, incident)
     priority_tier = get_priority_tier(numeric_priority)
 
-    # 4. Optional AI Enrichment
+    # 4. Disaster Recovery Intelligence Extraction
+    damage_info = extract_damage_info(message)
+    resource_info = extract_resource_info(message)
+    missing_info = extract_missing_person_info(message)
+
+    # 5. Optional AI Enrichment
     gemini_note = None
     ai_enhanced = False
     if incident == UNKNOWN and GEMINI_ENABLED:
@@ -51,11 +68,6 @@ def process_message(
         except Exception as e:
             logger.warning(f"Gemini service unavailable, falling back to rule baseline: {e}")
 
-    logger.info(
-        f"Processed {emergency_id}: incident={incident} urgency={urgency} "
-        f"priority_score={numeric_priority} tier={priority_tier} duplicate={dup_result['is_duplicate']}"
-    )
-
     return {
         "emergency_id": emergency_id,
         "message": message,
@@ -63,6 +75,9 @@ def process_message(
         "urgency": str(urgency),
         "priority": priority_tier,
         "duplicate_info": dup_result,
+        "damage_assessment": damage_info.model_dump(),
+        "resource_assessment": resource_info.model_dump(),
+        "missing_person_assessment": missing_info.model_dump(),
         "ai_enhanced": ai_enhanced,
         "gemini_note": gemini_note,
     }

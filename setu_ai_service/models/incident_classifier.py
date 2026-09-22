@@ -1,6 +1,6 @@
 ﻿"""
 SETU AI - Incident Classification Engine
-Classifies incoming emergency messages into 10 key disaster categories.
+Classifies incoming emergency messages into 10 key disaster categories with root-hazard precedence.
 """
 
 import re
@@ -9,43 +9,39 @@ from typing import Dict, List
 # ==========================
 # 10 Incident Types (Per Specification)
 # ==========================
-FLOOD = "Flood"
 EARTHQUAKE = "Earthquake"
-FIRE = "Fire"
-LANDSLIDE = "Landslide"
 CYCLONE = "Cyclone"
+LANDSLIDE = "Landslide"
+FLOOD = "Flood"
 BUILDING_COLLAPSE = "Building Collapse"
+FIRE = "Fire"
 ROAD_BLOCKAGE = "Road Blockage"
-MEDICAL = "Medical Emergency"
 MISSING_PERSON = "Missing Person"
 RESOURCE_SHORTAGE = "Resource Shortage"
+MEDICAL = "Medical Emergency"
 UNKNOWN = "Unknown"
 
 # ==========================
-# Keyword Rule Database
+# Keyword Rule Database (Root Hazards first, then consequences)
 # ==========================
 INCIDENT_RULES: Dict[str, List[str]] = {
-    FIRE: [
-        "fire", "flames", "smoke", "burning", "blaze", "cylinder blast", "explosion"
+    EARTHQUAKE: [
+        "earthquake", "tremor", "aftershock", "quake", "ground shaking"
     ],
-    MEDICAL: [
-        "medical", "ambulance", "heart attack", "unconscious", "bleeding", "injured",
-        "injury", "fracture", "oxygen", "breathing difficulty", "snake bite", "pregnant"
+    CYCLONE: [
+        "cyclone", "hurricane", "typhoon", "tornado", "gale", "high winds"
+    ],
+    LANDSLIDE: [
+        "landslide", "mudslide", "rockfall", "debris flow", "hill collapse"
     ],
     FLOOD: [
         "flood", "waterlogging", "water rising", "submerged", "drowning", "inundated", "overflow"
     ],
     BUILDING_COLLAPSE: [
-        "collapse", "building collapse", "debris", "trapped under", "rubble", "crushed"
+        "building collapse", "collapse", "debris", "trapped under", "rubble", "crushed"
     ],
-    EARTHQUAKE: [
-        "earthquake", "tremor", "aftershock", "quake", "shakes", "ground shaking"
-    ],
-    LANDSLIDE: [
-        "landslide", "mudslide", "rockfall", "debris flow", "hill collapse"
-    ],
-    CYCLONE: [
-        "cyclone", "hurricane", "typhoon", "storm", "high winds", "tornado", "gale"
+    FIRE: [
+        "fire", "flames", "smoke", "burning", "blaze", "cylinder blast", "explosion"
     ],
     ROAD_BLOCKAGE: [
         "road blocked", "bridge collapsed", "tree fallen", "blocked path", "no access", "highway blocked"
@@ -55,6 +51,10 @@ INCIDENT_RULES: Dict[str, List[str]] = {
     ],
     RESOURCE_SHORTAGE: [
         "food shortage", "no water", "drinking water", "starving", "rations", "blankets", "need food", "dry ration"
+    ],
+    MEDICAL: [
+        "medical", "ambulance", "heart attack", "unconscious", "bleeding", "injured",
+        "injury", "fracture", "oxygen", "breathing difficulty", "snake bite", "pregnant"
     ],
 }
 
@@ -70,7 +70,7 @@ def contains_keyword(message: str, keyword: str) -> bool:
 def detect_incident(message: str) -> str:
     normalized = normalize_message(message)
 
-    # Check multi-word keywords first, then single words
+    # Check root hazards first, multi-word keywords before single words
     for incident, keywords in INCIDENT_RULES.items():
         for keyword in sorted(keywords, key=len, reverse=True):
             if contains_keyword(normalized, keyword):

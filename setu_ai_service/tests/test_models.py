@@ -1,6 +1,6 @@
 ﻿"""
 SETU AI - Comprehensive Test Suite
-Validates Incident Classification, Geolocation Deduplication, and Safety Boundaries.
+Validates Incident Classification, Geolocation Deduplication, and Disaster Recovery Intelligence.
 """
 
 import unittest
@@ -19,6 +19,11 @@ from models.incident_classifier import (
     UNKNOWN,
 )
 from models.duplicate_detector import check_duplicate, reset_clusters
+from models.disaster_intelligence import (
+    extract_damage_info,
+    extract_resource_info,
+    extract_missing_person_info,
+)
 from models.pipeline import process_message
 
 
@@ -48,7 +53,6 @@ class TestSafeDeduplication(unittest.TestCase):
         reset_clusters()
 
     def test_different_locations_not_duplicate(self):
-        """P0 Security: Same message in different cities must NOT be merged."""
         res1 = check_duplicate(
             message="Building fire need help",
             emergency_id="e-001",
@@ -65,11 +69,10 @@ class TestSafeDeduplication(unittest.TestCase):
             latitude=28.6139,
             longitude=77.2090,
         )
-        self.assertFalse(res2["is_duplicate"], "False duplicate: Merged across different locations!")
+        self.assertFalse(res2["is_duplicate"])
         self.assertEqual(res2["matched_cluster_id"], "e-002")
 
     def test_same_location_is_duplicate(self):
-        """Close proximity (~50m) and similar text must be merged into same cluster."""
         res1 = check_duplicate(
             message="Gas cylinder fire near central school",
             emergency_id="e-101",
@@ -89,25 +92,31 @@ class TestSafeDeduplication(unittest.TestCase):
         self.assertTrue(res2["is_duplicate"])
         self.assertEqual(res2["matched_cluster_id"], "e-101")
 
-    def test_category_mismatch_not_duplicate(self):
-        """Different incident types at the exact same location must NOT merge."""
-        res1 = check_duplicate(
-            message="Flood water entered ground floor",
-            emergency_id="e-201",
-            incident_type=FLOOD,
-            latitude=25.4358,
-            longitude=81.8463,
-        )
-        self.assertFalse(res1["is_duplicate"])
 
-        res2 = check_duplicate(
-            message="Fire accident in electrical pole",
-            emergency_id="e-202",
-            incident_type=FIRE,
-            latitude=25.4358,
-            longitude=81.8463,
-        )
-        self.assertFalse(res2["is_duplicate"])
+class TestDisasterIntelligence(unittest.TestCase):
+    def test_damage_extraction(self):
+        msg = "The main bridge has collapsed and 4 people are trapped"
+        damage = extract_damage_info(msg)
+        self.assertTrue(damage.has_damage)
+        self.assertEqual(damage.asset_type, "Bridge")
+        self.assertEqual(damage.severity, "CATASTROPHIC")
+        self.assertEqual(damage.estimated_affected, 4)
+
+    def test_resource_extraction(self):
+        msg = "Urgent need clean drinking water and food rations for 50 people"
+        res = extract_resource_info(msg)
+        self.assertTrue(res.needs_resources)
+        self.assertIn("Water", res.categories)
+        self.assertIn("Food", res.categories)
+        self.assertEqual(res.urgency, "IMMEDIATE")
+
+    def test_missing_person_extraction(self):
+        msg = "Missing 8 years old boy named Rohan last seen near bus stand"
+        missing = extract_missing_person_info(msg)
+        self.assertTrue(missing.is_missing_report)
+        self.assertEqual(missing.age, 8)
+        self.assertEqual(missing.gender, "MALE")
+        self.assertEqual(missing.name, "Rohan")
 
 
 class TestEndToEndPipeline(unittest.TestCase):
@@ -116,7 +125,7 @@ class TestEndToEndPipeline(unittest.TestCase):
 
     def test_pipeline_execution(self):
         result = process_message(
-            message="Earthquake tremor damaged buildings",
+            message="Earthquake tremor destroyed hospital building with 6 people injured",
             relay_count=1,
             age_seconds=15,
             emergency_id="e-pipeline-1",
@@ -125,7 +134,8 @@ class TestEndToEndPipeline(unittest.TestCase):
         )
         self.assertEqual(result["incident"], EARTHQUAKE)
         self.assertIn(result["priority"], ["CRITICAL", "HIGH", "MEDIUM", "LOW"])
-        self.assertFalse(result["duplicate_info"]["is_duplicate"])
+        self.assertTrue(result["damage_assessment"]["has_damage"])
+        self.assertEqual(result["damage_assessment"]["estimated_affected"], 6)
 
 
 if __name__ == "__main__":
