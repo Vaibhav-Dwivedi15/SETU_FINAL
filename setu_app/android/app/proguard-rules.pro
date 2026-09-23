@@ -34,3 +34,13 @@
 # reachable.
 -keep class com.setu.mesh.** { *; }
 -keep class com.setu.setu_app.** { *; }
+
+# Block 1 (mesh-stability): the first real release build failed in R8 with
+# "Missing class com.google.android.play.core.*". Flutter's embedding
+# references Play Core for DEFERRED COMPONENTS (PlayStoreDeferredComponentManager),
+# a feature this app does not use and whose library is not a dependency.
+# These are the rules R8 itself generated in missing_rules.txt; the classes
+# are never loaded at runtime here.
+-dontwarn com.google.android.play.core.splitcompat.SplitCompatApplication
+-dontwarn com.google.android.play.core.splitinstall.**
+-dontwarn com.google.android.play.core.tasks.**
