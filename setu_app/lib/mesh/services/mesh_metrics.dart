@@ -138,6 +138,49 @@ class MeshMetrics {
   /// Denominator for duplicateRate.
   int nativeTotalProcessed = 0;
 
+  // ---------- Block 1 (mesh-stability) observability ----------
+  //
+  // Native guard counters (pulled from getRelayStats). All start at 0
+  // and stay 0 until the first successful pull.
+  int nativeSignatureFailures = 0;
+  int nativeOversizedDropped = 0;
+  int nativeStaleDropped = 0;
+  int nativeTtlDropped = 0;
+  int nativeClosedEmergencyDropped = 0;
+  int nativeRelaysSent = 0;
+  int nativePendingEvents = 0;
+  int nativePendingDropped = 0;
+  int peerConnects = 0;
+  int peerDisconnects = 0;
+  int? nativeConnectedPeers;
+  String? nativeBatteryTier;
+  bool? nativeAllowRelay;
+
+  // Dart-side counters.
+  /// Signatures the Dart layer verified successfully / rejected.
+  int signaturesVerified = 0;
+  int signaturesRejected = 0;
+
+  /// Dropped by PacketValidator (version/TTL/timestamp/nonce replay).
+  int validationRejected = 0;
+
+  /// Backend upload outcomes. `uploadRejected` = the backend answered
+  /// but refused the packet (invalid signature, expired, schema);
+  /// `uploadFailed` = no usable answer (offline, timeout, non-2xx).
+  int uploadAttempts = 0;
+  int uploadRejected = 0;
+  int uploadFailed = 0;
+
+  /// Attempts made by the 30 s retry sweep (subset of uploadAttempts).
+  int uploadRetries = 0;
+
+  int acksGenerated = 0;
+  int terminationsAccepted = 0;
+  int terminationsRejected = 0;
+
+  /// Battery mode Dart last applied (full / balanced / powerSaver).
+  String? batteryMode;
+
   /// Native-side discovery/connection timings, in microseconds, pulled
   /// up from NearbyConnectionsManager. `null` means not measured yet --
   /// deliberately nullable so an unmeasured stage can never be reported
@@ -208,6 +251,22 @@ class MeshMetrics {
     final discovery = stats['discoveryLatencyMicros'];
     final connection = stats['connectionLatencyMicros'];
 
+    int? intOf(String key) => stats[key] is int ? stats[key] as int : null;
+    nativeSignatureFailures = intOf('signatureFailures') ?? nativeSignatureFailures;
+    nativeOversizedDropped = intOf('oversizedDropped') ?? nativeOversizedDropped;
+    nativeStaleDropped = intOf('staleDropped') ?? nativeStaleDropped;
+    nativeTtlDropped = intOf('ttlDropped') ?? nativeTtlDropped;
+    nativeClosedEmergencyDropped =
+        intOf('closedEmergencyDropped') ?? nativeClosedEmergencyDropped;
+    nativeRelaysSent = intOf('relaysSent') ?? nativeRelaysSent;
+    nativePendingEvents = intOf('pendingEvents') ?? nativePendingEvents;
+    nativePendingDropped = intOf('pendingDropped') ?? nativePendingDropped;
+    peerConnects = intOf('peerConnects') ?? peerConnects;
+    peerDisconnects = intOf('peerDisconnects') ?? peerDisconnects;
+    nativeConnectedPeers = intOf('connectedPeers') ?? nativeConnectedPeers;
+    if (stats['batteryTier'] is String) nativeBatteryTier = stats['batteryTier'] as String;
+    if (stats['allowRelay'] is bool) nativeAllowRelay = stats['allowRelay'] as bool;
+
     if (processed is int) nativeTotalProcessed = processed;
     if (dupes is int) duplicatesFiltered = dupes;
     if (suppressed is int) relaySuppressed = suppressed;
@@ -232,6 +291,32 @@ class MeshMetrics {
           'relaySuppressed': relaySuppressed,
           'duplicatesFiltered': duplicatesFiltered,
           'nativeTotalProcessed': nativeTotalProcessed,
+          'signaturesVerified': signaturesVerified,
+          'signaturesRejected': signaturesRejected,
+          'nativeSignatureFailures': nativeSignatureFailures,
+          'validationRejected': validationRejected,
+          'nativeOversizedDropped': nativeOversizedDropped,
+          'nativeStaleDropped': nativeStaleDropped,
+          'nativeTtlDropped': nativeTtlDropped,
+          'nativeClosedEmergencyDropped': nativeClosedEmergencyDropped,
+          'nativeRelaysSent': nativeRelaysSent,
+          'nativePendingEvents': nativePendingEvents,
+          'nativePendingDropped': nativePendingDropped,
+          'uploadAttempts': uploadAttempts,
+          'uploadRejected': uploadRejected,
+          'uploadFailed': uploadFailed,
+          'uploadRetries': uploadRetries,
+          'acksGenerated': acksGenerated,
+          'terminationsAccepted': terminationsAccepted,
+          'terminationsRejected': terminationsRejected,
+          'peerConnects': peerConnects,
+          'peerDisconnects': peerDisconnects,
+        },
+        'state': {
+          'batteryMode': batteryMode,
+          'nativeBatteryTier': nativeBatteryTier,
+          'nativeAllowRelay': nativeAllowRelay,
+          'nativeConnectedPeers': nativeConnectedPeers,
         },
         'rates': {
           'duplicateRate': duplicateRate,
@@ -285,6 +370,15 @@ Dropped   : $dropped
           'uploaded=$uploaded dropped=$dropped')
       ..writeln('relayAttempts=$relayAttempts failures=$relayFailures '
           'suppressed=$relaySuppressed')
+      ..writeln('sig ok=$signaturesVerified rejected=$signaturesRejected '
+          'nativeRejected=$nativeSignatureFailures validation=$validationRejected')
+      ..writeln('nativeDrops oversized=$nativeOversizedDropped stale=$nativeStaleDropped '
+          'ttl=$nativeTtlDropped closed=$nativeClosedEmergencyDropped')
+      ..writeln('upload attempts=$uploadAttempts rejected=$uploadRejected '
+          'failed=$uploadFailed retries=$uploadRetries acks=$acksGenerated '
+          'termination ok=$terminationsAccepted rejected=$terminationsRejected')
+      ..writeln('battery mode=${batteryMode ?? 'unknown'} '
+          'native=${nativeBatteryTier ?? 'unknown'} peers=${nativeConnectedPeers ?? '-'}')
       ..writeln('duplicateRate=${_pct(duplicateRate)} '
           'relaySuccessRate=${_pct(relaySuccessRate)} '
           'localDropRate=${_pct(localDropRate)}')
@@ -322,6 +416,30 @@ Dropped   : $dropped
     relaySuppressed = 0;
     duplicatesFiltered = 0;
     nativeTotalProcessed = 0;
+    nativeSignatureFailures = 0;
+    nativeOversizedDropped = 0;
+    nativeStaleDropped = 0;
+    nativeTtlDropped = 0;
+    nativeClosedEmergencyDropped = 0;
+    nativeRelaysSent = 0;
+    nativePendingEvents = 0;
+    nativePendingDropped = 0;
+    peerConnects = 0;
+    peerDisconnects = 0;
+    nativeConnectedPeers = null;
+    nativeBatteryTier = null;
+    nativeAllowRelay = null;
+    signaturesVerified = 0;
+    signaturesRejected = 0;
+    validationRejected = 0;
+    uploadAttempts = 0;
+    uploadRejected = 0;
+    uploadFailed = 0;
+    uploadRetries = 0;
+    acksGenerated = 0;
+    terminationsAccepted = 0;
+    terminationsRejected = 0;
+    batteryMode = null;
     discoveryLatencyMicros = null;
     connectionLatencyMicros = null;
     batteryAtFirstSample = null;

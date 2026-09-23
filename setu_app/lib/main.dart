@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import 'app.dart';
 import 'core/services/connectivity_mesh_controller.dart';
+import 'core/services/mesh_locator.dart';
 import 'features/onboarding/presentation/screens/permission_gate_screen.dart';
 
 void main() {
@@ -24,6 +25,17 @@ void main() {
   // since MeshChannelHandler.start() (native side, unconditional) is
   // still what actually launches the foreground service either way;
   // this call only controls the CONNECTIVITY-REACTIVE layer on top.
+  // Block 1: bring the Dart mesh pipeline up at startup, not lazily on
+  // first SOS. Until MeshLocator exists there is no event-channel
+  // listener, so nothing the native service receives can reach the
+  // backend upload / ACK / responder-registry logic. Wrapped so a
+  // failure here can never stop the app from launching.
+  try {
+    MeshLocator.start();
+  } catch (_) {
+    // Logged inside start(); the UI must still come up.
+  }
+
   hasMeshPermissions().then((granted) {
     if (granted) {
       ConnectivityMeshController.instance.enableAutoMode();

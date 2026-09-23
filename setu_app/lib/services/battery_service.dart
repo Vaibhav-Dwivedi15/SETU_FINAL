@@ -53,16 +53,23 @@ class BatteryService {
     }
   }
 
-  void _updateMode(int level) {
-    final PowerMode newMode;
+  /// Tier thresholds. Must match the native BatteryPolicy (Kotlin):
+  /// >50 full, 20..50 balanced, <20 powerSaver.
+  ///
+  /// Transition delivery was checked against battery_plus 7.1.1's Android
+  /// source: it registers for ACTION_BATTERY_CHANGED and publishes on
+  /// EVERY such broadcast (the OS sends one per level change) with no
+  /// de-duplication, so `onBatteryStateChanged` does fire on percentage
+  /// changes and no polling is needed. The listener below re-reads the
+  /// level on each event.
+  static PowerMode modeForLevel(int level) {
+    if (level > 50) return PowerMode.full;
+    if (level >= 20) return PowerMode.balanced;
+    return PowerMode.powerSaver;
+  }
 
-    if (level > 50) {
-      newMode = PowerMode.full;
-    } else if (level >= 20) {
-      newMode = PowerMode.balanced;
-    } else {
-      newMode = PowerMode.powerSaver;
-    }
+  void _updateMode(int level) {
+    final PowerMode newMode = modeForLevel(level);
 
     if (newMode != _currentMode) {
       _currentMode = newMode;

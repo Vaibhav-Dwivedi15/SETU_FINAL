@@ -1,4 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:setu_app/mesh/services/responder_registry.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:setu_app/mesh/enums/emergency_priority.dart';
 import 'package:setu_app/mesh/models/emergency_packet.dart';
 import 'package:setu_app/mesh/models/termination_packet.dart';
@@ -258,6 +260,14 @@ void main() {
   });
 
   group('termination', () {
+    setUp(() async {
+      // Block 1: termination fails closed, so the responder key must be
+      // in the (persisted) registry for these lifecycle tests.
+      SharedPreferences.setMockInitialValues({});
+      await ResponderRegistry.instance.resetForTesting();
+      ResponderRegistry.instance.syncFromBackend(['responder-public-key']);
+    });
+
     test('a verified termination stops further relay of that emergency', () async {
       final mesh = await SimulatedMesh.chain(2);
       addTearDown(mesh.disposeAll);

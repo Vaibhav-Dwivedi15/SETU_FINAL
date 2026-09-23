@@ -3,6 +3,8 @@ import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:setu_app/features/relay/data/repositories/relay_log_repository.dart';
+import 'package:setu_app/features/sos/data/services/ack_packet_builder.dart';
+import 'package:setu_app/mesh/models/ack_packet.dart';
 import 'package:setu_app/mesh/models/mesh_packet.dart';
 import 'package:setu_app/mesh/services/local_queue_service.dart';
 import 'package:setu_app/mesh/services/mesh_service.dart';
@@ -192,6 +194,7 @@ class SimulatedDevice {
           : _AlwaysInvalidSigning(),
       backendService: backend,
       queueService: queue,
+      ackBuilder: _FakeAckBuilder(),
     );
     mesh_.incomingPackets.listen(received.add);
   }
@@ -204,6 +207,10 @@ class SimulatedDevice {
       .toList();
 
   bool get relayedAnything => transmitted.isNotEmpty;
+
+  /// Block 1: test access to the fake transport (native-relay switch,
+  /// closed-emergency log, raw payload injection).
+  _FakeNearbyService get nearbyFake => _nearby;
 }
 
 /// Per-device model of the native PacketRelayEngine seen-cache.
@@ -237,6 +244,18 @@ class _FakeNearbyService implements NearbyService {
   /// not stop the relay pump.
   bool failSends = false;
 
+  /// Block 1: when true this fake behaves like the production transport,
+  /// where the native layer (not MeshServiceImpl) rebroadcasts relays.
+  bool nativeRelay = false;
+
+  final List<String> closedEmergencies = [];
+
+  @override
+  bool get relaysNatively => nativeRelay;
+
+  @override
+  Future<void> closeEmergency(String emergencyId) async => closedEmergencies.add(emergencyId);
+
   @override
   Stream<NearbyEvent> get events => _controller.stream;
 
@@ -260,6 +279,9 @@ class _FakeNearbyService implements NearbyService {
 
   @override
   Future<Map<dynamic, dynamic>?> fetchRelayStats() async => null;
+
+  /// Injects raw payload bytes as if the native layer had forwarded them.
+  void inject(Uint8List bytes) => _deliver(bytes);
 
   void _deliver(Uint8List bytes) {
     if (_controller.isClosed) return;
@@ -289,11 +311,19 @@ class _FakeBackendService extends BackendService {
   @override
   Future<bool> hasRealInternet() async => internetAvailable;
 
+  /// What the fake backend answers for a packet that reached it.
+  UploadOutcome nextOutcome = UploadOutcome.accepted;
+
+  int uploadAttempts = 0;
+
   @override
-  Future<bool> uploadPacket(MeshPacket packet) async {
-    if (!internetAvailable || !backendHealthy) return false;
-    uploadedPacketIds.add(packet.packetId);
-    return true;
+  Future<UploadOutcome> uploadPacketDetailed(MeshPacket packet) async {
+    uploadAttempts++;
+    if (!internetAvailable || !backendHealthy) return UploadOutcome.failed;
+    if (nextOutcome == UploadOutcome.accepted || nextOutcome == UploadOutcome.duplicate) {
+      uploadedPacketIds.add(packet.packetId);
+    }
+    return nextOutcome;
   }
 
   @override
@@ -336,6 +366,29 @@ class _FakeLocalQueue extends LocalQueueService {
 
   int get storedCount => _packets.length;
   int get pendingCount => _packets.length - _uploaded.length;
+}
+
+/// Builds unsigned ACKs so the simulation does not need platform secure
+/// storage; signature checking is stubbed by the signing fakes anyway.
+class _FakeAckBuilder extends AckPacketBuilder {
+  static int _counter = 0;
+
+  @override
+  Future<AckPacket> buildAckPacket({
+    required String originalPacketId,
+    required String emergencyId,
+  }) async =>
+      AckPacket(
+        packetId: 'ack-sim-${_counter++}',
+        senderId: 'simulated-exit-node-key',
+        timestamp: DateTime.now().toUtc(),
+        nonce: 'nonce-ack-sim-${_counter++}',
+        ttl: 5,
+        hopCount: 0,
+        signature: 'signature',
+        originalPacketId: originalPacketId,
+        emergencyId: emergencyId,
+      );
 }
 
 class _AlwaysValidSigning extends SigningService {

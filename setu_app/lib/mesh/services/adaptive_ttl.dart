@@ -32,6 +32,14 @@ import '../enums/emergency_priority.dart';
 ///   * result < input ttl, ALWAYS. No hop is ever free, so no packet can
 ///     circulate forever.
 ///   * result >= 0.
+///
+/// BLOCK 1 NOTE: in production the relay TTL is computed ONLY by the
+/// native engine (PacketRelayEngine.nextTtl -- see
+/// NearbyService.relaysNatively), which mirrors this class WITHOUT the
+/// dense-cluster decrement (native does not track a peer census the way
+/// MeshServiceImpl does). This class now only decides relay TTL for
+/// transports that have no native engine (the test simulation), so two
+/// different TTLs can no longer be produced for the same packet.
 class AdaptiveTtl {
   const AdaptiveTtl._();
 

@@ -54,6 +54,22 @@ abstract class NearbyService {
   /// older native build that has no `getRelayStats` leaves those metrics
   /// reading "not measured" instead of a fabricated zero.
   Future<Map<dynamic, dynamic>?> fetchRelayStats() async => null;
+
+  /// Block 1 (mesh-stability): which layer broadcasts RELAYED packets.
+  ///
+  /// The production transport relays natively (PacketRelayEngine +
+  /// MeshForegroundService.scheduleRelay): it works with no Dart engine
+  /// attached, applies jitter/echo suppression and the battery guard, and
+  /// computes the next TTL. When this is true MeshServiceImpl must NOT
+  /// also relay -- doing both put two copies on the air with two
+  /// different TTLs. Transports with no native engine (the test
+  /// simulation) keep the default `false`, so Dart relays for them.
+  bool get relaysNatively => false;
+
+  /// Block 1: tells the native engine an emergency was closed by an
+  /// authorized responder so it stops delivering/relaying it. No-op for
+  /// transports without a native engine.
+  Future<void> closeEmergency(String emergencyId) async {}
 }
 
 class PlatformNearbyService implements NearbyService {
@@ -88,6 +104,20 @@ class PlatformNearbyService implements NearbyService {
         // change TTL behavior in any way -- purely a diagnostic value.
         'maxTtl': SecurityConstants.maxTTL,
       });
+
+  @override
+  bool get relaysNatively => true;
+
+  @override
+  Future<void> closeEmergency(String emergencyId) async {
+    try {
+      await _methodChannel.invokeMethod('closeEmergency', {'emergencyId': emergencyId});
+    } on MissingPluginException {
+      // Older native build: Dart still drops the closed emergency itself.
+    } on PlatformException {
+      // Same: never let this disturb packet handling.
+    }
+  }
 
   @override
   Future<Map<dynamic, dynamic>?> fetchRelayStats() async {

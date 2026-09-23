@@ -57,40 +57,23 @@ class MeshForegroundService : Service(), NearbyConnectionsManager.Listener {
     // It only holds the Dart-bound copy. In-memory only: a process kill
     // loses it (documented limitation). Bounded: when full, the OLDEST
     // pending event is discarded (and counted).
-    private val pendingLock = Any()
-    private val pendingEvents = ArrayDeque<Map<String, Any?>>()
-
-    @Volatile
-    private var pendingDropped = 0L
+    private val handoff = HandoffBuffer<Map<String, Any?>>(MAX_PENDING_EVENTS)
 
     private fun deliverToDart(event: Map<String, Any?>) {
-        synchronized(pendingLock) {
-            // Preserve FIFO: never overtake events that are still waiting.
-            if (pendingEvents.isEmpty() && eventForwarder?.invoke(event) == true) return
-            if (pendingEvents.size >= MAX_PENDING_EVENTS) {
-                pendingEvents.removeFirst()
-                pendingDropped++
-                Log.w(TAG, "Pending Dart-handoff buffer full -- dropped oldest event (total dropped=$pendingDropped)")
+        if (!handoff.deliver(event, eventForwarder)) {
+            if (handoff.dropped > 0 && handoff.size >= MAX_PENDING_EVENTS) {
+                Log.w(TAG, "Pending Dart-handoff buffer full -- oldest events dropped (total dropped=${handoff.dropped})")
             }
-            pendingEvents.addLast(event)
         }
     }
 
     /** Called when a Dart listener attaches (or the forwarder is set). */
     fun flushPendingEvents() {
-        synchronized(pendingLock) {
-            val forward = eventForwarder ?: return
-            var flushed = 0
-            while (pendingEvents.isNotEmpty()) {
-                if (!forward(pendingEvents.first())) break
-                pendingEvents.removeFirst()
-                flushed++
-            }
-            if (flushed > 0) Log.i(TAG, "Flushed $flushed buffered payload event(s) to Dart")
-        }
+        val flushed = handoff.flush(eventForwarder)
+        if (flushed > 0) Log.i(TAG, "Flushed $flushed buffered payload event(s) to Dart")
     }
 
-    fun pendingEventCount(): Int = synchronized(pendingLock) { pendingEvents.size }
+    fun pendingEventCount(): Int = handoff.size
 
     /** Dart accepted a termination from an authorized responder. */
     fun markEmergencyClosed(emergencyId: String) {
@@ -615,7 +598,7 @@ class MeshForegroundService : Service(), NearbyConnectionsManager.Listener {
         "closedEmergencyDropped" to relayEngine.closedEmergencyDropped.toInt(),
         "relaysSent" to relaysSent.toInt(),
         "pendingEvents" to pendingEventCount(),
-        "pendingDropped" to pendingDropped.toInt(),
+        "pendingDropped" to handoff.dropped.toInt(),
         "peerConnects" to peerConnectsTotal.toInt(),
         "peerDisconnects" to peerDisconnectsTotal.toInt(),
         "batteryTier" to currentBatteryTier,
@@ -657,7 +640,7 @@ class MeshForegroundService : Service(), NearbyConnectionsManager.Listener {
             persistSeenSnapshot()
         }
         pendingRelayIds.clear()
-        synchronized(pendingLock) { pendingEvents.clear() }
+        handoff.clear()
         connectionsManager.stopAll()
         super.onDestroy()
     }

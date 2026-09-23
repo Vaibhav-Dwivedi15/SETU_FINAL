@@ -43,12 +43,19 @@ class MeshServiceImpl implements MeshService {
     required BackendService backendService,
     required LocalQueueService queueService,
     PriorityRelayQueue? relayQueue,
+    AckPacketBuilder? ackBuilder,
   })  : _nearby = nearbyService,
+        _ackBuilder = ackBuilder ?? AckPacketBuilder(),
         _signing = signingService,
         _backend = backendService,
         _queue = queueService,
         _relayQueue = relayQueue ?? PriorityRelayQueue() {
-    _subscription = _nearby.events.listen(_handleNearbyEvent);
+    _subscription = _nearby.events.listen(
+      _handleNearbyEvent,
+      // A platform-channel error (or a malformed event) must never tear
+      // down the subscription that every received packet arrives on.
+      onError: (Object e) => developer.log('Nearby event stream error: $e', name: 'MeshService'),
+    );
     _retryTimer = Timer.periodic(const Duration(seconds: 30), (_) => _retryPendingUploads());
     // Sep 21 2026 (Vib): also prunes already-uploaded rows older than 3
     // days on the same cadence as the registry sync -- LocalQueueService
@@ -67,10 +74,12 @@ class MeshServiceImpl implements MeshService {
     unawaited(PowerModeController.instance.initialize());
     _policySub = PowerModeController.instance.stream.listen((mode) {
       _currentPolicy = MeshPolicy.fromPowerMode(mode);
+      MeshMetrics.instance.batteryMode = mode.name;
       developer.log('Power mode changed -> ${mode.name}', name: 'MeshService');
       unawaited(_pushPolicyToNative());
     });
     _currentPolicy = MeshPolicy.fromPowerMode(PowerModeController.instance.currentMode);
+    MeshMetrics.instance.batteryMode = PowerModeController.instance.currentMode.name;
     unawaited(_pushPolicyToNative());
     unawaited(_retryPendingUploads());
     unawaited(_syncResponderRegistry());
@@ -90,7 +99,7 @@ class MeshServiceImpl implements MeshService {
   final _incomingController = StreamController<MeshPacket>.broadcast();
   final Set<String> _closedEmergencyIds = {};
 
-  final AckPacketBuilder _ackBuilder = AckPacketBuilder();
+  final AckPacketBuilder _ackBuilder;
   final Set<String> _originatedEmergencyIds = {};
 
   /// Sep 21 2026 (Vib, mesh-hardening pass): guards against the SAME
@@ -167,7 +176,7 @@ class MeshServiceImpl implements MeshService {
       _originatedEmergencyIds.add(packet.emergencyId);
     }
 
-    await _queue.enqueue(packet);
+    if (_isUploadable(packet)) await _queue.enqueue(packet);
     final bytes = Uint8List.fromList(utf8.encode(jsonEncode(packet.toJson())));
 
     // Self-originated traffic bypasses the priority queue entirely: this
@@ -191,6 +200,12 @@ class MeshServiceImpl implements MeshService {
     ));
     _tryUpload(packet);
   }
+
+  /// Only emergency and termination packets are accepted by the backend's
+  /// /ingest (its PacketType has no ack/alert). ACKs and alerts are
+  /// mesh-only, so they are not put in the durable upload queue -- they
+  /// would otherwise be re-posted every 30 s just to be rejected.
+  static bool _isUploadable(MeshPacket packet) => packet is! AckPacket && packet is! AlertPacket;
 
   void _handleNearbyEvent(NearbyEvent event) {
     switch (event) {
@@ -274,6 +289,7 @@ class MeshServiceImpl implements MeshService {
     } on SecurityException catch (e) {
       developer.log('Dropped packet failing security validation: $e (${packet.packetId})', name: 'MeshService');
       MeshMetrics.instance.dropped++;
+      MeshMetrics.instance.validationRejected++;
       MeshMetrics.instance.notify();
       unawaited(RelayLogRepository.instance.log(
         type: RelayLogType.dropped,
@@ -293,6 +309,7 @@ class MeshServiceImpl implements MeshService {
     if (!isValid) {
       developer.log('Dropped packet with invalid signature: ${packet.packetId}', name: 'MeshService');
       MeshMetrics.instance.dropped++;
+      MeshMetrics.instance.signaturesRejected++;
       MeshMetrics.instance.notify();
       unawaited(RelayLogRepository.instance.log(
         type: RelayLogType.dropped,
@@ -301,25 +318,35 @@ class MeshServiceImpl implements MeshService {
       ));
       return;
     }
+    MeshMetrics.instance.signaturesVerified++;
     developer.log('Packet signature VERIFIED: ${packet.packetId}', name: 'MeshService');
 
     if (packet is TerminationPacket) {
-      final (authorized, enforced) = ResponderRegistry.instance.checkResponder(packet.senderId);
+      await ResponderRegistry.instance.ensureLoaded();
+      final (authorized, registryAvailable) =
+          ResponderRegistry.instance.checkResponder(packet.senderId);
       if (!authorized) {
-        developer.log('Dropped termination from unauthorized responder: ${packet.senderId}', name: 'MeshService');
+        // Fails closed. registryAvailable == false means we hold no
+        // trusted key set at all (never synced and nothing persisted).
+        developer.log(
+          registryAvailable
+              ? 'Dropped termination from unauthorized responder: ${packet.senderId.substring(0, 8)}...'
+              : 'Dropped termination: no trusted responder registry available (fail-closed)',
+          name: 'MeshService',
+        );
         MeshMetrics.instance.dropped++;
+        MeshMetrics.instance.terminationsRejected++;
         MeshMetrics.instance.notify();
         unawaited(RelayLogRepository.instance.log(
           type: RelayLogType.dropped,
           packetId: packet.packetId,
-          detail: 'Unauthorized termination',
+          detail: registryAvailable ? 'Unauthorized termination' : 'Termination rejected: no responder registry',
         ));
         return;
       }
-      if (!enforced) {
-        developer.log('WARNING: termination accepted without registry enforcement (no backend sync yet)', name: 'MeshService');
-      }
+      MeshMetrics.instance.terminationsAccepted++;
       _closedEmergencyIds.add(packet.emergencyId);
+      unawaited(_nearby.closeEmergency(packet.emergencyId));
       // NOTE: the durable-queue sweep for this emergency_id does NOT
       // happen here. It used to, and that was the bug (see below) --
       // sweeping this early runs *before* the generic `_queue.enqueue`
@@ -369,7 +396,7 @@ class MeshServiceImpl implements MeshService {
       packetId: packet.packetId,
       detail: '${packet.type.name} packet, hop ${packet.hopCount}',
     ));
-    await _queue.enqueue(packet);
+    if (_isUploadable(packet)) await _queue.enqueue(packet);
     if (packet is TerminationPacket) {
       // Now that this termination packet's own row exists, sweep the
       // durable queue for its emergency_id -- this removes every packet
@@ -382,7 +409,12 @@ class MeshServiceImpl implements MeshService {
     _incomingController.add(packet);
     developer.log('Packet ACCEPTED and queued: ${packet.packetId} (total received=${MeshMetrics.instance.received})', name: 'MeshService');
 
-    _relayPacket(packet);
+    // Block 1: one relay path. The native transport relays for itself
+    // (see NearbyService.relaysNatively); Dart only relays for
+    // transports that have no native engine.
+    if (!_nearby.relaysNatively) {
+      _relayPacket(packet);
+    }
 
     receiveStopwatch.stop();
     MeshMetrics.instance.receiveToRelay.addMicros(receiveStopwatch.elapsedMicroseconds);
@@ -579,19 +611,54 @@ class MeshServiceImpl implements MeshService {
       try {
         final online = await _backend.hasRealInternet();
         if (!online) return;
-
-        final upload = Stopwatch()..start();
-        final ok = await _backend.uploadPacket(packet);
-        upload.stop();
-        MeshMetrics.instance.backendUpload.addMicros(upload.elapsedMicroseconds);
-
-        if (ok) {
-          await _markPacketDelivered(packet, detail: 'Delivered to backend');
-        }
+        await _uploadAndRecord(packet, isRetry: false);
+      } catch (e) {
+        developer.log('Upload path error for ${packet.packetId}: $e', name: 'MeshService');
       } finally {
         _uploadingPacketIds.remove(packet.packetId);
       }
     }());
+  }
+
+  /// One upload attempt plus its bookkeeping, shared by the first-attempt
+  /// and retry paths (Block 1: outcome-aware).
+  ///
+  ///  * accepted / duplicate -> the backend holds it: mark uploaded,
+  ///    originate the ACK.
+  ///  * rejected -> the backend refused it and re-sending identical bytes
+  ///    cannot succeed. Stop retrying (mark uploaded) but do NOT
+  ///    acknowledge and do not count it as delivered.
+  ///  * failed -> leave it pending for the next retry sweep.
+  Future<void> _uploadAndRecord(MeshPacket packet, {required bool isRetry}) async {
+    final metrics = MeshMetrics.instance;
+    metrics.uploadAttempts++;
+    if (isRetry) metrics.uploadRetries++;
+
+    final upload = Stopwatch()..start();
+    final outcome = await _backend.uploadPacketDetailed(packet);
+    upload.stop();
+    metrics.backendUpload.addMicros(upload.elapsedMicroseconds);
+
+    switch (outcome) {
+      case UploadOutcome.accepted:
+        await _markPacketDelivered(packet,
+            detail: isRetry ? 'Delivered to backend (retry)' : 'Delivered to backend');
+      case UploadOutcome.duplicate:
+        await _markPacketDelivered(packet,
+            detail: isRetry ? 'Already on backend (retry)' : 'Already on backend');
+      case UploadOutcome.rejected:
+        metrics.uploadRejected++;
+        await _queue.markUploaded(packet.packetId); // stop retrying; not a delivery
+        metrics.notify();
+        developer.log('Backend REJECTED ${packet.packetId} -- not retrying, no ACK', name: 'MeshService');
+        unawaited(RelayLogRepository.instance.log(
+          type: RelayLogType.dropped,
+          packetId: packet.packetId,
+          detail: 'Backend rejected upload',
+        ));
+      case UploadOutcome.failed:
+        metrics.uploadFailed++;
+    }
   }
 
   /// Shared "this packet reached the backend" bookkeeping -- used by both
@@ -637,6 +704,7 @@ class MeshServiceImpl implements MeshService {
         emergencyId: packet.emergencyId,
       );
       await originate(ack);
+      MeshMetrics.instance.acksGenerated++;
       developer.log('Ack originated for emergency: ${packet.emergencyId}', name: 'MeshService');
     } catch (e) {
       developer.log('Failed to originate ack for ${packet.emergencyId}: $e', name: 'MeshService');
@@ -644,6 +712,15 @@ class MeshServiceImpl implements MeshService {
   }
 
   Future<void> _syncResponderRegistry() async {
+    try {
+      await _syncResponderRegistryUnsafe();
+    } catch (e) {
+      developer.log('Responder registry sync error: $e', name: 'MeshService');
+    }
+  }
+
+  Future<void> _syncResponderRegistryUnsafe() async {
+    await ResponderRegistry.instance.ensureLoaded();
     final online = await _backend.hasRealInternet();
     if (!online) return;
 
@@ -661,12 +738,23 @@ class MeshServiceImpl implements MeshService {
   }
 
   Future<void> _retryPendingUploads() async {
+    try {
+      await _retryPendingUploadsUnsafe();
+    } catch (e) {
+      // Runs from a timer and from the constructor, both `unawaited`: an
+      // escaped error here would be an unhandled async error.
+      developer.log('Retry sweep failed: $e', name: 'MeshService');
+    }
+  }
+
+  Future<void> _retryPendingUploadsUnsafe() async {
     if (!_currentPolicy.allowUpload) return;
     final online = await _backend.hasRealInternet();
     if (!online) return;
 
     final pending = await _queue.getPendingPackets();
     for (final packet in pending) {
+      if (!_isUploadable(packet)) continue; // legacy rows from before ack/alert were excluded
       // Same in-flight guard as _tryUpload -- if an immediate upload for
       // this exact packet is already running (e.g. it was just received
       // moments before this 30s tick fired), skip it here rather than
@@ -676,19 +764,9 @@ class MeshServiceImpl implements MeshService {
         continue;
       }
       try {
-        final upload = Stopwatch()..start();
-        final ok = await _backend.uploadPacket(packet);
-        upload.stop();
-        MeshMetrics.instance.backendUpload.addMicros(upload.elapsedMicroseconds);
-        if (ok) {
-          // Sep 21 2026 (Vib): previously this path did NOT call
-          // _originateAck -- a packet delivered only via retry (e.g. no
-          // internet on first receive/originate) never acked the sender,
-          // so History/Recovery status stayed at "Sent" forever even
-          // though the backend had it. Now shares _markPacketDelivered
-          // with _tryUpload so both paths behave identically.
-          await _markPacketDelivered(packet, detail: 'Delivered to backend (retry)');
-        }
+        await _uploadAndRecord(packet, isRetry: true);
+      } catch (e) {
+        developer.log('Retry upload error for ${packet.packetId}: $e', name: 'MeshService');
       } finally {
         _uploadingPacketIds.remove(packet.packetId);
       }

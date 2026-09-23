@@ -1,3 +1,5 @@
+import 'dart:developer' as developer;
+
 import 'package:setu_app/features/history/data/repositories/history_repository.dart';
 import 'package:setu_app/features/nearby/data/models/nearby_alert_model.dart';
 import 'package:setu_app/features/nearby/data/repositories/nearby_repository.dart';
@@ -88,6 +90,21 @@ class MeshLocator {
   }
 
   static final MeshLocator instance = MeshLocator._internal();
+
+  /// Block 1 (mesh-stability): called once from main() so the Dart mesh
+  /// pipeline exists -- and its native event-channel subscription is
+  /// attached -- from process start, instead of the first time the user
+  /// happens to open SOS / recovery / readiness. Idempotent: it only
+  /// touches the lazy singleton, so exactly one MeshServiceImpl can ever
+  /// exist. Needs neither permissions nor internet; it never throws.
+  static MeshLocator start() {
+    try {
+      return instance;
+    } catch (e, st) {
+      developer.log('Mesh start failed: $e', name: 'MeshLocator', error: e, stackTrace: st);
+      rethrow;
+    }
+  }
   final SigningService signingService;
   final BackendService backendService;
   final NearbyService _nearbyService;

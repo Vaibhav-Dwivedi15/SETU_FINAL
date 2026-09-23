@@ -618,4 +618,60 @@ class PacketRelayEngineTest {
         assertEquals(0, b.trackedCount())
         assertEquals(true, b.canAttempt("a"))
     }
+
+    // ---- HandoffBuffer (native -> Dart) ----
+
+    @Test
+    fun handoff_beforeListener_buffers_thenFlushesInOrder_exactlyOnce() {
+        val buf = HandoffBuffer<String>(10)
+        assertEquals(false, buf.deliver("a", null))   // no listener yet
+        assertEquals(false, buf.deliver("b", { false })) // listener present but not accepting
+        assertEquals(2, buf.size)
+
+        val got = mutableListOf<String>()
+        assertEquals(2, buf.flush { got.add(it); true })
+        assertEquals(listOf("a", "b"), got)
+        assertEquals(0, buf.size)
+        assertEquals(0, buf.flush { got.add(it); true }) // nothing re-delivered
+        assertEquals(listOf("a", "b"), got)
+    }
+
+    @Test
+    fun handoff_afterListener_deliversImmediately_andNeverOvertakesQueued() {
+        val buf = HandoffBuffer<String>(10)
+        val got = mutableListOf<String>()
+        val fwd: (String) -> Boolean = { got.add(it); true }
+        assertEquals(true, buf.deliver("live-1", fwd))
+
+        buf.deliver("queued", null)
+        // A new event while one is still waiting must queue behind it.
+        assertEquals(false, buf.deliver("live-2", fwd))
+        assertEquals(listOf("live-1"), got)
+        buf.flush(fwd)
+        assertEquals(listOf("live-1", "queued", "live-2"), got)
+    }
+
+    @Test
+    fun handoff_isBounded_dropsOldest() {
+        val buf = HandoffBuffer<Int>(3)
+        for (i in 1..5) buf.deliver(i, null)
+        assertEquals(3, buf.size)
+        assertEquals(2L, buf.dropped)
+        val got = mutableListOf<Int>()
+        buf.flush { got.add(it); true }
+        assertEquals(listOf(3, 4, 5), got)
+    }
+
+    @Test
+    fun handoff_partialFlush_keepsRemainderQueued() {
+        val buf = HandoffBuffer<Int>(5)
+        for (i in 1..3) buf.deliver(i, null)
+        var accept = 1
+        val got = mutableListOf<Int>()
+        buf.flush { if (accept-- > 0) { got.add(it); true } else false }
+        assertEquals(listOf(1), got)
+        assertEquals(2, buf.size)
+        buf.clear()
+        assertEquals(0, buf.size)
+    }
 }

@@ -107,10 +107,43 @@ class LocalQueueService {
   /// Sprint 5 Phase 18 (docs/mesh/SPRINT5_INTEGRATION_VALIDATION.md §15).
   Future<void> markEmergencyClosed(String emergencyId) async {
     await init();
-    await _db!.delete(
-      _table,
-      where: 'jsonPayload LIKE ?',
-      whereArgs: ['%"emergency_id":"$emergencyId"%'],
-    );
+    // Block 1: was `DELETE ... WHERE jsonPayload LIKE '%"emergency_id":"<id>"%'`.
+    // `%` and `_` in an attacker-chosen emergency_id are LIKE wildcards, so
+    // a termination naming "%" matched (and deleted) unrelated rows.
+    // Selection is now exact: read the rows, decode each payload and
+    // compare the emergency_id FIELD for equality. Deletion is by primary
+    // key. The queue is small (uploaded rows are pruned after 3 days), so
+    // one pass is cheap and this runs only on a verified termination.
+    final rows = await _db!.query(_table, columns: ['packetId', 'jsonPayload']);
+    final ids = packetIdsForEmergency(rows, emergencyId);
+    if (ids.isEmpty) return;
+    final batch = _db!.batch();
+    for (final id in ids) {
+      batch.delete(_table, where: 'packetId = ?', whereArgs: [id]);
+    }
+    await batch.commit(noResult: true);
+  }
+
+  /// Pure selection logic for [markEmergencyClosed], separated so it can
+  /// be tested without a database. Returns the packetIds of rows whose
+  /// decoded payload carries exactly [emergencyId]. Malformed rows and
+  /// rows without an emergency_id are never selected.
+  static List<String> packetIdsForEmergency(
+    Iterable<Map<String, Object?>> rows,
+    String emergencyId,
+  ) {
+    if (emergencyId.isEmpty) return const [];
+    final matches = <String>[];
+    for (final row in rows) {
+      try {
+        final json = jsonDecode(row['jsonPayload'] as String);
+        if (json is Map && json['emergency_id'] == emergencyId) {
+          matches.add(row['packetId'] as String);
+        }
+      } catch (_) {
+        // Malformed row: never a match.
+      }
+    }
+    return matches;
   }
 }
