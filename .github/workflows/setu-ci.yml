@@ -96,7 +96,10 @@ jobs:
 
       - name: Run native unit tests
         working-directory: setu_app/android
-        run: ./gradlew testDebugUnitTest --no-daemon
+        # Block 1: scoped to :app. The bare `testDebugUnitTest` also runs the
+        # third-party geolocator_android plugin's own unit tests, which fail
+        # here (Mockito/JDK issue in the plugin, unrelated to SETU code).
+        run: ./gradlew :app:testDebugUnitTest --no-daemon
 
   build-debug-apk:
     name: Build debug APK (compile validation only)
