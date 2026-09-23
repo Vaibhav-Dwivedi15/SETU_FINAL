@@ -111,7 +111,7 @@ class NearbyConnectionsManager(
         connectionsClient
             .startAdvertising(localEndpointName, serviceId, connectionLifecycleCallback, options)
             .addOnSuccessListener { Log.i(TAG, "Advertising started as $localEndpointName") }
-            .addOnFailureListener { e -> Log.e(TAG, "Advertising failed", e) }
+            .addOnFailureListener { e -> logStartFailure("Advertising", e) }
     }
 
     fun startDiscovery() {
@@ -124,7 +124,22 @@ class NearbyConnectionsManager(
         connectionsClient
             .startDiscovery(serviceId, endpointDiscoveryCallback, options)
             .addOnSuccessListener { Log.i(TAG, "Discovery started") }
-            .addOnFailureListener { e -> Log.e(TAG, "Discovery failed", e) }
+            .addOnFailureListener { e -> logStartFailure("Discovery", e) }
+    }
+
+    // Block 1: the duty cycle and radio-resume both call start*() again on
+    // a session that may already be running. "Already advertising /
+    // discovering" is the expected, harmless answer there and should not
+    // read as an error in logcat.
+    private fun logStartFailure(what: String, e: Exception) {
+        val code = (e as? com.google.android.gms.common.api.ApiException)?.statusCode
+        if (code == ConnectionsStatusCodes.STATUS_ALREADY_ADVERTISING ||
+            code == ConnectionsStatusCodes.STATUS_ALREADY_DISCOVERING
+        ) {
+            Log.i(TAG, "$what already running (no-op restart)")
+        } else {
+            Log.e(TAG, "$what failed (code=$code)", e)
+        }
     }
 
     /** Added for MARK II battery-tiered duty cycling. Pauses advertising
