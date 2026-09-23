@@ -13,7 +13,13 @@ class NearbyConnectionsManager(
 ) {
     private val connectionsClient = Nearby.getConnectionsClient(context)
     private val strategy = Strategy.P2P_CLUSTER
-    private val localEndpointName: String = "setu-" + (1000..9999).random()
+    // Block 1: was "setu-" + a 4-digit number (9000 values), so two
+    // devices picked the same name roughly 1 time in 9000 and, with the
+    // name-ordered tie-break below, neither would ever initiate. 32 random
+    // bits make that negligible. Lowercase hex sorts consistently.
+    private val localEndpointName: String = "setu-" + String.format(
+        "%08x", java.security.SecureRandom().nextInt()
+    )
 
     // Sep 21 2026 (Vib, native-mesh hardening pass): Nearby Connections
     // callbacks are not guaranteed by the API contract to all fire on one
@@ -91,24 +97,8 @@ class NearbyConnectionsManager(
     // Needs real-device validation before the specific numbers are
     // trusted -- flagged explicitly in the final report, not claimed as
     // tested.
-    private val connectionFailureCount: MutableMap<String, Int> = Collections.synchronizedMap(mutableMapOf())
-    private val lastConnectionAttemptAtNanos: MutableMap<String, Long> = Collections.synchronizedMap(mutableMapOf())
-
-    private fun backoffDelayMs(failureCount: Int): Long {
-        if (failureCount <= 0) return 0L
-        val exponential = INITIAL_BACKOFF_MS * (1L shl (failureCount - 1).coerceAtMost(10))
-        return exponential.coerceAtMost(MAX_BACKOFF_MS)
-    }
-
-    /** True if we're allowed to attempt a connection to [endpointId] right
-     * now; false if a prior failure's backoff window hasn't elapsed yet. */
-    private fun canAttemptConnection(endpointId: String): Boolean {
-        val failures = connectionFailureCount[endpointId] ?: 0
-        if (failures <= 0) return true
-        val delayNanos = backoffDelayMs(failures) * 1_000_000L
-        val lastAttempt = lastConnectionAttemptAtNanos[endpointId] ?: return true
-        return System.nanoTime() - lastAttempt >= delayNanos
-    }
+    // Block 1: bookkeeping lives in ConnectionBackoff (JVM-testable).
+    private val backoff = ConnectionBackoff()
 
     interface Listener {
         fun onPeerConnected(endpointId: String)
@@ -154,8 +144,7 @@ class NearbyConnectionsManager(
         connectionsClient.stopAllEndpoints()
         connectedEndpoints.clear()
         connectionStartedAtNanos.clear()
-        connectionFailureCount.clear()
-        lastConnectionAttemptAtNanos.clear()
+        backoff.clear()
         // Full shutdown ends the measurement session: the next
         // startDiscovery() begins timing a genuinely new one.
         discoveryStartedAtNanos = 0L
@@ -206,14 +195,30 @@ class NearbyConnectionsManager(
             // the device whose name sorts first initiates; the other side
             // just waits to accept.
             if (localEndpointName < info.endpointName) {
-                if (!canAttemptConnection(endpointId)) {
-                    val failures = connectionFailureCount[endpointId] ?: 0
-                    Log.i(TAG, "Backoff active for $endpointId (failure #$failures) -- skipping connection attempt this discovery cycle")
+                if (!backoff.canAttempt(endpointId)) {
+                    Log.i(TAG, "Backoff active for $endpointId (failure #${backoff.failureCount(endpointId)}, wait ${backoff.delayMsFor(endpointId)}ms) -- skipping connection attempt this discovery cycle")
                     return
                 }
-                lastConnectionAttemptAtNanos[endpointId] = System.nanoTime()
+                backoff.markAttempt(endpointId)
                 Log.i(TAG, "Requesting connection to $endpointId (we go first: $localEndpointName < ${info.endpointName})")
-                connectionsClient.requestConnection(localEndpointName, endpointId, connectionLifecycleCallback)
+                connectionsClient
+                    .requestConnection(localEndpointName, endpointId, connectionLifecycleCallback)
+                    .addOnFailureListener { e ->
+                        // Block 1: previously unobserved -- a failed
+                        // request (radio error, endpoint gone, already
+                        // connecting) neither counted toward backoff nor
+                        // cleared its latency stamp.
+                        connectionStartedAtNanos.remove(endpointId)
+                        val code = (e as? com.google.android.gms.common.api.ApiException)?.statusCode
+                        if (code == ConnectionsStatusCodes.STATUS_ALREADY_CONNECTED_TO_ENDPOINT) {
+                            Log.i(TAG, "requestConnection: already connected to $endpointId")
+                        } else {
+                            val failures = backoff.recordFailure(endpointId)
+                            Log.w(TAG, "requestConnection to $endpointId failed (code=$code, failure #$failures)")
+                        }
+                    }
+            } else if (localEndpointName == info.endpointName) {
+                Log.w(TAG, "Endpoint $endpointId advertises OUR name ($localEndpointName); cannot break the tie -- ignoring")
             } else {
                 Log.i(TAG, "Waiting to be connected to by $endpointId (they go first: ${info.endpointName} < $localEndpointName)")
             }
@@ -221,6 +226,13 @@ class NearbyConnectionsManager(
 
         override fun onEndpointLost(endpointId: String) {
             Log.i(TAG, "Lost endpoint: $endpointId")
+            // Block 1: drop the pending latency stamp for a handshake that
+            // will now never complete. Backoff history is deliberately
+            // kept (bounded by ConnectionBackoff.MAX_TRACKED) so a peer
+            // that flaps in and out of range stays paced.
+            if (!connectedEndpoints.contains(endpointId)) {
+                connectionStartedAtNanos.remove(endpointId)
+            }
         }
     }
 
@@ -238,26 +250,24 @@ class NearbyConnectionsManager(
                     connectionLatencyMicros = (System.nanoTime() - startedAt) / 1_000L
                     Log.i(TAG, "Connection establishment latency: ${connectionLatencyMicros / 1000}ms")
                 }
-                // Reset backoff -- a successful connection means whatever
-                // was causing prior failures (if any) is no longer
-                // happening, so this endpoint shouldn't keep paying for
-                // past trouble.
-                connectionFailureCount.remove(endpointId)
-                lastConnectionAttemptAtNanos.remove(endpointId)
+                // Block 1: success no longer clears backoff (see
+                // ConnectionBackoff) -- only a connection that stays up
+                // does, in onDisconnected below.
+                backoff.recordConnected(endpointId)
                 Log.i(TAG, "Connected to $endpointId")
                 listener.onPeerConnected(endpointId)
             } else {
                 connectionStartedAtNanos.remove(endpointId)
-                val failures = (connectionFailureCount[endpointId] ?: 0) + 1
-                connectionFailureCount[endpointId] = failures
-                Log.w(TAG, "Connection to $endpointId failed: ${result.status} (failure #$failures, next retry backoff ~${backoffDelayMs(failures)}ms)")
+                val failures = backoff.recordFailure(endpointId)
+                Log.w(TAG, "Connection to $endpointId failed: ${result.status} (failure #$failures, next retry backoff ~${backoff.delayMsFor(endpointId)}ms)")
             }
         }
 
         override fun onDisconnected(endpointId: String) {
             connectedEndpoints.remove(endpointId)
             connectionStartedAtNanos.remove(endpointId)
-            Log.i(TAG, "Disconnected from $endpointId")
+            val flapped = backoff.recordDisconnected(endpointId)
+            Log.i(TAG, "Disconnected from $endpointId" + if (flapped) " (short-lived -- counted toward backoff)" else "")
             listener.onPeerDisconnected(endpointId)
         }
     }
@@ -274,10 +284,5 @@ class NearbyConnectionsManager(
 
     companion object {
         private const val TAG = "NearbyConnectionsManager"
-
-        /** See the reconnection-backoff block above for the full
-         * rationale. Not validated on real hardware. */
-        private const val INITIAL_BACKOFF_MS = 2_000L
-        private const val MAX_BACKOFF_MS = 30_000L
     }
 }

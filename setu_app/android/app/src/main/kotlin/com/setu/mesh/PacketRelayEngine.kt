@@ -81,7 +81,11 @@ import org.json.JSONObject
  * changed, confirmed by keeping every method's body identical, just
  * wrapped.
  */
-class PacketRelayEngine(private val maxCacheSize: Int = 500) {
+class PacketRelayEngine(
+    private val maxCacheSize: Int = 500,
+    /** Injectable clock so the age guard is deterministic under test. */
+    private val nowMillis: () -> Long = { System.currentTimeMillis() }
+) {
     private val lock = Any()
 
     private val seen = LinkedHashSet<String>()
@@ -125,6 +129,28 @@ class PacketRelayEngine(private val maxCacheSize: Int = 500) {
     var signatureFailures: Long = 0L
         private set
 
+    /** Block 1 (mesh-stability): drops made by the guards that run in
+     * process(), each counted separately so a spike is attributable. */
+    @Volatile
+    var oversizedDropped: Long = 0L
+        private set
+
+    @Volatile
+    var staleDropped: Long = 0L
+        private set
+
+    @Volatile
+    var ttlDropped: Long = 0L
+        private set
+
+    @Volatile
+    var closedEmergencyDropped: Long = 0L
+        private set
+
+    /** Emergency ids a verified responder has closed (reported by Dart
+     * via [markEmergencyClosed]). Bounded FIFO -- see [MAX_CLOSED_IDS]. */
+    private val closedEmergencyIds = LinkedHashSet<String>()
+
     fun noteSuppressedRelay() {
         synchronized(lock) { relaySuppressed++ }
     }
@@ -135,6 +161,18 @@ class PacketRelayEngine(private val maxCacheSize: Int = 500) {
 
         /** Must stay in sync with SecurityConstants.maxTTL (Dart). */
         const val MAX_TTL = 5
+
+        /** Must stay in sync with SecurityConstants.maxPacketSize (Dart). */
+        const val MAX_PACKET_BYTES = 4096
+
+        /** Must stay in sync with SecurityConstants.maxPacketAge (Dart, 5 min). */
+        const val MAX_PACKET_AGE_MS = 300_000L
+
+        /** Must stay in sync with SecurityConstants.allowedClockSkew (Dart, 30 s). */
+        const val ALLOWED_CLOCK_SKEW_MS = 30_000L
+
+        /** Upper bound on remembered closed-emergency ids. */
+        const val MAX_CLOSED_IDS = 200
 
         /**
          * Mirrors AdaptiveTtl.staleAgeFraction * maxPacketAge in Dart:
@@ -161,36 +199,43 @@ class PacketRelayEngine(private val maxCacheSize: Int = 500) {
             return EARTH_RADIUS_METERS * c
         }
 
+        private val TIMESTAMP_REGEX =
+            Regex("^(\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2})(?:\\.(\\d+))?(Z)?$")
+
         /**
          * Parses the packet's ISO-8601 `timestamp` into epoch millis.
          *
-         * SimpleDateFormat rather than java.time.Instant on purpose: the
-         * module's minSdk comes from Flutter and java.time needs API 26
-         * or core-library desugaring, neither of which this build
-         * guarantees. Returns null on anything unparseable, and a null
-         * age always means "treat as fresh" — missing information must
-         * never make TTL handling more aggressive.
+         * Accepts exactly what Dart's DateTime.toIso8601String() emits:
+         * `yyyy-MM-ddTHH:mm:ss[.fraction][Z]`, where the fraction is
+         * milliseconds (3 digits) OR microseconds (6 digits, which is
+         * what Dart produces on Android). Block 1 fix: the previous
+         * implementation fed the raw text to SimpleDateFormat with an
+         * `SSS` pattern, which reads a 6-digit fraction as that many
+         * MILLISECONDS -- e.g. ".123456" became +123 s -- skewing every
+         * age calculation by up to two minutes. The fraction is now
+         * truncated to milliseconds before parsing.
+         *
+         * SimpleDateFormat rather than java.time on purpose: minSdk comes
+         * from Flutter and java.time needs API 26 / desugaring. Returns
+         * null on anything unparseable; the caller decides what null
+         * means (process() rejects it, exactly as Dart's DateTime.parse
+         * failure would drop the packet).
          */
         fun parseTimestampMillis(raw: String?): Long? {
             if (raw.isNullOrEmpty()) return null
-            val patterns = arrayOf(
-                "yyyy-MM-dd'T'HH:mm:ss.SSS'Z'",
-                "yyyy-MM-dd'T'HH:mm:ss'Z'",
-                "yyyy-MM-dd'T'HH:mm:ss.SSS",
-                "yyyy-MM-dd'T'HH:mm:ss"
-            )
-            for (pattern in patterns) {
-                try {
-                    val format = SimpleDateFormat(pattern, Locale.US)
-                    if (pattern.endsWith("'Z'")) {
-                        format.timeZone = TimeZone.getTimeZone("UTC")
-                    }
-                    return format.parse(raw)?.time
-                } catch (_: Exception) {
-                    // try the next pattern
-                }
+            val m = TIMESTAMP_REGEX.matchEntire(raw) ?: return null
+            val base = m.groupValues[1]
+            val fraction = m.groupValues[2]
+            val isUtc = m.groupValues[3].isNotEmpty()
+            val millis = (fraction + "000").substring(0, 3)
+            return try {
+                val format = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS", Locale.US)
+                format.isLenient = false
+                if (isUtc) format.timeZone = TimeZone.getTimeZone("UTC")
+                format.parse("$base.$millis")?.time
+            } catch (_: Exception) {
+                null
             }
-            return null
         }
 
         /**
@@ -233,6 +278,17 @@ class PacketRelayEngine(private val maxCacheSize: Int = 500) {
     fun process(bytes: ByteArray, currentLat: Double? = null, currentLon: Double? = null): RelayResult = synchronized(lock) {
         totalProcessed++
 
+        // Block 1 (mesh-stability): size guard, mirroring Dart's
+        // SecurityConstants.maxPacketSize. Runs before parsing: it is
+        // the cheapest possible check, cannot admit anything, and keeps
+        // an oversized payload away from the JSON parser and the
+        // signature verifier. A packet Dart would accept (<= 4096 bytes)
+        // is never affected.
+        if (bytes.size > MAX_PACKET_BYTES) {
+            oversizedDropped++
+            return@synchronized RelayResult(isNew = false, relayBytes = null)
+        }
+
         val rawJson = String(bytes)
         val json: JSONObject
         try {
@@ -246,27 +302,57 @@ class PacketRelayEngine(private val maxCacheSize: Int = 500) {
             return@synchronized RelayResult(isNew = false, relayBytes = null)
         }
 
-        // Sep 21 2026 (Vib, Bulk Sprint 4): signature verification happens
-        // here -- after basic structural checks (parseable JSON, non-empty
-        // packet_id) but BEFORE the packet is admitted to the dedup cache
-        // or considered for relay at all. This is deliberate: an
-        // unverified/forged packet must never be inserted into [seen]
-        // (that would let an attacker "poison" the cache and suppress a
-        // later legitimate copy of the same packet_id as a duplicate) and
-        // must never be relayed. [rawJson] (the original, unparsed wire
-        // bytes) is passed through rather than json.toString(), because
-        // [json] has not been mutated yet at this point anyway, but more
-        // importantly because SignatureVerifier itself depends on reading
-        // latitude/longitude from the ORIGINAL text (see its own doc
-        // comment on the double.toString() interop risk) -- reusing
-        // [rawJson] here keeps that guarantee obvious at the call site
-        // rather than implicit. This matches the migration point recommended
-        // in docs/security/NATIVE_SIGNATURE_VERIFICATION_DESIGN.md §12 and
-        // the Sprint 4 brief's own required flow (parse -> validate fields
-        // -> construct payload -> decode keys -> verify -> dedup -> TTL ->
-        // relay).
+        // Sep 21 2026 (Vib): signature verification happens after basic
+        // structural checks but BEFORE anything is admitted to the dedup
+        // cache or considered for relay. An unverified packet must never
+        // enter [seen] (cache poisoning) and must never be relayed.
+        // [rawJson] is passed through because SignatureVerifier reads
+        // latitude/longitude from the ORIGINAL wire text.
         if (!SignatureVerifier.verifyPacket(rawJson, json)) {
             signatureFailures++
+            return@synchronized RelayResult(isNew = false, relayBytes = null, packetId = packetId)
+        }
+
+        // Block 1: age guard, mirroring Dart's TimestampValidator. It
+        // runs after signature verification (the timestamp is inside the
+        // signed payload, so it is trustworthy here) and before any
+        // admission to [seen]. A stale packet therefore cannot poison
+        // the cache and is not re-flooded. Unparseable timestamps are
+        // rejected: Dart's DateTime.parse would drop them too.
+        val sentAt = parseTimestampMillis(json.optString("timestamp", "").ifEmpty { null })
+        if (sentAt == null) {
+            staleDropped++
+            return@synchronized RelayResult(isNew = false, relayBytes = null, packetId = packetId)
+        }
+        val ageMillis = nowMillis() - sentAt
+        if (ageMillis > MAX_PACKET_AGE_MS || ageMillis < -ALLOWED_CLOCK_SKEW_MS) {
+            staleDropped++
+            return@synchronized RelayResult(isNew = false, relayBytes = null, packetId = packetId)
+        }
+
+        // Block 1: a packet for an emergency a responder has closed is
+        // neither delivered nor relayed (Dart drops it as well).
+        val type = json.optString("type", "")
+        if ((type == "emergency" || type == "ack") &&
+            closedEmergencyIds.contains(json.optString("emergency_id", ""))
+        ) {
+            closedEmergencyDropped++
+            return@synchronized RelayResult(isNew = false, relayBytes = null, packetId = packetId)
+        }
+
+        // Block 1: TTL outside 1..MAX_TTL (including absent/non-numeric)
+        // is rejected exactly as Dart's PacketValidator rejects it
+        // (InvalidTTLException), so it must not enter [seen]. A genuine
+        // packet is born at MAX_TTL and only ever decremented, so a
+        // value above the ceiling cannot be genuine; nextTtl() still
+        // clamps as defence in depth.
+        // ttl is NOT covered by the signature, so any neighbour can
+        // re-send a genuine packet with ttl=0; admitting it here would
+        // make the real copy look like a duplicate. Rejecting before
+        // admission means such a copy leaves no trace.
+        val ttl = json.optInt("ttl", 0)
+        if (ttl <= 0 || ttl > MAX_TTL) {
+            ttlDropped++
             return@synchronized RelayResult(isNew = false, relayBytes = null, packetId = packetId)
         }
 
@@ -280,9 +366,9 @@ class PacketRelayEngine(private val maxCacheSize: Int = 500) {
                 duplicatesFiltered++
                 return@synchronized RelayResult(isNew = false, relayBytes = null, packetId = packetId)
             }
-            // Falls through to relay again — location changed enough
-            // that this device is being treated as a fresh relay
-            // opportunity for this packet, not a loop.
+            // Falls through to relay again -- location changed enough
+            // that this device is treated as a fresh relay opportunity
+            // for this packet, not a loop.
         } else {
             remember(packetId)
         }
@@ -294,16 +380,10 @@ class PacketRelayEngine(private val maxCacheSize: Int = 500) {
         val priority = json.optString("priority", "").ifEmpty { null }
         val isCritical = priority != null && priority.equals("critical", ignoreCase = true)
 
-        val ttl = json.optInt("ttl", 0)
-        if (ttl <= 0) {
-            return@synchronized RelayResult(isNew = true, relayBytes = null, packetId = packetId, isCritical = isCritical)
-        }
-
-        val sentAt = parseTimestampMillis(json.optString("timestamp", "").ifEmpty { null })
-        val ageMillis = if (sentAt == null) null else (System.currentTimeMillis() - sentAt).coerceAtLeast(0L)
-
-        val newTtl = nextTtl(ttl, priority, ageMillis)
+        val newTtl = nextTtl(ttl, priority, ageMillis.coerceAtLeast(0L))
         if (newTtl <= 0) {
+            // Terminal hop: delivered to Dart (it may be an exit node)
+            // but not relayed further.
             return@synchronized RelayResult(isNew = true, relayBytes = null, packetId = packetId, isCritical = isCritical)
         }
 
@@ -315,6 +395,21 @@ class PacketRelayEngine(private val maxCacheSize: Int = 500) {
             packetId = packetId,
             isCritical = isCritical
         )
+    }
+
+    /**
+     * Block 1: called (via MeshChannelHandler) when Dart has accepted a
+     * termination from an authorized responder. From then on native
+     * neither delivers nor relays emergency/ack packets for that id.
+     * Bounded FIFO so it cannot grow without limit.
+     */
+    fun markEmergencyClosed(emergencyId: String) = synchronized(lock) {
+        if (emergencyId.isEmpty()) return@synchronized
+        closedEmergencyIds.remove(emergencyId)
+        if (closedEmergencyIds.size >= MAX_CLOSED_IDS) {
+            closedEmergencyIds.remove(closedEmergencyIds.iterator().next())
+        }
+        closedEmergencyIds.add(emergencyId)
     }
 
     fun rememberOriginated(packetId: String) = synchronized(lock) { remember(packetId) }

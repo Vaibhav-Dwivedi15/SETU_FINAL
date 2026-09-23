@@ -32,13 +32,25 @@ class MeshChannelHandler(
     }
 
     private var meshService: MeshForegroundService? = null
+    @Volatile
     private var eventSink: EventChannel.EventSink? = null
 
     private val connection = object : ServiceConnection {
         override fun onServiceConnected(name: ComponentName?, binder: IBinder?) {
             val localBinder = binder as MeshForegroundService.LocalBinder
             meshService = localBinder.getService()
-            meshService?.eventForwarder = { event -> activity.runOnUiThread { eventSink?.success(event) } }
+            // Block 1: report whether a Dart listener really exists, so the
+            // service can buffer (bounded) instead of dropping payloads,
+            // then flush anything that queued up before we got here.
+            meshService?.eventForwarder = { event ->
+                if (eventSink == null) {
+                    false
+                } else {
+                    activity.runOnUiThread { eventSink?.success(event) }
+                    true
+                }
+            }
+            meshService?.flushPendingEvents()
         }
 
         override fun onServiceDisconnected(name: ComponentName?) {
@@ -55,8 +67,14 @@ class MeshChannelHandler(
                 "originate" -> {
                     val bytes = call.argument<ByteArray>("bytes")
                     val packetId = call.argument<String>("packetId")
-                    if (bytes != null && packetId != null) {
-                        meshService?.originate(bytes, packetId)
+                    val service = meshService
+                    if (bytes != null && packetId != null && service == null) {
+                        // Block 1: was a silent success (`meshService?.`),
+                        // which made a not-yet-bound service look like a
+                        // sent SOS. Report it so callers can react.
+                        result.error("SERVICE_UNAVAILABLE", "Mesh service is not bound yet", null)
+                    } else if (bytes != null && packetId != null && service != null) {
+                        service.originate(bytes, packetId)
                         result.success(null)
                     } else {
                         result.error("BAD_ARGS", "Missing bytes or packetId", null)
@@ -139,6 +157,17 @@ class MeshChannelHandler(
                 // Returns an empty map (not an error) when the service
                 // isn't bound yet, so Dart records "not measured" rather
                 // than treating it as a failure.
+                // Block 1: Dart tells native a verified responder closed an
+                // emergency, so native stops delivering/relaying it too.
+                "closeEmergency" -> {
+                    val emergencyId = call.argument<String>("emergencyId")
+                    if (emergencyId != null) {
+                        meshService?.markEmergencyClosed(emergencyId)
+                        result.success(null)
+                    } else {
+                        result.error("BAD_ARGS", "Missing emergencyId", null)
+                    }
+                }
                 "getRelayStats" -> {
                     result.success(meshService?.relayStats() ?: emptyMap<String, Any?>())
                 }
@@ -148,7 +177,12 @@ class MeshChannelHandler(
 
         EventChannel(binaryMessenger, EVENT_CHANNEL).setStreamHandler(
             object : EventChannel.StreamHandler {
-                override fun onListen(args: Any?, sink: EventChannel.EventSink?) { eventSink = sink }
+                override fun onListen(args: Any?, sink: EventChannel.EventSink?) {
+                    eventSink = sink
+                    // A Dart listener just attached: drain anything that
+                    // arrived while nobody was listening.
+                    meshService?.flushPendingEvents()
+                }
                 override fun onCancel(args: Any?) { eventSink = null }
             }
         )
@@ -167,6 +201,9 @@ class MeshChannelHandler(
 
     /** Call from MainActivity.onDestroy(). */
     fun stop() {
+        // Block 1: the forwarder closes over this (dying) Activity; clear
+        // it so the service buffers instead of posting to a dead UI.
+        meshService?.eventForwarder = null
         activity.unbindService(connection)
     }
 

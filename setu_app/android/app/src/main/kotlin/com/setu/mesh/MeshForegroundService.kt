@@ -11,6 +11,7 @@ import android.content.Intent
 import android.content.IntentFilter
 import android.content.pm.ServiceInfo
 import android.net.wifi.WifiManager
+import android.os.BatteryManager
 import android.os.Binder
 import android.os.Build
 import android.os.Handler
@@ -31,9 +32,70 @@ class MeshForegroundService : Service(), NearbyConnectionsManager.Listener {
     private lateinit var stateStore: MeshStateStore
     private val binder = LocalBinder()
 
-    /** Set by MainActivity when attached, cleared when detached — events
-     * only get forwarded to Dart/UI when someone's actually looking. */
-    var eventForwarder: ((Map<String, Any?>) -> Unit)? = null
+    /** Set by MeshChannelHandler when attached, cleared when detached.
+     * Returns true only if the event was actually handed to a live Dart
+     * listener; false means "nobody is listening right now", in which
+     * case payload events are held in the bounded pending buffer below
+     * (Block 1) instead of being dropped. */
+    @Volatile
+    var eventForwarder: ((Map<String, Any?>) -> Boolean)? = null
+
+    // =====================================================
+    // Block 1 (mesh-stability) -- bounded native -> Dart handoff buffer
+    // =====================================================
+    //
+    // PacketRelayEngine marks a packet "seen" the moment it is verified,
+    // so a payload forwarded while Dart is not listening (Activity not
+    // yet created, app swiped away with this service still running, or
+    // the brief window before the event-channel subscription exists)
+    // would otherwise be lost for good: it was never uploaded and a later
+    // copy would be filtered as a duplicate. Such payloads are queued
+    // here, FIFO, and flushed in order once a listener attaches.
+    //
+    // This does NOT delay dedup or relaying -- both happen in
+    // PacketRelayEngine.process() before this point, exactly as before.
+    // It only holds the Dart-bound copy. In-memory only: a process kill
+    // loses it (documented limitation). Bounded: when full, the OLDEST
+    // pending event is discarded (and counted).
+    private val pendingLock = Any()
+    private val pendingEvents = ArrayDeque<Map<String, Any?>>()
+
+    @Volatile
+    private var pendingDropped = 0L
+
+    private fun deliverToDart(event: Map<String, Any?>) {
+        synchronized(pendingLock) {
+            // Preserve FIFO: never overtake events that are still waiting.
+            if (pendingEvents.isEmpty() && eventForwarder?.invoke(event) == true) return
+            if (pendingEvents.size >= MAX_PENDING_EVENTS) {
+                pendingEvents.removeFirst()
+                pendingDropped++
+                Log.w(TAG, "Pending Dart-handoff buffer full -- dropped oldest event (total dropped=$pendingDropped)")
+            }
+            pendingEvents.addLast(event)
+        }
+    }
+
+    /** Called when a Dart listener attaches (or the forwarder is set). */
+    fun flushPendingEvents() {
+        synchronized(pendingLock) {
+            val forward = eventForwarder ?: return
+            var flushed = 0
+            while (pendingEvents.isNotEmpty()) {
+                if (!forward(pendingEvents.first())) break
+                pendingEvents.removeFirst()
+                flushed++
+            }
+            if (flushed > 0) Log.i(TAG, "Flushed $flushed buffered payload event(s) to Dart")
+        }
+    }
+
+    fun pendingEventCount(): Int = synchronized(pendingLock) { pendingEvents.size }
+
+    /** Dart accepted a termination from an authorized responder. */
+    fun markEmergencyClosed(emergencyId: String) {
+        relayEngine.markEmergencyClosed(emergencyId)
+    }
 
     inner class LocalBinder : Binder() {
         fun getService(): MeshForegroundService = this@MeshForegroundService
@@ -63,10 +125,17 @@ class MeshForegroundService : Service(), NearbyConnectionsManager.Listener {
         }
         relayEngine.restoreSeen(stateStore.loadSeenIds())
 
+        // Block 1: the persisted policy above is only a FALLBACK. If the
+        // real battery level is readable, it wins -- otherwise a
+        // power-saver policy persisted at <20% would keep relay disabled
+        // after the phone was charged until Dart happened to re-sync.
+        readBatteryPercent()?.let { applyBatteryLevel(it, restartDutyCycle = false) }
+
         startForegroundWithNotification()
         startDutyCycle()
         startStatePersistenceTimer()
         registerRadioStateReceiver()
+        registerBatteryReceiver()
     }
 
     // =====================================================
@@ -111,14 +180,14 @@ class MeshForegroundService : Service(), NearbyConnectionsManager.Listener {
                         val state = intent.getIntExtra(BluetoothAdapter.EXTRA_STATE, -1)
                         if (state == BluetoothAdapter.STATE_ON) {
                             Log.i(TAG, "Bluetooth turned back on -- resuming duty cycle")
-                            startDutyCycle()
+                            scheduleRadioResume()
                         }
                     }
-                    "android.net.wifi.WIFI_STATE_CHANGED" -> {
+                    WifiManager.WIFI_STATE_CHANGED_ACTION -> {
                         val state = intent.getIntExtra(WifiManager.EXTRA_WIFI_STATE, -1)
                         if (state == WifiManager.WIFI_STATE_ENABLED) {
                             Log.i(TAG, "Wi-Fi turned back on -- resuming duty cycle")
-                            startDutyCycle()
+                            scheduleRadioResume()
                         }
                     }
                 }
@@ -126,15 +195,74 @@ class MeshForegroundService : Service(), NearbyConnectionsManager.Listener {
         }
         val filter = IntentFilter().apply {
             addAction(BluetoothAdapter.ACTION_STATE_CHANGED)
-            addAction("android.net.wifi.WIFI_STATE_CHANGED")
+            addAction(WifiManager.WIFI_STATE_CHANGED_ACTION)
         }
+        registerSystemReceiver(receiver, filter)
+        radioStateReceiver = receiver
+    }
+
+    private fun registerSystemReceiver(receiver: BroadcastReceiver, filter: IntentFilter) {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             registerReceiver(receiver, filter, Context.RECEIVER_NOT_EXPORTED)
         } else {
             @Suppress("UnspecifiedRegisterReceiverFlag")
             registerReceiver(receiver, filter)
         }
-        radioStateReceiver = receiver
+    }
+
+    // Block 1: Bluetooth and Wi-Fi commonly come back on within the same
+    // moment (airplane mode off). Coalesce them into ONE duty-cycle
+    // restart instead of two back-to-back startAdvertising/startDiscovery
+    // rounds.
+    private val radioResumeRunnable = Runnable { startDutyCycle() }
+
+    private fun scheduleRadioResume() {
+        dutyCycleHandler.removeCallbacks(radioResumeRunnable)
+        dutyCycleHandler.postDelayed(radioResumeRunnable, RADIO_RESUME_DEBOUNCE_MS)
+    }
+
+    // =====================================================
+    // Block 1 (mesh-stability) -- native battery tier
+    // =====================================================
+    private var batteryReceiver: BroadcastReceiver? = null
+    private var currentBatteryTier: String? = null
+
+    private fun readBatteryPercent(): Int? {
+        return try {
+            val sticky = registerReceiver(null, IntentFilter(Intent.ACTION_BATTERY_CHANGED)) ?: return null
+            val level = sticky.getIntExtra(BatteryManager.EXTRA_LEVEL, -1)
+            val scale = sticky.getIntExtra(BatteryManager.EXTRA_SCALE, -1)
+            if (level < 0 || scale <= 0) null else (level * 100) / scale
+        } catch (e: Exception) {
+            null
+        }
+    }
+
+    /** Applies the tier for [percent] if it differs from the one in force. */
+    private fun applyBatteryLevel(percent: Int, restartDutyCycle: Boolean) {
+        val tier = BatteryPolicy.forLevel(percent)
+        if (tier.name == currentBatteryTier) return
+        currentBatteryTier = tier.name
+        currentDiscoveryIntervalMs = tier.discoveryIntervalMs
+        currentAllowRelay = tier.allowRelay
+        Log.i(TAG, "Battery tier -> ${tier.name} (level=$percent%) discoveryIntervalMs=${tier.discoveryIntervalMs} allowRelay=${tier.allowRelay}")
+        if (::stateStore.isInitialized) stateStore.savePolicy(tier.discoveryIntervalMs, tier.allowRelay)
+        if (restartDutyCycle) startDutyCycle()
+    }
+
+    // ACTION_BATTERY_CHANGED is a sticky system broadcast the OS already
+    // sends on every level change; listening costs no polling.
+    private fun registerBatteryReceiver() {
+        val receiver = object : BroadcastReceiver() {
+            override fun onReceive(context: Context?, intent: Intent?) {
+                val level = intent?.getIntExtra(BatteryManager.EXTRA_LEVEL, -1) ?: return
+                val scale = intent.getIntExtra(BatteryManager.EXTRA_SCALE, -1)
+                if (level < 0 || scale <= 0) return
+                applyBatteryLevel((level * 100) / scale, restartDutyCycle = true)
+            }
+        }
+        registerSystemReceiver(receiver, IntentFilter(Intent.ACTION_BATTERY_CHANGED))
+        batteryReceiver = receiver
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int = START_STICKY
@@ -326,12 +454,23 @@ class MeshForegroundService : Service(), NearbyConnectionsManager.Listener {
         dutyCycleHandler.post(runnable)
     }
 
+    @Volatile
+    private var peerConnectsTotal = 0L
+
+    @Volatile
+    private var peerDisconnectsTotal = 0L
+
+    @Volatile
+    private var relaysSent = 0L
+
     override fun onPeerConnected(endpointId: String) {
         eventForwarder?.invoke(mapOf("type" to "peer_connected", "endpointId" to endpointId))
+        peerConnectsTotal++
     }
 
     override fun onPeerDisconnected(endpointId: String) {
         eventForwarder?.invoke(mapOf("type" to "peer_disconnected", "endpointId" to endpointId))
+        peerDisconnectsTotal++
     }
 
     override fun onPayloadReceived(endpointId: String, bytes: ByteArray) {
@@ -359,7 +498,7 @@ class MeshForegroundService : Service(), NearbyConnectionsManager.Listener {
         if (!result.isNew) return // duplicate — native engine already filtered it
 
         // Hand the packet to Dart/UI for display + eventual backend upload.
-        eventForwarder?.invoke(mapOf("type" to "payload_received", "endpointId" to endpointId, "bytes" to bytes))
+        deliverToDart(mapOf("type" to "payload_received", "endpointId" to endpointId, "bytes" to bytes))
 
         // Battery-aware relay guard, native side: mirrors
         // MeshService._relayPacket's allowRelay check in Dart. Only
@@ -428,6 +567,7 @@ class MeshForegroundService : Service(), NearbyConnectionsManager.Listener {
     private fun scheduleRelay(relayBytes: ByteArray, packetId: String?, isCritical: Boolean) {
         if (packetId == null) {
             connectionsManager.broadcastBytes(relayBytes)
+            relaysSent++
             return
         }
         // Already have a rebroadcast pending for this packet; a second
@@ -455,6 +595,7 @@ class MeshForegroundService : Service(), NearbyConnectionsManager.Listener {
             }
 
             connectionsManager.broadcastBytes(relayBytes)
+            relaysSent++
         }, delay)
     }
 
@@ -467,6 +608,18 @@ class MeshForegroundService : Service(), NearbyConnectionsManager.Listener {
         // Sep 21 2026 (Vib, Bulk Sprint 4): packets rejected by native
         // Ed25519 verification -- see PacketRelayEngine.signatureFailures.
         "signatureFailures" to relayEngine.signatureFailures.toInt(),
+        // Block 1 observability: every guard in process() is counted.
+        "oversizedDropped" to relayEngine.oversizedDropped.toInt(),
+        "staleDropped" to relayEngine.staleDropped.toInt(),
+        "ttlDropped" to relayEngine.ttlDropped.toInt(),
+        "closedEmergencyDropped" to relayEngine.closedEmergencyDropped.toInt(),
+        "relaysSent" to relaysSent.toInt(),
+        "pendingEvents" to pendingEventCount(),
+        "pendingDropped" to pendingDropped.toInt(),
+        "peerConnects" to peerConnectsTotal.toInt(),
+        "peerDisconnects" to peerDisconnectsTotal.toInt(),
+        "batteryTier" to currentBatteryTier,
+        "allowRelay" to currentAllowRelay,
         "discoveryLatencyMicros" to connectionsManager.discoveryLatencyMicros.toInt(),
         "connectionLatencyMicros" to connectionsManager.connectionLatencyMicros.toInt(),
         "connectedPeers" to connectionsManager.connectedEndpoints.size
@@ -485,6 +638,15 @@ class MeshForegroundService : Service(), NearbyConnectionsManager.Listener {
             }
         }
         radioStateReceiver = null
+        batteryReceiver?.let {
+            try {
+                unregisterReceiver(it)
+            } catch (e: IllegalArgumentException) {
+                // Already unregistered -- nothing to do.
+            }
+        }
+        batteryReceiver = null
+        dutyCycleHandler.removeCallbacks(radioResumeRunnable)
         // Best-effort final save on a graceful stop -- explicitly NOT
         // relied upon as the only persistence path, since an abrupt
         // OOM-kill does not guarantee onDestroy() runs at all. The
@@ -495,11 +657,18 @@ class MeshForegroundService : Service(), NearbyConnectionsManager.Listener {
             persistSeenSnapshot()
         }
         pendingRelayIds.clear()
+        synchronized(pendingLock) { pendingEvents.clear() }
         connectionsManager.stopAll()
         super.onDestroy()
     }
 
     companion object {
         private const val TAG = "MeshForegroundService"
+
+        /** Max payload events held while Dart is not listening. 64 x
+         * <=4096 B is at most ~256 KB. */
+        private const val MAX_PENDING_EVENTS = 64
+
+        private const val RADIO_RESUME_DEBOUNCE_MS = 500L
     }
 }

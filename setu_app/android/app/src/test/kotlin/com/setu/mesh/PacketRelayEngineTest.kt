@@ -59,6 +59,14 @@ class PacketRelayEngineTest {
      * construct a packet whose signature genuinely, cryptographically
      * verifies, so the ACCEPT path (not just every REJECT path) can
      * actually be exercised. */
+    /** Fixed instant 10 s after the default fixture timestamp, so every
+     * fixture is "fresh" for the Block 1 age guard regardless of when the
+     * suite runs. */
+    private val fixtureNow = PacketRelayEngine.parseTimestampMillis("2026-01-01T00:00:10.000Z")!!
+    private var clockNow = fixtureNow
+
+    private fun newEngine(): PacketRelayEngine = PacketRelayEngine(nowMillis = { clockNow })
+
     private data class SignedFixture(val senderIdHex: String, val json: JSONObject, val bytes: ByteArray)
 
     private fun signedEmergencyPacket(
@@ -67,7 +75,8 @@ class PacketRelayEngineTest {
         latitude: String = "12.9716",
         longitude: String = "77.5946",
         timestamp: String = "2026-01-01T00:00:00.000Z",
-        priority: String = "high"
+        priority: String = "high",
+        ttl: Int = 5
     ): SignedFixture {
         val seed = ByteArray(32) { (it + 7).toByte() }
         val priv = Ed25519PrivateKeyParameters(seed, 0)
@@ -89,7 +98,7 @@ class PacketRelayEngineTest {
         json.put("type", "emergency")
         json.put("timestamp", timestamp)
         json.put("nonce", nonce)
-        json.put("ttl", 5)
+        json.put("ttl", ttl)
         json.put("hop_count", 0)
         json.put("emergency_id", emergencyId)
         json.put("latitude", latitude.toDouble())
@@ -107,7 +116,7 @@ class PacketRelayEngineTest {
 
     @Test
     fun process_validSignature_isAccepted_andRelayed() {
-        val engine = PacketRelayEngine()
+        val engine = newEngine()
         val fixture = signedEmergencyPacket()
         val result = engine.process(fixture.bytes)
         assertEquals(true, result.isNew)
@@ -117,7 +126,7 @@ class PacketRelayEngineTest {
 
     @Test
     fun process_validSignature_entersDedupCache_exactlyOnce_duplicateSuppressed() {
-        val engine = PacketRelayEngine()
+        val engine = newEngine()
         val fixture = signedEmergencyPacket()
         val first = engine.process(fixture.bytes)
         val second = engine.process(fixture.bytes)
@@ -130,7 +139,7 @@ class PacketRelayEngineTest {
 
     @Test
     fun process_validSignature_tamperedMessageAfterSigning_isRejected() {
-        val engine = PacketRelayEngine()
+        val engine = newEngine()
         val fixture = signedEmergencyPacket()
         val tamperedJson = JSONObject(String(fixture.bytes))
         tamperedJson.put("message", "TAMPERED - this was not what was signed")
@@ -141,7 +150,7 @@ class PacketRelayEngineTest {
 
     @Test
     fun process_validSignature_tamperedLatitudeAfterSigning_isRejected() {
-        val engine = PacketRelayEngine()
+        val engine = newEngine()
         val fixture = signedEmergencyPacket()
         val tamperedJson = JSONObject(String(fixture.bytes))
         tamperedJson.put("latitude", 0.0001)
@@ -151,7 +160,7 @@ class PacketRelayEngineTest {
 
     @Test
     fun process_validSignature_tamperedLongitudeAfterSigning_isRejected() {
-        val engine = PacketRelayEngine()
+        val engine = newEngine()
         val fixture = signedEmergencyPacket()
         val tamperedJson = JSONObject(String(fixture.bytes))
         tamperedJson.put("longitude", 0.0001)
@@ -161,7 +170,7 @@ class PacketRelayEngineTest {
 
     @Test
     fun process_validSignature_tamperedTimestampAfterSigning_isRejected() {
-        val engine = PacketRelayEngine()
+        val engine = newEngine()
         val fixture = signedEmergencyPacket()
         val tamperedJson = JSONObject(String(fixture.bytes))
         tamperedJson.put("timestamp", "2026-01-01T00:00:01.000Z")
@@ -173,7 +182,7 @@ class PacketRelayEngineTest {
     fun process_validSignature_tamperedSenderIdAfterSigning_isRejected() {
         // Classic identity-substitution attempt: claim a different
         // sender_id while keeping the original (now mismatched) signature.
-        val engine = PacketRelayEngine()
+        val engine = newEngine()
         val fixture = signedEmergencyPacket()
         val tamperedJson = JSONObject(String(fixture.bytes))
         val otherSeed = ByteArray(32) { (it + 99).toByte() }
@@ -186,7 +195,7 @@ class PacketRelayEngineTest {
 
     @Test
     fun process_validSignature_tamperedSignatureItself_isRejected() {
-        val engine = PacketRelayEngine()
+        val engine = newEngine()
         val fixture = signedEmergencyPacket()
         val tamperedJson = JSONObject(String(fixture.bytes))
         val originalSig = tamperedJson.optString("signature", "")
@@ -227,7 +236,7 @@ class PacketRelayEngineTest {
 
     @Test
     fun process_malformedJson_isRejected_doesNotCrash() {
-        val engine = PacketRelayEngine()
+        val engine = newEngine()
         val result = engine.process("not json at all".toByteArray())
         assertEquals(false, result.isNew)
         assertNull(result.relayBytes)
@@ -235,7 +244,7 @@ class PacketRelayEngineTest {
 
     @Test
     fun process_emptyPacketId_isRejected() {
-        val engine = PacketRelayEngine()
+        val engine = newEngine()
         val json = JSONObject().apply { put("packet_id", "") }
         val result = engine.process(json.toString().toByteArray())
         assertEquals(false, result.isNew)
@@ -254,7 +263,7 @@ class PacketRelayEngineTest {
 
     @Test
     fun process_invalidSignature_isRejected_notRelayed() {
-        val engine = PacketRelayEngine()
+        val engine = newEngine()
         val result = engine.process(emergencyJson())
         assertEquals(false, result.isNew)
         assertNull(result.relayBytes)
@@ -271,7 +280,7 @@ class PacketRelayEngineTest {
         // a second time, that would mean an unverified packet slipped
         // into `seen`, which is exactly the regression this test exists
         // to catch.
-        val engine = PacketRelayEngine()
+        val engine = newEngine()
         val bytes = emergencyJson()
         engine.process(bytes)
         engine.process(bytes)
@@ -281,7 +290,7 @@ class PacketRelayEngineTest {
 
     @Test
     fun process_missingSignatureField_isRejected_doesNotCrash() {
-        val engine = PacketRelayEngine()
+        val engine = newEngine()
         val json = JSONObject(String(emergencyJson()))
         json.remove("signature")
         val result = engine.process(json.toString().toByteArray())
@@ -290,7 +299,7 @@ class PacketRelayEngineTest {
 
     @Test
     fun process_malformedPublicKey_isRejected_doesNotCrash() {
-        val engine = PacketRelayEngine()
+        val engine = newEngine()
         val json = JSONObject(String(emergencyJson()))
         json.put("sender_id", "not-hex-at-all")
         val result = engine.process(json.toString().toByteArray())
@@ -299,22 +308,18 @@ class PacketRelayEngineTest {
 
     @Test
     fun process_oversizedPacket_stillHandledBySizeLimitNotSignaturePath() {
-        // Oversized-packet rejection is SecurityConstants.maxPacketSize's
-        // job (Dart-side transport layer), not SignatureVerifier's -- this
-        // test only documents that a large-but-otherwise-normal payload
-        // does not crash the native verifier itself; it does not assert
-        // the transport-level size cap, which this class has no knowledge
-        // of.
-        val engine = PacketRelayEngine()
+        // Block 1: the native size guard (4096 bytes, mirroring Dart) now
+        // rejects this before parsing; see the size-boundary tests below.
+        val engine = newEngine()
         val json = JSONObject(String(emergencyJson()))
         json.put("message", "x".repeat(50_000))
         val result = engine.process(json.toString().toByteArray())
-        assertEquals(false, result.isNew) // still rejected -- invalid signature, unrelated to size
+        assertEquals(false, result.isNew)
     }
 
     @Test
     fun process_malformedTopLevelJson_missingRequiredFields_rejectedByPayloadBuilder() {
-        val engine = PacketRelayEngine()
+        val engine = newEngine()
         val json = JSONObject().apply {
             put("packet_id", "abc12345-1000")
             put("sender_id", "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcd")
@@ -350,5 +355,267 @@ class PacketRelayEngineTest {
     @Test
     fun parseTimestamp_garbageInput_returnsNull_doesNotThrow() {
         assertNull(PacketRelayEngine.parseTimestampMillis("not-a-timestamp"))
+    }
+
+    // =====================================================================
+    // Block 1 (mesh-stability): size / age / ttl guards + poisoning
+    // regressions. All packets below are genuinely signed.
+    // =====================================================================
+
+    private fun rewrapped(f: SignedFixture, edit: (JSONObject) -> Unit): ByteArray {
+        val j = JSONObject(String(f.bytes))
+        edit(j)
+        return j.toString().toByteArray()
+    }
+
+    /** A validly signed packet whose serialized size is exactly [target]. */
+    private fun signedPacketOfSize(target: Int): SignedFixture {
+        var n = 10
+        var f = signedEmergencyPacket(message = "x".repeat(n))
+        n += target - f.bytes.size
+        f = signedEmergencyPacket(message = "x".repeat(n))
+        assertEquals(target, f.bytes.size)
+        return f
+    }
+
+    @Test
+    fun size_4095_and_4096_accepted() {
+        assertEquals(true, newEngine().process(signedPacketOfSize(4095).bytes).isNew)
+        assertEquals(true, newEngine().process(signedPacketOfSize(4096).bytes).isNew)
+    }
+
+    @Test
+    fun size_4097_rejected_beforeAnythingElse() {
+        val engine = newEngine()
+        val result = engine.process(signedPacketOfSize(4097).bytes)
+        assertEquals(false, result.isNew)
+        assertNull(result.relayBytes)
+        assertEquals(1L, engine.oversizedDropped)
+        assertEquals(0L, engine.signatureFailures)
+    }
+
+    @Test
+    fun age_freshPacket_accepted_andMicrosecondTimestampParsesCorrectly() {
+        // Dart emits 6-digit fractions on Android. The old SimpleDateFormat
+        // "SSS" parse read ".123456" as 123456 ms (+2 min).
+        val ts = "2026-01-01T00:00:00.123456Z"
+        assertEquals(
+            PacketRelayEngine.parseTimestampMillis("2026-01-01T00:00:00.123Z"),
+            PacketRelayEngine.parseTimestampMillis(ts)
+        )
+        assertEquals(true, newEngine().process(signedEmergencyPacket(timestamp = ts).bytes).isNew)
+    }
+
+    @Test
+    fun age_exactlyAtLimit_accepted_beyondLimit_rejected_notAdmittedToDedup() {
+        val f = signedEmergencyPacket()
+        val sentAt = PacketRelayEngine.parseTimestampMillis("2026-01-01T00:00:00.000Z")!!
+        val engine = newEngine()
+
+        clockNow = sentAt + PacketRelayEngine.MAX_PACKET_AGE_MS + 1
+        val stale = engine.process(f.bytes)
+        assertEquals(false, stale.isNew)
+        assertEquals(1L, engine.staleDropped)
+
+        // The stale attempt must not have poisoned the cache: once the
+        // packet is within the window it is accepted as NEW.
+        clockNow = sentAt + PacketRelayEngine.MAX_PACKET_AGE_MS
+        val ok = engine.process(f.bytes)
+        assertEquals(true, ok.isNew)
+        assertEquals(0L, engine.duplicatesFiltered)
+        clockNow = fixtureNow
+    }
+
+    @Test
+    fun age_futureBeyondSkew_rejected_withinSkew_accepted() {
+        val f = signedEmergencyPacket()
+        val sentAt = PacketRelayEngine.parseTimestampMillis("2026-01-01T00:00:00.000Z")!!
+        clockNow = sentAt - PacketRelayEngine.ALLOWED_CLOCK_SKEW_MS - 1
+        assertEquals(false, newEngine().process(f.bytes).isNew)
+        clockNow = sentAt - PacketRelayEngine.ALLOWED_CLOCK_SKEW_MS
+        assertEquals(true, newEngine().process(f.bytes).isNew)
+        clockNow = fixtureNow
+    }
+
+    @Test
+    fun age_unparseableTimestamp_rejected() {
+        // Signed over the garbage timestamp, so signature passes and the
+        // age guard is what rejects it.
+        val f = signedEmergencyPacket(timestamp = "yesterday")
+        val engine = newEngine()
+        assertEquals(false, engine.process(f.bytes).isNew)
+        assertEquals(1L, engine.staleDropped)
+    }
+
+    @Test
+    fun ttl_zero_isRejected_andDoesNotPoisonTheGenuineCopy() {
+        val engine = newEngine()
+        val genuine = signedEmergencyPacket(ttl = 5)
+        val attack = rewrapped(genuine) { it.put("ttl", 0) }
+
+        val first = engine.process(attack)
+        assertEquals(false, first.isNew)
+        assertNull(first.relayBytes)
+        assertEquals(1L, engine.ttlDropped)
+
+        val second = engine.process(genuine.bytes)
+        assertEquals(true, second.isNew)
+        assertNotNull(second.relayBytes)
+        assertEquals(0L, engine.duplicatesFiltered)
+    }
+
+    @Test
+    fun ttl_negative_missing_nonNumeric_andOversized_areRejected_withoutAdmission() {
+        val engine = newEngine()
+        val genuine = signedEmergencyPacket()
+        for (bad in listOf<Any?>(-1, 6, 9999, "abc", null)) {
+            val bytes = rewrapped(genuine) {
+                if (bad == null) it.remove("ttl") else it.put("ttl", bad)
+            }
+            assertEquals("ttl=$bad", false, engine.process(bytes).isNew)
+        }
+        assertEquals(5L, engine.ttlDropped)
+        assertEquals(true, engine.process(genuine.bytes).isNew)
+    }
+
+    @Test
+    fun ttl_one_isDelivered_butNotRelayed() {
+        val result = newEngine().process(signedEmergencyPacket(ttl = 1).bytes)
+        assertEquals(true, result.isNew)
+        assertNull(result.relayBytes)
+    }
+
+    @Test
+    fun ttl_five_relayedWithFourAndHopIncremented() {
+        val result = newEngine().process(signedEmergencyPacket(ttl = 5).bytes)
+        val relayed = JSONObject(String(result.relayBytes!!))
+        assertEquals(4, relayed.getInt("ttl"))
+        assertEquals(1, relayed.getInt("hop_count"))
+    }
+
+    @Test
+    fun invalidSignature_isNeverAdmitted_thenGenuineAccepted() {
+        val engine = newEngine()
+        val genuine = signedEmergencyPacket()
+        val forged = rewrapped(genuine) { it.put("message", "forged") }
+        assertEquals(false, engine.process(forged).isNew)
+        assertEquals(true, engine.process(genuine.bytes).isNew)
+        assertEquals(0L, engine.duplicatesFiltered)
+    }
+
+    @Test
+    fun closedEmergency_isNeitherDeliveredNorRelayed() {
+        val engine = newEngine()
+        val f = signedEmergencyPacket(packetId = "closeme-1")
+        engine.markEmergencyClosed("closeme-1")
+        val r = engine.process(f.bytes)
+        assertEquals(false, r.isNew)
+        assertNull(r.relayBytes)
+        assertEquals(1L, engine.closedEmergencyDropped)
+    }
+
+    @Test
+    fun closedEmergency_doesNotAffectOtherEmergencies() {
+        val engine = newEngine()
+        engine.markEmergencyClosed("someone-else")
+        assertEquals(true, engine.process(signedEmergencyPacket().bytes).isNew)
+    }
+
+    @Test
+    fun closedEmergency_setIsBounded() {
+        val engine = newEngine()
+        for (i in 0 until PacketRelayEngine.MAX_CLOSED_IDS + 50) engine.markEmergencyClosed("id-$i")
+        // Oldest evicted, newest retained.
+        assertEquals(true, engine.process(signedEmergencyPacket(packetId = "id-0").bytes).isNew)
+        assertEquals(false, engine.process(signedEmergencyPacket(packetId = "id-${PacketRelayEngine.MAX_CLOSED_IDS + 49}").bytes).isNew)
+    }
+
+    // ---- pure nextTtl matrix ----
+
+    @Test
+    fun nextTtl_matrix() {
+        assertEquals(4, PacketRelayEngine.nextTtl(5, "critical", null))
+        assertEquals(3, PacketRelayEngine.nextTtl(4, "high", null))
+        assertEquals(0, PacketRelayEngine.nextTtl(1, "high", null))
+        assertEquals(0, PacketRelayEngine.nextTtl(0, "high", null))
+        assertEquals(0, PacketRelayEngine.nextTtl(-3, "high", null))
+        assertEquals(4, PacketRelayEngine.nextTtl(9999, "critical", null))
+        // stale, non-critical: -2 ; stale critical: still -1
+        assertEquals(3, PacketRelayEngine.nextTtl(5, "medium", PacketRelayEngine.STALE_AFTER_MS))
+        assertEquals(4, PacketRelayEngine.nextTtl(5, "critical", PacketRelayEngine.STALE_AFTER_MS))
+    }
+
+    // ---- BatteryPolicy ----
+
+    @Test
+    fun batteryPolicy_thresholds() {
+        assertEquals(BatteryPolicy.FULL, BatteryPolicy.forLevel(100))
+        assertEquals(BatteryPolicy.FULL, BatteryPolicy.forLevel(51))
+        assertEquals(BatteryPolicy.BALANCED, BatteryPolicy.forLevel(50))
+        assertEquals(BatteryPolicy.BALANCED, BatteryPolicy.forLevel(20))
+        assertEquals(BatteryPolicy.POWER_SAVER, BatteryPolicy.forLevel(19))
+        assertEquals(BatteryPolicy.POWER_SAVER, BatteryPolicy.forLevel(0))
+        assertEquals(false, BatteryPolicy.forLevel(19).allowRelay)
+        assertEquals(true, BatteryPolicy.forLevel(20).allowRelay)
+        assertEquals(5_000L, BatteryPolicy.FULL.discoveryIntervalMs)
+        assertEquals(15_000L, BatteryPolicy.BALANCED.discoveryIntervalMs)
+        assertEquals(30_000L, BatteryPolicy.POWER_SAVER.discoveryIntervalMs)
+    }
+
+    @Test
+    fun batteryPolicy_recoveryFromPowerSaverRestoresRelay() {
+        assertEquals(false, BatteryPolicy.forLevel(15).allowRelay)
+        assertEquals(true, BatteryPolicy.forLevel(21).allowRelay)
+    }
+
+    // ---- ConnectionBackoff ----
+
+    private var backoffClock = 0L
+    private fun newBackoff() = ConnectionBackoff(nowMs = { backoffClock })
+
+    @Test
+    fun backoff_firstAttemptNeverDelayed_failureDelaysAndDoubles() {
+        backoffClock = 0
+        val b = newBackoff()
+        assertEquals(true, b.canAttempt("e"))
+        b.markAttempt("e")
+        assertEquals(1, b.recordFailure("e"))
+        assertEquals(false, b.canAttempt("e"))
+        backoffClock = ConnectionBackoff.INITIAL_BACKOFF_MS
+        assertEquals(true, b.canAttempt("e"))
+        b.markAttempt("e")
+        b.recordFailure("e")
+        assertEquals(2 * ConnectionBackoff.INITIAL_BACKOFF_MS, b.delayMsFor("e"))
+        for (i in 0 until 20) b.recordFailure("e")
+        assertEquals(ConnectionBackoff.MAX_BACKOFF_MS, b.delayMsFor("e"))
+    }
+
+    @Test
+    fun backoff_immediateDisconnectCountsAsFailure_stableConnectionClearsIt() {
+        backoffClock = 1_000
+        val b = newBackoff()
+        b.recordConnected("e")
+        backoffClock += 100
+        assertEquals(true, b.recordDisconnected("e"))
+        assertEquals(1, b.failureCount("e"))
+
+        b.recordConnected("e") // success alone does not reset
+        assertEquals(1, b.failureCount("e"))
+        backoffClock += ConnectionBackoff.STABLE_CONNECTION_MS
+        assertEquals(false, b.recordDisconnected("e"))
+        assertEquals(0, b.failureCount("e"))
+        assertEquals(true, b.canAttempt("e"))
+    }
+
+    @Test
+    fun backoff_isPerEndpoint_boundedAndClearable() {
+        val b = newBackoff()
+        b.recordFailure("a")
+        assertEquals(true, b.canAttempt("b"))
+        for (i in 0 until ConnectionBackoff.MAX_TRACKED + 20) b.recordFailure("e$i")
+        assertEquals(ConnectionBackoff.MAX_TRACKED, b.trackedCount())
+        b.clear()
+        assertEquals(0, b.trackedCount())
+        assertEquals(true, b.canAttempt("a"))
     }
 }
