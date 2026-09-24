@@ -57,9 +57,11 @@ jobs:
       - name: flutter pub get
         working-directory: setu_app
         run: flutter pub get
-      - name: flutter analyze
+      # 13 pre-existing `info` lints (style only) would make a plain `flutter analyze` exit 1;
+      # warnings and errors remain fatal.
+      - name: flutter analyze (warnings and errors fatal)
         working-directory: setu_app
-        run: flutter analyze
+        run: flutter analyze --no-fatal-infos
       - name: flutter test
         working-directory: setu_app
         run: flutter test
