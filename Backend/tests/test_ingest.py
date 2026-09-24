@@ -302,6 +302,16 @@ def test_duplicate_packet_id_rejected(client):
     assert body["rejected"][0]["reason"] == "duplicate packet_id"
 
 
+def test_forged_packet_cannot_squat_genuine_packet_id(client):
+    genuine = make_emergency(packet_id="squat-1", emergency_id="e-squat")
+    forged = dict(genuine, signature="00" * 64)
+    body = client.post("/ingest", json={"packets": [forged]}).json()
+    assert body["rejected"][0]["reason"] == "invalid signature"
+    body = client.post("/ingest", json={"packets": [genuine]}).json()
+    assert body["rejected"] == []
+    assert body["accepted"][0]["packet_id"] == "squat-1"
+
+
 def test_expired_ttl_rejected(client):
     stale_timestamp = (datetime.now(timezone.utc) - timedelta(hours=2)).isoformat()
     packet = make_emergency(packet_id="stale-1", emergency_id="e-stale", timestamp=stale_timestamp)

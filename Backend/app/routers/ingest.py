@@ -7,8 +7,8 @@ bad packet in a batch of ten must not block the other nine. Response
 reports per-packet outcome so the client (mobile/mesh device) knows
 exactly what was accepted vs rejected and why.
 
-Per-packet pipeline: schema validation -> duplicate check -> TTL check ->
-signature check -> store raw packet -> route by type:
+Per-packet pipeline: schema validation -> signature check (first, so unsigned
+forgeries cannot squat a genuine packet_id) -> duplicate check -> TTL check -> store raw packet -> route by type:
   emergency   -> AI analysis (incident type / urgency / priority --
                  non-blocking, never breaks ingestion if it fails) ->
                  incident_service.handle_sos_packet (dedup + create/merge
@@ -65,6 +65,8 @@ Duplicate/expired/rejected-signature packets still commit immediately,
 since those are terminal outcomes with no further work in this request.
 """
 
+import uuid
+
 from fastapi import APIRouter, Depends
 from datetime import datetime, timezone
 from sqlalchemy.orm import Session
@@ -83,13 +85,25 @@ from app.services.ai_analysis_service import analyze as ai_analyze
 router = APIRouter()
 
 
+def _rejected_packet_id(packet_id: str) -> str:
+    """
+    Namespace the stored id of a packet that failed signature verification,
+    so an attacker cannot squat a genuine packet_id (the unique constraint
+    would otherwise make the real packet answer "duplicate packet_id").
+    """
+    return f"rejected-sig:{uuid.uuid4().hex}:{packet_id}"
+
+
 def _build_raw_packet(packet, status: PacketStatus) -> RawPacket:
     """
     Shared constructor so the enum-to-string conversion (type,
     incident_type, priority) only lives in one place.
     """
+    fields = packet.model_dump(exclude={"incident_type", "type", "priority"})
+    if status == PacketStatus.REJECTED_SIGNATURE:
+        fields["packet_id"] = _rejected_packet_id(packet.packet_id)
     return RawPacket(
-        **packet.model_dump(exclude={"incident_type", "type", "priority"}),
+        **fields,
         incident_type=packet.incident_type.value if packet.incident_type else None,
         type=packet.type.value,
         priority=packet.priority.value if packet.priority else None,
@@ -127,6 +141,15 @@ def ingest_packets(batch: PacketBatchIn, db: Session = Depends(get_db)):
             continue
 
         try:
+            if not verify_signature(packet):
+                db.add(_build_raw_packet(packet, PacketStatus.REJECTED_SIGNATURE))
+                db.commit()
+                rejected.append({
+                    "packet_id": packet.packet_id,
+                    "reason": "invalid signature",
+                })
+                continue
+
             if is_duplicate(db, packet):
                 rejected.append({
                     "packet_id": packet.packet_id,
@@ -140,15 +163,6 @@ def ingest_packets(batch: PacketBatchIn, db: Session = Depends(get_db)):
                 rejected.append({
                     "packet_id": packet.packet_id,
                     "reason": "TTL expired",
-                })
-                continue
-
-            if not verify_signature(packet):
-                db.add(_build_raw_packet(packet, PacketStatus.REJECTED_SIGNATURE))
-                db.commit()
-                rejected.append({
-                    "packet_id": packet.packet_id,
-                    "reason": "invalid signature",
                 })
                 continue
 

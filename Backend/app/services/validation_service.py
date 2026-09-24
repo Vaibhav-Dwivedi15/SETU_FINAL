@@ -23,12 +23,15 @@ from datetime import datetime, timezone
 
 from sqlalchemy.orm import Session
 
+from app.core.config import settings
 from app.models.packet import RawPacket
 from app.schemas.packet import PacketIn
 
 
-def is_ttl_expired(packet: PacketIn, max_age_seconds: int = 3600) -> bool:
-    """A packet older than max_age_seconds is considered stale/expired."""
+def is_ttl_expired(packet: PacketIn, max_age_seconds: int | None = None) -> bool:
+    """A packet older than max_age_seconds (default: settings.packet_max_age_seconds) is stale."""
+    if max_age_seconds is None:
+        max_age_seconds = settings.packet_max_age_seconds
     try:
         sent_at = datetime.fromisoformat(packet.timestamp.replace("Z", "+00:00"))
     except ValueError:
@@ -44,7 +47,11 @@ def is_ttl_expired(packet: PacketIn, max_age_seconds: int = 3600) -> bool:
 
 
 def is_duplicate(db: Session, packet: PacketIn) -> bool:
-    """True if this exact packet_id has already been stored."""
+    """
+    True if this exact packet_id has already been stored. Rejected packets
+    are persisted under a namespaced id (see ingest._rejected_packet_id), so
+    an unsigned forgery can never occupy a genuine packet's id.
+    """
     existing = (
         db.query(RawPacket)
         .filter(RawPacket.packet_id == packet.packet_id)

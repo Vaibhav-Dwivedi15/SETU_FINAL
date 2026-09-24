@@ -45,6 +45,12 @@ class Settings(BaseSettings):
     database_url: str = "postgresql+psycopg2://postgres:postgres@localhost:5432/setu"
     responder_api_key: str = "changeme-dev-key"
 
+    # Max age (seconds) of a packet at /ingest before it is rejected as
+    # expired. Deliberately looser than the mobile relay guard
+    # (SecurityConstants.maxPacketAge = 300 s) and the AI service's 300 s:
+    # a packet that survived the mesh may still wait for an uplink.
+    packet_max_age_seconds: int = 3600
+
     # --- SMS (SMS Gateway for Android, Cloud Server mode) ---
     # Auto-generated after installing https://sms-gate.app on a phone and
     # toggling Cloud Server -> "Online". See app/services/sms_service.py
