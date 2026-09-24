@@ -1,3 +1,4 @@
+﻿import RecoveryPage from './components/pages/RecoveryPage';
 import { useState, useEffect, useCallback, useRef } from "react";
 import incidentsData from "./data/incidents";
 import { startIncidentPolling, resolveIncidentOnBackend } from "./services/api";
@@ -5,9 +6,9 @@ import { playAlertSound } from "./utils/alertSound";
 import { timeAgo } from "./utils/timeAgo";
 import "./App.css";
 // Phase 4 styles kept in their own file rather than appended to the
-// 2000-line App.css — easier to review, and trivially revertable.
+// 2000-line App.css â€” easier to review, and trivially revertable.
 import "./phase4.css";
-// Frontend redesign (Block 1 — foundation): design tokens, icon
+// Frontend redesign (Block 1 â€” foundation): design tokens, icon
 // registry consumers, and the v2 component styles they drive. Loaded
 // after App.css/phase4.css so their tokens/overrides win.
 import "./design-system.css";
@@ -53,7 +54,7 @@ const cityCoordinates = {
 // and section 15 asks for concise operational status language. The page
 // titles here used to lead with an emoji character despite every other
 // surface (sidebar, cards, badges) already having moved to the Lucide
-// icon registry in icons.js — this was the one place that slipped
+// icon registry in icons.js â€” this was the one place that slipped
 // through. Titles are now plain operational text; the icon-carrying job
 // belongs to the sidebar nav item for the same page, not the header.
 const PAGE_TITLES = {
@@ -65,6 +66,7 @@ const PAGE_TITLES = {
   resources: { title: "Response Capacity Center", subtitle: "Deployment status of emergency response assets" },
   teams: { title: "Response Teams", subtitle: "Registered responder teams" },
   settings: { title: "Settings", subtitle: "Dashboard configuration" },
+    recovery: { title: "After-Disaster Recovery", subtitle: "Field damage reports and missing persons registry" },
 };
 
 const DEFAULT_SETTINGS = { pollIntervalMs: 5000, notificationsEnabled: true, soundEnabled: true };
@@ -100,7 +102,7 @@ function App() {
   const [lastSyncedAt, setLastSyncedAt] = useState(null);
 
   // Phase 4: Critical incidents get a blocking, unmissable modal rather
-  // than just another toast. Held as a QUEUE, not a single value —
+  // than just another toast. Held as a QUEUE, not a single value â€”
   // several Critical incidents can arrive in one poll cycle, and
   // overwriting would silently drop all but the last one.
   const [criticalQueue, setCriticalQueue] = useState([]);
@@ -138,7 +140,7 @@ function App() {
   // Real backend polling. Falls back to mock data automatically if the
   // backend isn't up yet. Also detects genuinely new incidents (not seen
   // on any previous poll) and raises a toast + persistent notification +
-  // optional sound for them — skips the very first successful load so
+  // optional sound for them â€” skips the very first successful load so
   // switching from mock->real data doesn't fire a notification storm for
   // incidents that were already there.
   useEffect(() => {
@@ -187,7 +189,7 @@ function App() {
 
             // Phase 4: escalate Critical-priority arrivals to the
             // blocking modal. Deliberately NOT gated on
-            // notificationsEnabled — that setting governs routine toast
+            // notificationsEnabled â€” that setting governs routine toast
             // noise; a Critical emergency is exactly what a responder
             // opened this dashboard for and must not be suppressible by
             // a general "quiet" preference.
@@ -237,7 +239,7 @@ function App() {
   // Merged view: collapses multiple reports of the same real-world
   // incident (grouped by clusterKey) into one card with a report count.
   // NOTE: against a live backend this is effectively a no-op, and
-  // correctly so — the backend already deduplicates server-side into a
+  // correctly so â€” the backend already deduplicates server-side into a
   // single Incident row, so there are no duplicates left to merge. It
   // still does real work against mock data.
   function mergeByCluster(items) {
@@ -328,7 +330,7 @@ function App() {
 
           <div className="nav-right">
             {/* Live system state, given prominence in the header itself
-                rather than buried only in the sidebar footer — reuses
+                rather than buried only in the sidebar footer â€” reuses
                 the already-verified NetworkStatusPill component
                 (Block 1), zero new CSS. */}
             <NetworkStatusPill
@@ -392,7 +394,7 @@ function App() {
             )}
 
             <button className="cmdk-launcher" onClick={() => setCommandPaletteOpen(true)} title="Search everything (Ctrl/Cmd+K)" style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
-              <ActionIcons.search className="ds-icon-sm" aria-hidden="true" /> <kbd>⌘K</kbd>
+              <ActionIcons.search className="ds-icon-sm" aria-hidden="true" /> <kbd>âŒ˜K</kbd>
             </button>
 
             <NotificationCenter
@@ -411,7 +413,7 @@ function App() {
         {/* key={activePage} forces React to remount this section's
             subtree on every nav change, which retriggers the
             .content's page-transition-in CSS animation (design-system.css)
-            — redesign brief section 18 asked for page transitions and
+            â€” redesign brief section 18 asked for page transitions and
             this was the one still missing. Respects prefers-reduced-motion
             via the existing global override in design-system.css. */}
         <section className="content" key={activePage}>
@@ -444,6 +446,7 @@ function App() {
           {activePage === "analytics" && <AnalyticsPage incidents={incidents} />}
           {activePage === "resources" && <ResourcesPage />}
           {activePage === "teams" && <TeamsPage />}
+          {activePage === "recovery" && <RecoveryPage />}
           {activePage === "settings" && (
             <SettingsPage settings={settings} onChange={setSettings} backendConnected={backendConnected} />
           )}
@@ -463,7 +466,7 @@ function App() {
       )}
 
       {/* Phase 4: blocking Critical-priority alert. Rendered above the
-          detail drawer intentionally — a new Critical arriving while a
+          detail drawer intentionally â€” a new Critical arriving while a
           responder reads another incident must not be missable. */}
       {activeCritical && (
         <CriticalAlertModal
@@ -493,3 +496,4 @@ function App() {
 }
 
 export default App;
+

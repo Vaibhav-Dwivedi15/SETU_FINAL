@@ -1,4 +1,4 @@
-import { NavIcons } from "../icons";
+﻿import { NavIcons } from "../icons";
 import { NetworkStatusPill } from "./ui/Primitives";
 import { timeAgo } from "../utils/timeAgo";
 import { useTick } from "../utils/useTick";
@@ -6,7 +6,7 @@ import { useLanguage } from "../context/LanguageContext";
 import setuLogo from "../assets/setu-logo.png";
 
 // Grouped IA, per the redesign brief's "Emergency Operations Console"
-// structure — sections visually separate what were previously 8 flat
+// structure â€” sections visually separate what were previously 8 flat
 // items into their operational purpose.
 const NAV_GROUPS = [
   {
@@ -22,6 +22,12 @@ const NAV_GROUPS = [
     items: [
       { key: "categories", icon: NavIcons.categories, labelKey: "nav.categories" },
       { key: "analytics", icon: NavIcons.analytics, labelKey: "nav.analytics" },
+    ],
+  },
+  {
+    label: "RECOVERY",
+    items: [
+      { key: "recovery", icon: NavIcons.responseCenter, labelKey: "nav.recovery" },
     ],
   },
   {
@@ -95,3 +101,4 @@ function Sidebar({ activePage, onNavigate, backendConnected, openIncidentCount, 
 }
 
 export default Sidebar;
+
