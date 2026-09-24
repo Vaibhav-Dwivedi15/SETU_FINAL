@@ -7,9 +7,11 @@ import logging
 
 from app.core.body_limit import BodySizeLimitMiddleware
 from app.core.config import settings
+from app.core.security_headers import SecurityHeadersMiddleware
+from app.core.startup_checks import production_config_findings
 from app.routers import (
     health, ingest, register, incidents, responders, alerts,
-    auth, voice, government,
+    auth, voice, government, responder_auth,
 )
 from app.db.init_db import init_db
 
@@ -26,14 +28,21 @@ async def lifespan(app: FastAPI):
     manual drop-and-recreate dance we've been doing locally).
     """
     init_db()
+    for finding in production_config_findings():
+        logging.getLogger("setu.config").warning("CONFIG: %s", finding)
     yield
 
 
+# Block 3: interactive docs / schema are development tools; in production they only
+# advertise the attack surface, so they are off unless DEBUG=true.
 app = FastAPI(
     title="SETU Backend API",
     description="Backend for the SETU Disaster Communication Platform",
     version="1.0.0",
     lifespan=lifespan,
+    docs_url="/docs" if settings.debug else None,
+    redoc_url="/redoc" if settings.debug else None,
+    openapi_url="/openapi.json" if settings.debug else None,
 )
 
 # Aug 6 2026: real CORS middleware, actually wired for the first time.
@@ -48,15 +57,19 @@ app = FastAPI(
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_allowed_origins,
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    # Block 3: no cookies are used (bearer tokens), so credentials stay off; methods and
+    # headers are the explicit set the dashboard needs. Never "*".
+    allow_credentials=False,
+    allow_methods=["GET", "POST", "OPTIONS"],
+    allow_headers=["Authorization", "Content-Type"],
+    max_age=600,
 )
 
 
 # Block 2: byte-counting body cap (independent of Content-Length; per-path
 # limits) -- see app/core/body_limit.py. Replaces the Content-Length-only guard.
 app.add_middleware(BodySizeLimitMiddleware)
+app.add_middleware(SecurityHeadersMiddleware)  # outermost of the two: also stamps 413/CORS responses
 
 
 @app.exception_handler(Exception)
@@ -82,6 +95,8 @@ app.include_router(auth.router)
 app.include_router(voice.router)
 # Government notification adapter log (mock adapter -- see routers/government.py).
 app.include_router(government.router)
+# Block 3: dashboard session login (responder key -> short-lived bearer token).
+app.include_router(responder_auth.router)
 
 
 @app.get("/")

@@ -81,7 +81,7 @@ def test_uses_timing_safe_comparison():
 
     from app.core import security as security_module
 
-    source = inspect.getsource(security_module.verify_responder_api_key)
+    source = inspect.getsource(security_module._key_matches) + inspect.getsource(security_module.verify_responder_api_key)
     assert "hmac.compare_digest" in source
     assert "!= settings.responder_api_key" not in source
 

@@ -185,7 +185,7 @@ def test_full_contract_walk(env):
                    "emergency_id": dart["emergency_id"], "responder_id": "badge-7"})
     entry, _ = env.post("10a_termination_unauthorized", term, expect_state="REJECTED")
     assert entry["code"] == "unauthorized_responder" and stored(term) == 0
-    assert client.post("/responders", json={"public_key": dart["sender_id"], "name": "R"}, headers=env.headers).status_code == 200
+    assert client.post("/responders", json={"public_key": dart["sender_id"], "name": "R"}, headers={"x-api-key": "test-admin-api-key"}).status_code == 200
     entry, _ = env.post("10b_termination_authorized", term, expect_state="ACCEPTED")
     assert entry["closed_incident_id"] == incident_ids["dart"]
     incident = db_session().query(Incident).filter(Incident.id == incident_ids["dart"]).one()

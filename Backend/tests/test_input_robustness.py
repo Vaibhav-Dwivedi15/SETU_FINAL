@@ -10,6 +10,7 @@ from tests.test_ingest import client, make_emergency  # noqa: F401
 from tests.test_request_auth import new_key
 
 H = {"x-api-key": TEST_API_KEY}
+A = {"x-api-key": "test-admin-api-key"}
 
 
 @pytest.fixture()
@@ -61,9 +62,9 @@ class TestPathAndQueryBounds:
         assert client.get("/alerts/nearby", params=params).status_code == 422
 
     def test_responder_registry_bounds(self, authed):
-        assert authed.post("/responders", json={"public_key": "k" * 300, "name": "n"}, headers=H).status_code == 422
-        assert authed.post("/responders", json={"public_key": "", "name": "n"}, headers=H).status_code == 422
-        assert authed.post("/responders", json={"public_key": "k", "name": "n" * 300}, headers=H).status_code == 422
+        assert authed.post("/responders", json={"public_key": "k" * 300, "name": "n"}, headers=A).status_code == 422
+        assert authed.post("/responders", json={"public_key": "", "name": "n"}, headers=A).status_code == 422
+        assert authed.post("/responders", json={"public_key": "k", "name": "n" * 300}, headers=A).status_code == 422
 
     def test_otp_sender_id_bounded(self, client):
         assert client.post("/auth/request-otp", json={"email": "a@example.com", "sender_id": "s" * 300}).status_code == 422

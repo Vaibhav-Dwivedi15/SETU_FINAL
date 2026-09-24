@@ -34,11 +34,13 @@ model itself is unchanged):
 """
 
 import hmac
+from typing import Optional
 
 from fastapi import Header, HTTPException, Request
 
 from app.core.config import settings
 from app.core.rate_limit import api_key_failure_limiter
+from app.services.session_service import Principal, ROLE_RESPONDER, verify_token
 
 _DEFAULT_KEY_MARKER = "changeme-dev-key"
 
@@ -47,13 +49,45 @@ def _looks_like_default_key() -> bool:
     return settings.responder_api_key == _DEFAULT_KEY_MARKER
 
 
-def verify_responder_api_key(request: Request, x_api_key: str | None = Header(default=None)):
-    if not settings.debug and _looks_like_default_key():
-        # Fail loudly and safely: reject every request rather than
-        # accept a well-known placeholder credential in what looks like
-        # a production boot. This is a misconfiguration, not a client
-        # error, so 500 (not 401) is the honest status -- the operator
-        # needs to set RESPONDER_API_KEY, the caller did nothing wrong.
+def _key_matches(presented: Optional[str], configured: str) -> bool:
+    if not presented or not configured:
+        return False
+    return hmac.compare_digest(presented.encode("utf-8"), configured.encode("utf-8"))
+
+
+def _deny(request: Request, status: int = 401, detail: str = "Invalid or missing credentials.") -> HTTPException:
+    api_key_failure_limiter.record(request)
+    return HTTPException(status_code=status, detail=detail, headers={"WWW-Authenticate": "Bearer"} if status == 401 else None)
+
+
+def verify_responder_api_key(
+    request: Request,
+    x_api_key: Optional[str] = Header(default=None),
+    authorization: Optional[str] = Header(default=None),
+) -> Principal:
+    """
+    RESPONDER-role gate (name kept: every route already depends on it). Accepts EITHER
+
+      * `Authorization: Bearer <session token>` from POST /auth/responder-login
+        (what the dashboard uses -- no key in the browser bundle), or
+      * `X-API-Key: <RESPONDER_API_KEY>` (server-side scripts / curl only).
+
+    Returns the authenticated Principal. Failures count toward a per-IP brute-force
+    damper (429 after 20/min).
+    """
+    if api_key_failure_limiter.is_blocked(request):
+        raise HTTPException(status_code=429, detail="Too many failed authentication attempts.")
+
+    if isinstance(authorization, str) and authorization:  # (a Header default when called directly)
+        scheme, _, token = authorization.partition(" ")
+        principal = verify_token(token.strip()) if scheme.lower() == "bearer" else None
+        if principal is None:
+            raise _deny(request, detail="Invalid or expired session.")
+        return principal
+
+    if not settings.debug and (_looks_like_default_key() or not settings.responder_api_key):
+        # Misconfiguration, not a client error: refuse to authenticate against a
+        # well-known / empty placeholder credential.
         raise HTTPException(
             status_code=500,
             detail=(
@@ -63,15 +97,29 @@ def verify_responder_api_key(request: Request, x_api_key: str | None = Header(de
             ),
         )
 
-    # Block 2: brute-force damper -- after 20 failed attempts/min from one client
-    # IP, answer 429 before comparing anything.
+    if _key_matches(x_api_key, settings.responder_api_key) or (
+        settings.admin_api_key and _key_matches(x_api_key, settings.admin_api_key)
+    ):
+        return Principal(role=ROLE_RESPONDER, session_id="api-key")
+    raise _deny(request, detail="Invalid or missing API key.")
+
+
+def verify_admin_api_key(request: Request, x_api_key: Optional[str] = Header(default=None)) -> Principal:
+    """
+    ADMIN-role gate (provision / revoke trusted responder signing keys). Header key
+    only -- a dashboard session token can NEVER satisfy this, so a dashboard user
+    cannot promote a key to responder. Fail closed: with ADMIN_API_KEY unset the
+    endpoint is unavailable (503) rather than falling back to the responder key
+    (outside DEBUG).
+    """
     if api_key_failure_limiter.is_blocked(request):
         raise HTTPException(status_code=429, detail="Too many failed authentication attempts.")
-
-    # Block 2: a MISSING header is an authentication failure (401), not a
-    # request-validation failure (422 from Header(...)).
-    if not x_api_key or not hmac.compare_digest(
-        x_api_key.encode("utf-8"), settings.responder_api_key.encode("utf-8")
-    ):
-        api_key_failure_limiter.record(request)
-        raise HTTPException(status_code=401, detail="Invalid or missing API key.")
+    configured = settings.admin_api_key
+    if not configured:
+        if settings.debug:
+            configured = settings.responder_api_key  # local development convenience only
+        else:
+            raise HTTPException(status_code=503, detail="Admin operations are disabled: ADMIN_API_KEY is not configured.")
+    if not _key_matches(x_api_key, configured):
+        raise _deny(request, detail="Invalid or missing admin key.")
+    return Principal(role="admin", session_id="admin-key")

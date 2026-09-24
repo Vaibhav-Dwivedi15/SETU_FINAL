@@ -37,6 +37,10 @@ import tempfile
 if not os.environ.get("DATABASE_URL"):
     os.environ["DATABASE_URL"] = "sqlite:///" + os.path.join(tempfile.gettempdir(), "setu_test_unused.db")
 
+# Block 3: hermetic CORS -- never inherit a developer .env that lists localhost origins.
+os.environ["CORS_ALLOWED_ORIGINS_RAW"] = "https://setu-sih-dashboard.vercel.app"
+os.environ["DEBUG"] = "false"
+
 import pytest
 
 from app.utils.setu_ai_import_guard import ensure_setu_ai_service_importable
@@ -79,3 +83,19 @@ def _reset_rate_limiters():
     yield
     for limiter in ALL_LIMITERS:
         limiter.reset()
+
+
+TEST_ADMIN_KEY = "test-admin-api-key"
+TEST_SESSION_SECRET = "test-session-secret-0123456789abcdefghijklmnop"
+
+
+@pytest.fixture(autouse=True)
+def _block3_credentials():
+    """Block 3: ADMIN key and session secret are always configured (and restored) in tests."""
+    from app.core.config import settings
+
+    saved = (settings.admin_api_key, settings.session_secret, settings.debug, settings.trusted_proxy_count)
+    settings.admin_api_key = TEST_ADMIN_KEY
+    settings.session_secret = TEST_SESSION_SECRET
+    yield
+    settings.admin_api_key, settings.session_secret, settings.debug, settings.trusted_proxy_count = saved

@@ -44,6 +44,15 @@ class Settings(BaseSettings):
     # Format: postgresql+psycopg2://<user>:<password>@<host>:<port>/<db_name>
     database_url: str = "postgresql+psycopg2://postgres:postgres@localhost:5432/setu"
     responder_api_key: str = "changeme-dev-key"
+    # Block 3: ADMIN credential (provision/revoke trusted responders). Separate from the
+    # responder key so a dashboard operator cannot promote signing keys. Unset in
+    # non-debug => admin endpoints answer 503 (fail closed), never fall back to the
+    # responder key.
+    admin_api_key: str = ""
+    # Block 3: HMAC key for dashboard session tokens (>= 32 chars). Unset in non-debug
+    # => login answers 503. Generate: python -c "import secrets;print(secrets.token_urlsafe(48))"
+    session_secret: str = ""
+    session_ttl_seconds: int = 4 * 3600
 
     # --- SMS (SMS Gateway for Android, Cloud Server mode) ---
     # Auto-generated after installing https://sms-gate.app on a phone and
@@ -75,11 +84,10 @@ class Settings(BaseSettings):
     # ports, so the app is never accidentally CORS-broken with an unset
     # env var -- but Render should still set this explicitly for
     # anything beyond the default.
-    cors_allowed_origins_raw: str = (
-        "https://setu-sih-dashboard.vercel.app,"
-        "http://localhost:5173,"
-        "http://localhost:3000"
-    )
+    # Block 3: production default is the production dashboard ONLY. Local dev origins are
+    # added automatically when DEBUG=true, never in production. "*" is never honoured.
+    # REQUIRED deployment check: this must equal the real dashboard origin.
+    cors_allowed_origins_raw: str = "https://setu-sih-dashboard.vercel.app"
 
     # --- Client-IP resolution for rate limiting (Block 2) ---
     # Number of trusted reverse proxies in front of the app (Render = 1).
@@ -91,11 +99,14 @@ class Settings(BaseSettings):
 
     @property
     def cors_allowed_origins(self) -> list[str]:
-        return [
-            origin.strip()
+        origins = [
+            origin.strip().rstrip("/")
             for origin in self.cors_allowed_origins_raw.split(",")
-            if origin.strip()
+            if origin.strip() and origin.strip() != "*"
         ]
+        if self.debug:
+            origins += [o for o in ("http://localhost:5173", "http://localhost:3000") if o not in origins]
+        return origins
 
     model_config = SettingsConfigDict(
         env_file=".env",

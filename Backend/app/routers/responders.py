@@ -22,7 +22,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from app.core.rate_limit import enforce_responder_action_rate_limit, enforce_responder_keys_rate_limit
-from app.core.security import verify_responder_api_key
+from app.core.security import verify_admin_api_key, verify_responder_api_key
 from app.db.base import get_db
 from app.models.responder import ResponderProfile
 from app.schemas.responder import ResponderIn, ResponderOut, ResponderKeysOut
@@ -34,7 +34,7 @@ router = APIRouter()
 def register_responder(
     payload: ResponderIn,
     db: Session = Depends(get_db),
-    _: None = Depends(verify_responder_api_key),
+    _: None = Depends(verify_admin_api_key),  # ADMIN only: a dashboard session cannot promote keys
     # SEP 2026: rate-limited on top of the API-key gate -- provisioning a
     # new trusted responder key is the single most sensitive write in
     # this API (that key can later authorize TerminationPacket
@@ -59,6 +59,27 @@ def register_responder(
         organization=payload.organization,
     )
     db.add(responder)
+    db.commit()
+    db.refresh(responder)
+    return responder
+
+
+@router.post("/responders/{public_key}/revoke", response_model=ResponderOut)
+def revoke_responder(
+    public_key: str,
+    db: Session = Depends(get_db),
+    _: None = Depends(verify_admin_api_key),
+    _rate_limit: None = Depends(enforce_responder_action_rate_limit),
+):
+    """
+    ADMIN: deactivate a trusted responder key. The next /responders/keys sync drops it
+    (mesh devices do a full replace) and /ingest refuses its terminations immediately.
+    Idempotent. The row is kept for audit (is_active=False), never deleted.
+    """
+    responder = db.query(ResponderProfile).filter(ResponderProfile.public_key == public_key[:256]).first()
+    if responder is None:
+        raise HTTPException(status_code=404, detail="Responder not found.")
+    responder.is_active = False
     db.commit()
     db.refresh(responder)
     return responder

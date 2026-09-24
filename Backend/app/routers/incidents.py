@@ -29,7 +29,7 @@ router = APIRouter()
 def resolve_incident(
     incident_id: IncidentId,
     db: Session = Depends(get_db),
-    _: None = Depends(verify_responder_api_key),
+    principal=Depends(verify_responder_api_key),
     # SEP 2026: RESPONDER ACTION tier -- see responders.py's POST route
     # for the same reasoning. This is a state-changing administrative
     # action parallel to the mesh's own signed TerminationPacket path.
@@ -50,7 +50,7 @@ def resolve_incident(
     path's "closing never errors" convention. Only 404s if the
     incident_id doesn't exist at all.
     """
-    incident = resolve_incident_by_id(db, incident_id)
+    incident = resolve_incident_by_id(db, incident_id, actor=principal.session_id)
     if incident is None:
         raise HTTPException(status_code=404, detail="Incident not found.")
     return incident_view(incident, report_counts(db, [incident.id]).get(incident.id))

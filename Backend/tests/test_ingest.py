@@ -111,11 +111,13 @@ def client():
     Base.metadata.drop_all(bind=engine)
 
 
-def register_responder(client, public_key="responder-device-1", name="Test Responder"):
+def register_responder(client, public_key=None, name="Test Responder"):
+    # Block 3: provisioning is ADMIN-only and a responder identity is a 64-hex Ed25519 key.
+    from tests.conftest import TEST_ADMIN_KEY
     resp = client.post(
         "/responders",
-        json={"public_key": public_key, "name": name},
-        headers={"x-api-key": TEST_API_KEY},
+        json={"public_key": public_key or _pubkey_hex_for("responder-device-1"), "name": name},
+        headers={"x-api-key": TEST_ADMIN_KEY},
     )
     assert resp.status_code == 200, resp.text
     return resp.json()
@@ -257,11 +259,11 @@ def test_termination_rejected_despite_convincing_responder_id_if_sender_unregist
 
 
 def test_duplicate_responder_registration_conflicts(client):
-    register_responder(client, public_key="responder-device-1")
+    register_responder(client)
     resp = client.post(
         "/responders",
-        json={"public_key": "responder-device-1", "name": "Duplicate"},
-        headers={"x-api-key": TEST_API_KEY},
+        json={"public_key": _pubkey_hex_for("responder-device-1"), "name": "Duplicate"},
+        headers={"x-api-key": "test-admin-api-key"},
     )
     assert resp.status_code == 409
 
@@ -269,16 +271,16 @@ def test_duplicate_responder_registration_conflicts(client):
 def test_responder_registration_requires_api_key(client):
     resp = client.post(
         "/responders",
-        json={"public_key": "responder-device-1", "name": "No Key"},
+        json={"public_key": _pubkey_hex_for("responder-device-1"), "name": "No Key"},
     )
-    assert resp.status_code in (401, 422)  # 422 if header is strictly required by FastAPI
+    assert resp.status_code == 401
 
 
 def test_responder_keys_endpoint_lists_active_keys_only(client):
-    register_responder(client, public_key="key-active")
+    register_responder(client, public_key=_pubkey_hex_for("key-active"))
     resp = client.get("/responders/keys")
     assert resp.status_code == 200
-    assert resp.json() == {"responder_public_keys": ["key-active"]}
+    assert resp.json() == {"responder_public_keys": [_pubkey_hex_for("key-active")]}
 
 
 def test_responder_keys_endpoint_empty_when_none_registered(client):

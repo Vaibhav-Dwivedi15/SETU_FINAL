@@ -415,7 +415,7 @@ def close_incident_by_emergency_id(db: Session, emergency_id: Optional[str]) -> 
     return closed_first
 
 
-def resolve_incident_by_id(db: Session, incident_id: int) -> Optional[Incident]:
+def resolve_incident_by_id(db: Session, incident_id: int, actor: Optional[str] = None) -> Optional[Incident]:
     """
     Dashboard-initiated resolve path (POST /incidents/{id}/resolve,
     API-key gated -- see app/routers/incidents.py) -- a PARALLEL path to
@@ -442,7 +442,7 @@ def resolve_incident_by_id(db: Session, incident_id: int) -> Optional[Incident]:
 
     _log_incident_action(
         db, incident.id, AuditAction.CLOSED,
-        detail="Resolved via dashboard (API-key auth, not mesh termination)",
+        detail=f"Resolved via dashboard (session {actor or 'unknown'}; not a mesh termination)"[:250],
         commit=False,
     )
 

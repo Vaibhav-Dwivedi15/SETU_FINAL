@@ -20,7 +20,9 @@ from pydantic import BaseModel, ConfigDict, Field
 
 
 class ResponderIn(BaseModel):
-    public_key: str = Field(..., min_length=1, max_length=256)
+    # Block 3: a responder identity IS an Ed25519 public key -- exactly 64 lowercase hex.
+    # Anything else can never verify a signature, so it is refused at provisioning time.
+    public_key: str = Field(..., pattern=r"^[0-9a-f]{64}$")
     name: str = Field(..., min_length=1, max_length=200)
     organization: Optional[str] = Field(default=None, max_length=200)
 
