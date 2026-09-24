@@ -1,3 +1,5 @@
+> **Obsolete in part (Block 3):** `VITE_API_KEY` / `X-API-Key` from the browser and the automatic mock-data fallback were removed; see README.md.
+
 # SETU Dashboard — Integration Handoff for Ayush (Backend Lead)
 
 What the dashboard actually calls on your API, field-by-field, plus one

@@ -10,3 +10,6 @@ const teamsData = [
 ];
 
 export default teamsData;
+
+// Unique marker: tests/security.test.mjs asserts it is ABSENT from every non-demo build.
+export const DEMO_MARKER = "SETU_DEMO_DATASET_MARKER";

@@ -1,6 +1,9 @@
 import { useState, useEffect, useCallback, useRef } from "react";
-import incidentsData from "./data/incidents";
-import { startIncidentPolling, resolveIncidentOnBackend } from "./services/api";
+import { demoIncidents } from "./demo/demoData";
+import { DEMO_MODE } from "./config";
+import { startIncidentPolling, resolveIncidentOnBackend, hasSession, logout } from "./services/api";
+import LoginScreen from "./components/LoginScreen";
+import StatusBanner from "./components/StatusBanner";
 import { playAlertSound } from "./utils/alertSound";
 import { timeAgo } from "./utils/timeAgo";
 import "./App.css";
@@ -81,11 +84,12 @@ function loadSettings() {
   }
 }
 
-function App() {
+function Dashboard({ onSignOut }) {
   const [activePage, setActivePage] = useState("dashboard");
   const [showModal, setShowModal] = useState(false);
   const [selectedIncident, setSelectedIncident] = useState(null);
-  const [incidents, setIncidents] = useState(incidentsData);
+  const [incidents, setIncidents] = useState([]);
+  const [apiError, setApiError] = useState(null);
   const [search, setSearch] = useState("");
   const [typeFilter, setTypeFilter] = useState("All");
   const [priorityFilter, setPriorityFilter] = useState("All");
@@ -105,7 +109,7 @@ function App() {
   // overwriting would silently drop all but the last one.
   const [criticalQueue, setCriticalQueue] = useState([]);
 
-  const knownIdsRef = useRef(new Set(incidentsData.map((i) => i.id)));
+  const knownIdsRef = useRef(new Set());
   const hasLoadedOnceRef = useRef(false);
   const prevCountsRef = useRef(null);
   const searchInputRef = useRef(null);
@@ -144,7 +148,8 @@ function App() {
   useEffect(() => {
     const stopPolling = startIncidentPolling(
       (freshIncidents) => {
-        setBackendConnected(true);
+        setApiError(null);
+        setBackendConnected(!DEMO_MODE); // demo data is not a backend connection
         setLastSyncedAt(new Date().toISOString());
         setIncidents(freshIncidents);
 
@@ -207,10 +212,11 @@ function App() {
         freshIncidents.forEach((i) => knownIdsRef.current.add(i.id));
         hasLoadedOnceRef.current = true;
       },
-      () => {
+      (err) => {
+        // Block 3: a failed poll is reported as a failure. Whatever real data was received
+        // earlier stays on screen (labelled stale by the banner); nothing is fabricated.
         setBackendConnected(false);
-        setIncidents(incidentsData);
-        hasLoadedOnceRef.current = true;
+        setApiError(err?.message || "Backend request failed.");
       },
       settings.pollIntervalMs
     );
@@ -280,11 +286,16 @@ function App() {
   // Termination-trigger from the pipeline design: a verified responder
   // marks an incident resolved. Updates the UI immediately (optimistic)
   // and attempts the real backend call in parallel.
-  const resolveIncident = useCallback((incidentId) => {
-    setIncidents((prev) =>
-      prev.map((i) => (i.id === incidentId ? { ...i, status: "closed" } : i))
-    );
-    resolveIncidentOnBackend(incidentId);
+  const resolveIncident = useCallback(async (incidentId) => {
+    // Block 3: mark closed only after the backend confirmed it (no optimistic fiction).
+    try {
+      await resolveIncidentOnBackend(incidentId);
+      setIncidents((prev) =>
+        prev.map((i) => (i.id === incidentId ? { ...i, status: "closed" } : i))
+      );
+    } catch (err) {
+      setApiError(`Could not resolve incident #${incidentId}: ${err?.message || "request failed"}`);
+    }
   }, []);
 
   const activeCritical = criticalQueue[0] || null;
@@ -320,6 +331,7 @@ function App() {
       />
 
       <main className="main">
+        <StatusBanner demoMode={DEMO_MODE} error={apiError} lastSyncedAt={lastSyncedAt} onDismissError={() => setApiError(null)} />
         <header className="navbar">
           <div>
             <h2 className="ds-page-title">{pageInfo.title}</h2>
@@ -385,9 +397,14 @@ function App() {
                   Show Resolved
                 </label>
 
-                <button className="alert-btn" onClick={() => setShowModal(true)} style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+                {DEMO_MODE && <button className="alert-btn" onClick={() => setShowModal(true)} style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
                   <ActionIcons.add className="ds-icon-sm" aria-hidden="true" /> New Alert
-                </button>
+                </button>}
+                {!DEMO_MODE && (
+                  <button className="alert-btn" onClick={onSignOut} style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+                    Sign out
+                  </button>
+                )}
               </>
             )}
 
@@ -450,7 +467,7 @@ function App() {
         </section>
       </main>
 
-      {showModal && (
+      {DEMO_MODE && showModal && (
         <NewAlertModal onClose={() => setShowModal(false)} onCreate={createIncident} />
       )}
 
@@ -479,7 +496,7 @@ function App() {
         onNavigate={setActivePage}
         incidents={incidents}
         onSelectIncident={setSelectedIncident}
-        onOpenNewAlert={() => setShowModal(true)}
+        onOpenNewAlert={DEMO_MODE ? () => setShowModal(true) : undefined}
       />
 
       <ToastStack
@@ -490,6 +507,26 @@ function App() {
     </LanguageProvider>
     </ThemeProvider>
   );
+}
+
+// Auth gate (Block 3): the dashboard renders only with a valid session (or in an explicit DEMO
+// build). Any 401 from the API expires the session and lands here again.
+function App() {
+  const [signedIn, setSignedIn] = useState(DEMO_MODE || hasSession());
+  useEffect(() => {
+    const onExpired = () => setSignedIn(false);
+    window.addEventListener("setu:auth-expired", onExpired);
+    return () => window.removeEventListener("setu:auth-expired", onExpired);
+  }, []);
+
+  if (!signedIn) {
+    return (
+      <ThemeProvider>
+        <LoginScreen onSignedIn={() => setSignedIn(true)} />
+      </ThemeProvider>
+    );
+  }
+  return <Dashboard onSignOut={() => { logout(); setSignedIn(false); }} />;
 }
 
 export default App;

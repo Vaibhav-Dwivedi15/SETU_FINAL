@@ -40,7 +40,7 @@ const translations = {
 
     "status.systemStatus": "System Status",
     "status.live": "Live (Backend Connected)",
-    "status.offline": "Offline (Mock Data)",
+    "status.offline": "Backend unreachable",
     "status.lastSynced": "Last synced",
 
     "priority.critical": "Critical",
@@ -98,7 +98,7 @@ const translations = {
 
     "status.systemStatus": "सिस्टम स्थिति",
     "status.live": "लाइव (बैकएंड जुड़ा हुआ)",
-    "status.offline": "ऑफ़लाइन (नमूना डेटा)",
+    "status.offline": "ऑफ़लाइन",
     "status.lastSynced": "अंतिम सिंक",
 
     "priority.critical": "अति गंभीर",
@@ -156,7 +156,7 @@ const translations = {
 
     "status.systemStatus": "সিস্টেমের অবস্থা",
     "status.live": "লাইভ (ব্যাকএন্ড সংযুক্ত)",
-    "status.offline": "অফলাইন (নমুনা তথ্য)",
+    "status.offline": "অফলাইন",
     "status.lastSynced": "সর্বশেষ সিঙ্ক",
 
     "priority.critical": "সংকটজনক",
@@ -214,7 +214,7 @@ const translations = {
 
     "status.systemStatus": "அமைப்பு நிலை",
     "status.live": "நேரலை (பின்தளம் இணைக்கப்பட்டது)",
-    "status.offline": "ஆஃப்லைன் (மாதிரி தரவு)",
+    "status.offline": "ஆஃப்லைன்",
     "status.lastSynced": "கடைசி ஒத்திசைவு",
 
     "priority.critical": "மிக அவசரம்",
@@ -272,7 +272,7 @@ const translations = {
 
     "status.systemStatus": "సిస్టమ్ స్థితి",
     "status.live": "లైవ్ (బ్యాకెండ్ కనెక్ట్ అయింది)",
-    "status.offline": "ఆఫ్‌లైన్ (నమూనా డేటా)",
+    "status.offline": "ఆఫ్‌లైన్",
     "status.lastSynced": "చివరి సమకాలీకరణ",
 
     "priority.critical": "అత్యంత తీవ్రం",
@@ -330,7 +330,7 @@ const translations = {
 
     "status.systemStatus": "प्रणाली स्थिती",
     "status.live": "थेट (बॅकएंड जोडलेले)",
-    "status.offline": "ऑफलाइन (नमुना डेटा)",
+    "status.offline": "ऑफलाइन",
     "status.lastSynced": "शेवटचे सिंक",
 
     "priority.critical": "अत्यंत गंभीर",

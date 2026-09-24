@@ -1,8 +1,7 @@
 // SETU Dashboard — Backend integration layer
 //
-// Real GET /incidents polling, with graceful fallback to mock data
-// (src/data/incidents.js) if the backend isn't reachable — so the
-// dashboard never breaks during a demo.
+// Real GET /incidents polling. Block 3: NO silent fallback to mock data -- a failed request is
+// reported as a failure; sample data exists only in an explicit DEMO MODE build.
 //
 // ============================================================
 // FIELD MAPPING BUGS FIXED (Phase 4, Aug 2026)
@@ -37,19 +36,110 @@
 // per the backend model's own "never let one silently overwrite the
 // other" instruction.
 
-// `import.meta.env` only exists under Vite; the guard lets the same module be
-// imported by the node contract test (tests/contract.test.mjs).
-const ENV = import.meta.env || {};
-const BACKEND_URL = ENV.VITE_BACKEND_URL || "http://localhost:8000";
-const POLL_INTERVAL_MS = 5000;
+import { BACKEND_URL, CONFIG_ERROR, DEMO_MODE, POLL_INTERVAL_MS } from "../config.js";
+import { demoIncidents } from "../demo/demoData.js";
 
-// Per the role brief (Section 6): only verified responders should see
-// this dashboard; it's gated by X-API-Key on the backend. Read from env,
-// never hardcoded.
-const API_KEY = ENV.VITE_API_KEY || "";
+// ============================================================
+// AUTHENTICATION (Block 3)
+// ============================================================
+// There is NO credential in this bundle. An operator types the responder key into the login
+// screen; POST /auth/responder-login exchanges it for a short-lived, signed bearer token. The
+// key itself is never stored; the token lives in sessionStorage (this tab only, gone when the
+// tab closes) and expires server-side. A 401 from any call clears it and returns the app to the
+// login screen. (sessionStorage is readable by injected script: the strict CSP in vercel.json
+// is what protects it -- see docs/security/BLOCK3_FINAL_SECURITY_VALIDATION.md.)
 
-function authHeaders() {
-  return API_KEY ? { "X-API-Key": API_KEY } : {};
+const SESSION_KEY = "setu.session.v1";
+
+export class ApiError extends Error {
+  constructor(message, status = 0) {
+    super(message);
+    this.name = "ApiError";
+    this.status = status;
+  }
+}
+
+function readSession() {
+  try {
+    const raw = sessionStorage.getItem(SESSION_KEY);
+    if (!raw) return null;
+    const session = JSON.parse(raw);
+    if (!session.token || !(session.expiresAt > Date.now())) {
+      sessionStorage.removeItem(SESSION_KEY);
+      return null;
+    }
+    return session;
+  } catch {
+    return null;
+  }
+}
+
+export function hasSession() {
+  return readSession() !== null;
+}
+
+export function logout() {
+  try { sessionStorage.removeItem(SESSION_KEY); } catch { /* storage unavailable */ }
+}
+
+function expireSession() {
+  logout();
+  if (typeof window !== "undefined") window.dispatchEvent(new Event("setu:auth-expired"));
+}
+
+export async function loginWithKey(key) {
+  if (CONFIG_ERROR) throw new ApiError(CONFIG_ERROR);
+  let response;
+  try {
+    response = await fetch(`${BACKEND_URL}/auth/responder-login`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ key }),
+      signal: AbortSignal.timeout(8000),
+    });
+  } catch {
+    throw new ApiError("Could not reach the backend.");
+  }
+  if (response.status === 401) throw new ApiError("Invalid credentials.", 401);
+  if (response.status === 429) throw new ApiError("Too many attempts. Wait a minute and try again.", 429);
+  if (response.status === 503) throw new ApiError("Login is not configured on the server (SESSION_SECRET).", 503);
+  if (!response.ok) throw new ApiError(`Login failed (HTTP ${response.status}).`, response.status);
+  const data = await response.json();
+  if (!data.access_token) throw new ApiError("Login response was malformed.");
+  try {
+    sessionStorage.setItem(SESSION_KEY, JSON.stringify({
+      token: data.access_token,
+      expiresAt: Date.now() + Math.max(0, (data.expires_in || 0) - 30) * 1000,
+    }));
+  } catch {
+    throw new ApiError("This browser blocked session storage.");
+  }
+}
+
+/** Authenticated fetch: adds the bearer token, maps failures to ApiError, expires the session on 401. */
+async function apiFetch(path, options = {}) {
+  if (CONFIG_ERROR) throw new ApiError(CONFIG_ERROR);
+  const session = readSession();
+  if (!session) {
+    expireSession();
+    throw new ApiError("Not signed in.", 401);
+  }
+  let response;
+  try {
+    response = await fetch(`${BACKEND_URL}${path}`, {
+      ...options,
+      headers: { ...(options.headers || {}), Authorization: `Bearer ${session.token}` },
+      signal: options.signal || AbortSignal.timeout(6000),
+    });
+  } catch {
+    throw new ApiError("Backend unreachable.");
+  }
+  if (response.status === 401) {
+    expireSession();
+    throw new ApiError("Session expired. Sign in again.", 401);
+  }
+  if (!response.ok) throw new ApiError(`Backend returned ${response.status}.`, response.status);
+  return response;
 }
 
 // Known city coordinates, used to give live backend incidents a
@@ -180,13 +270,10 @@ export function normalizeIncident(raw) {
 }
 
 export async function fetchIncidents() {
-  const response = await fetch(`${BACKEND_URL}/incidents`, {
-    headers: authHeaders(),
-    signal: AbortSignal.timeout(4000),
-  });
-  if (!response.ok) throw new Error(`Backend returned ${response.status}`);
+  const response = await apiFetch("/incidents");
   const data = await response.json();
-  return Array.isArray(data) ? data.map(normalizeIncident) : [];
+  if (!Array.isArray(data)) throw new ApiError("Backend returned an unexpected incidents payload.");
+  return data.map(normalizeIncident);
 }
 
 function normalizeResponder(raw) {
@@ -199,13 +286,10 @@ function normalizeResponder(raw) {
 }
 
 export async function fetchResponders() {
-  const response = await fetch(`${BACKEND_URL}/responders`, {
-    headers: authHeaders(),
-    signal: AbortSignal.timeout(4000),
-  });
-  if (!response.ok) throw new Error(`Backend returned ${response.status}`);
+  const response = await apiFetch("/responders");
   const data = await response.json();
-  return Array.isArray(data) ? data.map(normalizeResponder) : [];
+  if (!Array.isArray(data)) throw new ApiError("Backend returned an unexpected responders payload.");
+  return data.map(normalizeResponder);
 }
 
 // ============================================================
@@ -221,137 +305,95 @@ const RESPONSE_TYPE_LABEL = {
 };
 
 /**
- * GET /incidents/{id}/responses — community members who responded to
- * this incident from the mobile app (Phase 3). Responder-API-key gated.
- *
- * Returns [] rather than throwing when the endpoint isn't available, so
- * an older backend deployment degrades to "no responses yet" instead of
- * breaking the whole detail drawer.
+ * GET /incidents/{id}/responses — community members who responded to this incident from the
+ * mobile app. Responder-gated. Block 3: a failed request THROWS (ApiError) instead of returning
+ * [] -- "the request failed" must never be displayed as "nobody responded".
  */
 export async function fetchIncidentResponses(incidentId) {
-  try {
-    const response = await fetch(`${BACKEND_URL}/incidents/${incidentId}/responses`, {
-      headers: authHeaders(),
-      signal: AbortSignal.timeout(4000),
-    });
-    if (!response.ok) return [];
-    const data = await response.json();
-    if (!Array.isArray(data)) return [];
-    return data.map((r) => ({
-      id: r.id,
-      senderId: r.sender_id,
-      responseType: r.response_type,
-      responseLabel: RESPONSE_TYPE_LABEL[r.response_type] || r.response_type,
-      createdAt: r.created_at,
-      updatedAt: r.updated_at,
-    }));
-  } catch {
-    return [];
-  }
+  const response = await apiFetch(`/incidents/${encodeURIComponent(incidentId)}/responses`);
+  const data = await response.json();
+  if (!Array.isArray(data)) throw new ApiError("Unexpected responses payload.");
+  return data.map((r) => ({
+    id: r.id,
+    senderId: r.sender_id,
+    responseType: r.response_type,
+    responseLabel: RESPONSE_TYPE_LABEL[r.response_type] || r.response_type,
+    createdAt: r.created_at,
+    updatedAt: r.updated_at,
+  }));
 }
 
-/**
- * GET /incidents/{id}/history — the backend's IncidentAuditLog trail
- * (CREATED / MERGED / CLOSED entries). Same degrade-to-empty behavior.
- */
+/** GET /incidents/{id}/history — IncidentAuditLog trail. Throws on failure (see above). */
 export async function fetchIncidentHistory(incidentId) {
-  try {
-    const response = await fetch(`${BACKEND_URL}/incidents/${incidentId}/history`, {
-      headers: authHeaders(),
-      signal: AbortSignal.timeout(4000),
-    });
-    if (!response.ok) return [];
-    const data = await response.json();
-    if (!Array.isArray(data)) return [];
-    return data.map((h) => ({
-      id: h.id,
-      action: h.action,
-      packetId: h.packet_id || null,
-      detail: h.detail || null,
-      createdAt: h.created_at,
-    }));
-  } catch {
-    return [];
-  }
+  const response = await apiFetch(`/incidents/${encodeURIComponent(incidentId)}/history`);
+  const data = await response.json();
+  if (!Array.isArray(data)) throw new ApiError("Unexpected history payload.");
+  return data.map((h) => ({
+    id: h.id,
+    action: h.action,
+    packetId: h.packet_id || null,
+    detail: h.detail || null,
+    createdAt: h.created_at,
+  }));
 }
 
 /**
- * GET /incidents/{id}/government-notifications — the backend's
- * GovernmentNotificationLog for this incident (Phase 2 adapter output).
- *
- * isMock is passed through as a first-class field, NOT inferred from the
- * adapter name string here — the backend decides it, and the UI renders
- * an unmissable "simulated" marker from it. See
- * Backend/app/routers/government.py on why that marker must stay.
- *
- * Degrades to [] rather than throwing, same as the other Phase 3/4
- * fetchers, so an older backend deployment shows an honest empty state
- * instead of breaking the drawer.
+ * GET /incidents/{id}/government-notifications — GovernmentNotificationLog for this incident.
+ * isMock is passed through as a first-class field (the backend decides it; the UI renders an
+ * unmissable "simulated" marker from it). Throws on failure.
  */
 export async function fetchIncidentGovernmentNotifications(incidentId) {
-  try {
-    const response = await fetch(`${BACKEND_URL}/incidents/${incidentId}/government-notifications`, {
-      headers: authHeaders(),
-      signal: AbortSignal.timeout(4000),
-    });
-    if (!response.ok) return [];
-    const data = await response.json();
-    if (!Array.isArray(data)) return [];
-    return data.map((g) => ({
-      id: g.id,
-      incidentId: g.incident_id,
-      adapterName: g.adapter_name,
-      isMock: Boolean(g.is_mock),
-      status: g.status,
-      referenceId: g.reference_id || null,
-      requestPayload: g.request_payload || null,
-      responseDetail: g.response_detail || null,
-      createdAt: g.created_at,
-    }));
-  } catch {
-    return [];
-  }
+  const response = await apiFetch(`/incidents/${encodeURIComponent(incidentId)}/government-notifications`);
+  const data = await response.json();
+  if (!Array.isArray(data)) throw new ApiError("Unexpected notifications payload.");
+  return data.map((g) => ({
+    id: g.id,
+    incidentId: g.incident_id,
+    adapterName: g.adapter_name,
+    isMock: Boolean(g.is_mock),
+    status: g.status,
+    referenceId: g.reference_id || null,
+    requestPayload: g.request_payload || null,
+    responseDetail: g.response_detail || null,
+    createdAt: g.created_at,
+  }));
+}
+
+/** GET /government/adapter-status — which adapter is live and whether it is the mock. Throws on failure. */
+export async function fetchGovernmentAdapterStatus() {
+  const response = await apiFetch("/government/adapter-status");
+  const g = await response.json();
+  return {
+    adapterName: g.adapter_name,
+    isMock: Boolean(g.is_mock),
+    totalNotifications: g.total_notifications,
+    detail: g.detail,
+  };
 }
 
 /**
- * GET /government/adapter-status — which adapter is live and whether
- * it's the mock. Used to render a global "simulated" indicator.
+ * Polls GET /incidents.
+ *   onUpdate(incidents)      every successful poll
+ *   onError(ApiError|Error)  every FAILED poll (not just the first) -- a failure is shown as a
+ *                            failure. Real data is never replaced with fake data.
+ * DEMO MODE ONLY (explicit VITE_DEMO_MODE=true build): the sample incidents are delivered once
+ * through onUpdate and the network is not used at all.
  */
-export async function fetchGovernmentAdapterStatus() {
-  try {
-    const response = await fetch(`${BACKEND_URL}/government/adapter-status`, {
-      headers: authHeaders(),
-      signal: AbortSignal.timeout(4000),
-    });
-    if (!response.ok) return null;
-    const g = await response.json();
-    return {
-      adapterName: g.adapter_name,
-      isMock: Boolean(g.is_mock),
-      totalNotifications: g.total_notifications,
-      detail: g.detail,
-    };
-  } catch {
-    return null;
+export function startIncidentPolling(onUpdate, onError, intervalMs = POLL_INTERVAL_MS) {
+  if (DEMO_MODE) {
+    onUpdate(demoIncidents);
+    return () => {};
   }
-}
-
-export function startIncidentPolling(onUpdate, onFallback, intervalMs = POLL_INTERVAL_MS) {
-  let fallbackTriggered = false;
   let cancelled = false;
   let timeoutId = null;
 
   async function poll() {
     if (cancelled) return;
     try {
-      const incidents = await fetchIncidents();
-      onUpdate(incidents);
+      onUpdate(await fetchIncidents());
     } catch (err) {
-      if (!fallbackTriggered) {
-        fallbackTriggered = true;
-        console.warn("SETU dashboard: backend unreachable, using mock data. Reason:", err.message);
-        onFallback();
-      }
+      if (!cancelled) onError(err);
+      if (err instanceof ApiError && err.status === 401) return; // signed out: stop polling until re-login
     }
     if (!cancelled) timeoutId = setTimeout(poll, intervalMs);
   }
@@ -361,22 +403,12 @@ export function startIncidentPolling(onUpdate, onFallback, intervalMs = POLL_INT
 }
 
 /**
- * POST /incidents/{id}/resolve — confirmed real, API-key gated, and
- * idempotent (see Backend/app/routers/incidents.py). This is the
- * dashboard's administrative resolve path, deliberately PARALLEL to the
- * mesh-native signed termination packet, not a replacement for it — a
- * private Ed25519 signing key can't live in a browser.
+ * POST /incidents/{id}/resolve — responder-gated and idempotent. Returns true ONLY when the
+ * backend confirmed; otherwise throws, so the UI never shows an incident as closed that the
+ * backend did not close. Parallel to (not a replacement for) the signed mesh termination.
  */
 export async function resolveIncidentOnBackend(incidentId) {
-  try {
-    const response = await fetch(`${BACKEND_URL}/incidents/${incidentId}/resolve`, {
-      method: "POST",
-      headers: authHeaders(),
-      signal: AbortSignal.timeout(4000),
-    });
-    return response.ok;
-  } catch (err) {
-    console.warn("SETU dashboard: could not reach backend to resolve incident. Reason:", err.message);
-    return false;
-  }
+  if (DEMO_MODE) return true;
+  await apiFetch(`/incidents/${encodeURIComponent(incidentId)}/resolve`, { method: "POST" });
+  return true;
 }

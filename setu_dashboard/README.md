@@ -1,3 +1,9 @@
+> **Block 3 security note.** The dashboard no longer contains any responder key: operators sign in at
+> runtime (`POST /auth/responder-login`) and receive a short-lived session token. Anything named
+> `VITE_*` is public JavaScript. Sample/mock data exists only in an explicit `VITE_DEMO_MODE=true`
+> build. Security headers are defined in `vercel.json`. See `docs/security/BLOCK3_FINAL_SECURITY_VALIDATION.md`.
+> (Older text below that mentions `VITE_API_KEY` or automatic mock-data fallback is obsolete.)
+
 # SETU — Responder Dashboard
 
 Web dashboard for verified responders (NDRF, fire, police, medical,
@@ -12,7 +18,7 @@ to wire it up to the live backend.
 
 ```bash
 npm install
-cp .env.example .env   # then fill in VITE_BACKEND_URL and VITE_API_KEY
+cp .env.example .env   # then fill in VITE_BACKEND_URL (https:// in production). There is NO API-key variable.
 npm run dev
 ```
 

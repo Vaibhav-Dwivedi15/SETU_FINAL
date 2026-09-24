@@ -1,5 +1,5 @@
 import { NavIcons, CategoryIcons } from "../icons";
-import resourcesData from "../data/resources";
+import { demoResources as resourcesData } from "../demo/demoData";
 
 // BUG FIX (typography/cohesion pass): this dashboard-mini widget used to
 // have its unit counts hardcoded (24/12/36/8) directly in JSX, copy-pasted
@@ -17,6 +17,16 @@ const TYPE_ICON = {
 };
 
 function ResourcePanel() {
+  // Block 3: no backend source for resource inventory exists, so outside an explicit DEMO build
+  // there is nothing real to show -- say so instead of showing invented fleet numbers.
+  if (resourcesData.length === 0) {
+    return (
+      <div className="resource-panel">
+        <h2 className="ds-card-title">Emergency Resources</h2>
+        <p className="ds-supporting">No resource inventory source is connected.</p>
+      </div>
+    );
+  }
   return (
     <div className="resource-panel">
       <h2 className="ds-card-title" style={{ display: "flex", alignItems: "center", gap: 8 }}>

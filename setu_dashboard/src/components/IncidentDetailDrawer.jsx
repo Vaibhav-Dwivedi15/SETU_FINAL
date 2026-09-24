@@ -4,11 +4,13 @@ import { Icon } from "leaflet";
 import { timeAgo } from "../utils/timeAgo";
 import { useTick } from "../utils/useTick";
 import { useTheme } from "../context/ThemeContext";
+import { DEMO_MODE } from "../config";
 import { fetchIncidentResponses, fetchIncidentHistory, fetchIncidentGovernmentNotifications } from "../services/api";
 import { getCategory, categorizeIncident } from "../utils/incidentCategories";
 import { CategoryIcons, ActionIcons } from "../icons";
 import { PriorityBadge, StatusBadge } from "./ui/Primitives";
 import { useFocusTrap } from "../utils/useFocusTrap";
+import "./security.css";
 import RelayTrace from "./RelayTrace";
 import DeliveryStatusPanel from "./DeliveryStatusPanel";
 import CommunityResponsePanel from "./CommunityResponsePanel";
@@ -34,6 +36,7 @@ function IncidentDetailDrawer({ incident, onClose, onResolve }) {
   const [loadingHistory, setLoadingHistory] = useState(false);
   const [loadingGov, setLoadingGov] = useState(false);
   const [activeTab, setActiveTab] = useState("overview");
+  const [loadError, setLoadError] = useState(null);
 
   useEffect(() => {
     function handleKeyDown(e) { if (e.key === "Escape") onClose(); }
@@ -52,16 +55,27 @@ function IncidentDetailDrawer({ incident, onClose, onResolve }) {
     setHistory([]);
     setGovNotifications([]);
     setActiveTab("overview");
+    setLoadError(null);
 
+    // Block 3: a failed request is shown as a failure, never as an empty "nothing here yet".
+    const failed = (setLoading) => (err) => {
+      if (cancelled) return;
+      setLoading(false);
+      setLoadError(err?.message || "Request failed.");
+    };
+    if (DEMO_MODE) {
+      setLoadingResponses(false); setLoadingHistory(false); setLoadingGov(false);
+      return () => { cancelled = true; };
+    }
     fetchIncidentResponses(incident.id).then((data) => {
       if (!cancelled) { setResponses(data); setLoadingResponses(false); }
-    });
+    }).catch(failed(setLoadingResponses));
     fetchIncidentHistory(incident.id).then((data) => {
       if (!cancelled) { setHistory(data); setLoadingHistory(false); }
-    });
+    }).catch(failed(setLoadingHistory));
     fetchIncidentGovernmentNotifications(incident.id).then((data) => {
       if (!cancelled) { setGovNotifications(data); setLoadingGov(false); }
-    });
+    }).catch(failed(setLoadingGov));
 
     return () => { cancelled = true; };
   }, [incident?.id]);
@@ -105,6 +119,8 @@ function IncidentDetailDrawer({ incident, onClose, onResolve }) {
             <ActionIcons.dismiss className="ds-icon-md" aria-hidden="true" />
           </button>
         </div>
+
+        {loadError && <p className="banner banner-error" role="alert">Could not load incident details: {loadError}</p>}
 
         <div className="drawer-tabs" role="tablist">
           <button role="tab" aria-selected={activeTab === "overview"} className={activeTab === "overview" ? "active" : ""} onClick={() => setActiveTab("overview")}>Overview</button>

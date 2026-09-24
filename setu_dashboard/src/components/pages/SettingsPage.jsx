@@ -3,8 +3,8 @@ import { useTheme } from "../../context/ThemeContext";
 import { ActionIcons } from "../../icons";
 import { NetworkStatusPill, SectionHeader } from "../ui/Primitives";
 
-const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || "http://localhost:8000";
-const BUILD_MODE = import.meta.env.MODE || "unknown";
+import { BACKEND_URL, DEMO_MODE } from "../../config";
+const BUILD_MODE = DEMO_MODE ? "demo" : "production";
 
 // =====================================================
 // SETU Dashboard — Settings (v2)

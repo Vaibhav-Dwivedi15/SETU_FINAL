@@ -39,7 +39,7 @@ function CommandPalette({ open, onClose, onNavigate, incidents, onSelectIncident
       .map((p) => ({ type: "page", ...p }));
 
     const actionResults = (!q || "new alert report incident".includes(q) || "new alert".includes(q))
-      ? [{ type: "action", key: "new-alert", icon: ActionIcons.add, label: "Create New Alert" }]
+      ? (onOpenNewAlert ? [{ type: "action", key: "new-alert", icon: ActionIcons.add, label: "Create New Alert" }] : [])
       : [];
 
     const incidentResults = q

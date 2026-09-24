@@ -1,4 +1,4 @@
-import resourcesData from "../../data/resources";
+import { demoResources as resourcesData } from "../../demo/demoData";
 import { NavIcons, CategoryIcons, StatusIcons, PipelineIcons } from "../../icons";
 import { SectionHeader, MetricCard, EmptyState } from "../ui/Primitives";
 
