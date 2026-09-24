@@ -26,6 +26,12 @@ import 'dart:developer' as developer;
 import 'package:flutter/services.dart';
 
 class SmsRepository {
+  /// Block 3: logs never carry a full phone number or any message text -- only the last two digits.
+  static String maskNumber(String number) {
+    final digits = number.replaceAll(RegExp(r'\D'), '');
+    return digits.length >= 2 ? '***${digits.substring(digits.length - 2)}' : '***';
+  }
+
   static const int _maxRetry = 3;
   static const MethodChannel _channel = MethodChannel('setu/direct_sms');
 
@@ -43,7 +49,7 @@ class SmsRepository {
     required String phoneNumber,
   }) async {
     final normalizedNumber = _normalizePhoneNumber(phoneNumber);
-    developer.log('Attempting SMS to $normalizedNumber (original: $phoneNumber)', name: 'SmsRepository');
+    developer.log('Attempting SMS to ${maskNumber(normalizedNumber)}', name: 'SmsRepository');
     int attempt = 0;
     while (attempt < _maxRetry) {
       try {
@@ -51,28 +57,26 @@ class SmsRepository {
           'phoneNumber': normalizedNumber,
           'message': message,
         });
-        developer.log('SMS sent successfully to $normalizedNumber', name: 'SmsRepository');
+        developer.log('SMS handed to radio for ${maskNumber(normalizedNumber)}', name: 'SmsRepository');
         return "Sent";
       } on PlatformException catch (e) {
         attempt++;
         developer.log(
-          'SMS attempt $attempt/$_maxRetry FAILED for $normalizedNumber -- code=${e.code} message=${e.message} details=${e.details}',
+          // code only: e.message / e.details can echo the destination number from the platform
+          'SMS attempt $attempt/$_maxRetry FAILED for ${maskNumber(normalizedNumber)} -- code=${e.code}',
           name: 'SmsRepository',
-          error: e,
         );
         if (e.code == 'PERMISSION_DENIED' || attempt >= _maxRetry) {
           rethrow;
         }
         await Future.delayed(const Duration(seconds: 1));
-      } catch (e, stack) {
+      } catch (e) {
         // Catch anything non-PlatformException too -- if the channel
         // call itself is malformed or missing, we want to see that,
         // not have it disappear into a generic failure.
         developer.log(
-          'SMS attempt $attempt/$_maxRetry UNEXPECTED ERROR for $normalizedNumber: $e',
+          'SMS attempt $attempt/$_maxRetry UNEXPECTED ERROR for ${maskNumber(normalizedNumber)}: ${e.runtimeType}',
           name: 'SmsRepository',
-          error: e,
-          stackTrace: stack,
         );
         attempt++;
         if (attempt >= _maxRetry) rethrow;

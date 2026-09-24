@@ -31,10 +31,20 @@
          screen, not bundled into the mesh permission gate. See
          lib/features/voice_sos/presentation/screens/voice_sos_screen.dart -->
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <!-- Block 3 hardening:
+         allowBackup=false + extraction/backup rules: identity key, profile, contacts and queued
+           SOS packets must not be restorable onto another device via Android backup.
+         usesCleartextTraffic=false + networkSecurityConfig: https only, system CAs only.
+         MainActivity is the only exported component (launcher); the mesh service is not exported. -->
     <application
         android:label="setu_app"
         android:name="${applicationName}"
-        android:icon="@mipmap/ic_launcher">
+        android:icon="@mipmap/ic_launcher"
+        android:allowBackup="false"
+        android:fullBackupContent="@xml/backup_rules"
+        android:dataExtractionRules="@xml/data_extraction_rules"
+        android:usesCleartextTraffic="false"
+        android:networkSecurityConfig="@xml/network_security_config">
         <activity
             android:name=".MainActivity"
             android:exported="true"

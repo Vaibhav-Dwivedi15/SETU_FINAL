@@ -108,9 +108,15 @@ class DirectSmsChannelHandler(
                 Log.w(TAG, "No default SMS subscription set -- falling back to SmsManager.getDefault()")
             }
         } catch (e: Exception) {
-            Log.w(TAG, "Failed to resolve subscription-specific SmsManager: ${e.javaClass.simpleName}: ${e.message}", e)
+            Log.w(TAG, "Failed to resolve subscription-specific SmsManager: ${e.javaClass.simpleName}")
         }
         return SmsManager.getDefault()
+    }
+
+    /** Block 3: logs carry only the last two digits of a destination number. */
+    private fun maskNumber(number: String): String {
+        val digits = number.filter { it.isDigit() }
+        return if (digits.length >= 2) "***" + digits.takeLast(2) else "***"
     }
 
     private fun sendSmsNow(phoneNumber: String, message: String, result: MethodChannel.Result) {
@@ -124,14 +130,15 @@ class DirectSmsChannelHandler(
                 null,
                 null
             )
-            Log.i(TAG, "SMS handed to radio for $phoneNumber (${parts.size} part(s))")
+            Log.i(TAG, "SMS handed to radio for ${maskNumber(phoneNumber)} (${parts.size} part(s))")
             result.success(true)
         } catch (e: Exception) {
             // e.message can be null for some SecurityExceptions on MIUI
             // (the OEM-level "Other permissions" block) -- log the full
             // exception class + toString so the real cause is visible
             // even when .message is empty.
-            Log.e(TAG, "SMS send FAILED for $phoneNumber: ${e.javaClass.name}: $e", e)
+            // Block 3: exception text (and stack) can echo the destination number -- log only the class.
+            Log.e(TAG, "SMS send FAILED for ${maskNumber(phoneNumber)}: ${e.javaClass.name}")
             result.error("SEND_FAILED", "${e.javaClass.simpleName}: ${e.message ?: e.toString()}", null)
         }
     }

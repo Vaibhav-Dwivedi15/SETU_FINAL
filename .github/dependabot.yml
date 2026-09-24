@@ -1,0 +1,17 @@
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule: {interval: weekly}
+  - package-ecosystem: pub
+    directory: "/setu_app"
+    schedule: {interval: weekly}
+  - package-ecosystem: gradle
+    directory: "/setu_app/android"
+    schedule: {interval: weekly}
+  - package-ecosystem: npm
+    directory: "/setu_dashboard"
+    schedule: {interval: weekly}
+  - package-ecosystem: pip
+    directory: "/Backend"
+    schedule: {interval: weekly}

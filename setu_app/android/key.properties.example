@@ -7,10 +7,10 @@
 #     -keysize 2048 -validity 10000 -alias setu
 #
 # NEVER commit android/key.properties or the .keystore/.jks file it
-# points at. If this file is missing, app/build.gradle.kts falls back
-# to debug signing and prints a build-time warning -- see that file's
-# own comment for why that fallback exists and why it must not be used
-# for a real release.
+# points at. Block 3: if signing is not configured (this file, or the
+# SETU_RELEASE_STORE_FILE / _STORE_PASSWORD / _KEY_ALIAS / _KEY_PASSWORD
+# environment variables), `flutter build apk --release` FAILS with a clear
+# message. There is no debug-key fallback any more.
 
 storePassword=REPLACE_ME
 keyPassword=REPLACE_ME
