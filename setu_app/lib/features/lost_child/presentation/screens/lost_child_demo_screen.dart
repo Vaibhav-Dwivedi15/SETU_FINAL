@@ -1,15 +1,16 @@
 // =====================================================
 // SETU Project
-// Module : Lost Child Alert (UI-only)
-// Owner  : Sudheer
+// Module : Lost Child Alert (Redesign)
 // =====================================================
-//
-// Temporary demo/preview screen, same purpose as
-// community_demo_screen.dart — safe to delete or fold
-// elsewhere once real trigger points exist.
 
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
+
+import 'package:setu_app/core/design_system/app_colors.dart';
+import 'package:setu_app/core/design_system/app_radius.dart';
+import 'package:setu_app/core/design_system/app_spacing.dart';
+import 'package:setu_app/core/design_system/app_typography.dart';
+import 'package:setu_app/core/design_system/widgets/design_system_widgets.dart';
 
 import '../../data/models/lost_child_alert_model.dart';
 import '../widgets/lost_child_alert_card.dart';
@@ -34,7 +35,7 @@ class LostChildDemoScreen extends StatelessWidget {
         onSighted: () {
           Navigator.pop(context);
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Marked as sighted (stub)')),
+            const SnackBar(content: Text('Marked as sighted (Demo stub)')),
           );
         },
         onNotSeen: () => Navigator.pop(context),
@@ -44,31 +45,81 @@ class LostChildDemoScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+
     return Scaffold(
-      appBar: AppBar(title: const Text('Lost Child Alert (Demo)')),
-      body: Padding(
-        padding: const EdgeInsets.all(20),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            const Text(
-              'Preview only — broadcast is not actually sent yet '
-              '(needs a new mesh packet type, Phase 2).',
-              style: TextStyle(color: Colors.grey),
-            ),
-            const SizedBox(height: 24),
-            ElevatedButton.icon(
-              icon: const Icon(Icons.campaign),
-              label: const Text('Compose Lost Child Alert'),
-              onPressed: () => context.push('/lost-child/broadcast'),
-            ),
-            const SizedBox(height: 12),
-            ElevatedButton.icon(
-              icon: const Icon(Icons.visibility),
-              label: const Text('Preview Volunteer Alert Card'),
-              onPressed: () => _previewVolunteerCard(context),
-            ),
-          ],
+      backgroundColor: isDark ? AppColors.bgApp : AppColors.lightBackground,
+      appBar: AppBar(
+        title: const Text('Lost Child Mesh Broadcast'),
+        centerTitle: true,
+      ),
+      body: SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.all(AppSpacing.lg),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              SetuCard(
+                padding: const EdgeInsets.all(AppSpacing.md),
+                backgroundColor: isDark ? AppColors.bgSurfaceAlt : AppColors.lightSurface,
+                accentBorderLeft: AppColors.accent,
+                child: Row(
+                  children: [
+                    Container(
+                      width: 40,
+                      height: 40,
+                      decoration: BoxDecoration(
+                        color: AppColors.accent.withValues(alpha: 0.14),
+                        borderRadius: AppRadius.smRadius,
+                      ),
+                      child: const Icon(Icons.campaign_rounded, color: AppColors.accent, size: 22),
+                    ),
+                    const SizedBox(width: AppSpacing.md),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'High-Priority Mesh Broadcast',
+                            style: AppTypography.cardTitle.copyWith(
+                              color: isDark ? AppColors.textPrimary : AppColors.lightTextPrimary,
+                            ),
+                          ),
+                          const SizedBox(height: 2),
+                          Text(
+                            'Enables rapid local dissemination of missing child physical descriptors to nearby volunteers.',
+                            style: AppTypography.caption.copyWith(
+                              color: isDark ? AppColors.textSecondary : AppColors.lightTextSecondary,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+
+              const SizedBox(height: AppSpacing.xl),
+
+              SetuButton(
+                label: 'COMPOSE CHILD ALERT',
+                icon: Icons.campaign_rounded,
+                onPressed: () => context.push('/lost-child/broadcast'),
+                variant: SetuButtonVariant.primary,
+                size: SetuButtonSize.lg,
+              ),
+
+              const SizedBox(height: AppSpacing.md),
+
+              SetuButton(
+                label: 'PREVIEW VOLUNTEER ALERT CARD',
+                icon: Icons.visibility_rounded,
+                onPressed: () => _previewVolunteerCard(context),
+                variant: SetuButtonVariant.secondary,
+                size: SetuButtonSize.lg,
+              ),
+            ],
+          ),
         ),
       ),
     );

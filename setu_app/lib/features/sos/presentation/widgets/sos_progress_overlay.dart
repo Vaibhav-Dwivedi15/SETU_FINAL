@@ -1,72 +1,73 @@
 // =====================================================
 // SETU Project
-// Module : SOS Progress Overlay
+// Module : SOS Progress Overlay (Emergency-First Redesign)
 // =====================================================
-//
-// Aug 5 2026: built to satisfy the product vision's explicit request
-// for a "beautiful reassuring animation" during SOS transmission.
-// Listens to SosRepository.progressStream. Purely a display layer --
-// does NOT change what triggerSOS() actually does, only what the user
-// sees while it happens.
-//
-// Aug 5 2026 update: added SosProgress.backendConfirmed (new state
-// from the online-path awaited-upload fix in sos_repository.dart) --
-// every enum value MUST have an entry here or the map lookup below
-// throws a null-check error the first time that state fires.
 
 import 'package:flutter/material.dart';
 
 import 'package:setu_app/core/design_system/app_colors.dart';
+import 'package:setu_app/core/design_system/app_radius.dart';
 import 'package:setu_app/core/design_system/app_spacing.dart';
 import 'package:setu_app/core/design_system/app_typography.dart';
 import 'package:setu_app/features/sos/data/repositories/sos_repository.dart';
 
 class _ProgressStep {
   final IconData icon;
-  final String message;
-  const _ProgressStep(this.icon, this.message);
+  final String title;
+  final String details;
+  const _ProgressStep(this.icon, this.title, this.details);
 }
 
 const _stepsByProgress = <SosProgress, _ProgressStep>{
   SosProgress.checkingNetwork: _ProgressStep(
     Icons.wifi_find_rounded,
-    'Checking connection...',
+    'Checking Connection...',
+    'Assessing internet and cellular availability.',
   ),
   SosProgress.networkUnavailable: _ProgressStep(
     Icons.signal_wifi_off_rounded,
-    'Network unavailable.',
+    'No Internet Connection',
+    'Switching to offline mesh relay. Keep SETU open.',
   ),
   SosProgress.activatingMesh: _ProgressStep(
     Icons.hub_rounded,
     'Activating SETU Mesh...',
+    'Broadcasting over Bluetooth Low Energy & Wi-Fi Aware.',
   ),
   SosProgress.searchingRelayDevices: _ProgressStep(
     Icons.radar_rounded,
-    'Searching nearby relay devices...',
+    'Searching Nearby Devices...',
+    'Looking for neighboring SETU phones to relay packet.',
   ),
   SosProgress.forwarding: _ProgressStep(
     Icons.send_rounded,
-    'Your emergency message is being forwarded.',
+    'Relaying Emergency Signal...',
+    'Your distress packet is being carried hop-by-hop.',
   ),
   SosProgress.onlineSending: _ProgressStep(
     Icons.wifi_rounded,
-    'Connected — sending your alert...',
+    'Transmitting Alert...',
+    'Sending distress beacon directly to response center.',
   ),
   SosProgress.backendConfirmed: _ProgressStep(
     Icons.cloud_done_rounded,
-    'Backend confirmed — help is being notified.',
+    'Alert Confirmed',
+    'Response operations has registered your distress beacon.',
   ),
   SosProgress.notifyingContacts: _ProgressStep(
     Icons.contact_phone_rounded,
-    'Notifying your emergency contacts...',
+    'Notifying Emergency Contacts...',
+    'Sending emergency SMS with Google Maps location.',
   ),
   SosProgress.delivered: _ProgressStep(
     Icons.check_circle_rounded,
-    'Help is on the way.',
+    'Help is On the Way',
+    'Emergency alert successfully delivered to responders.',
   ),
   SosProgress.failed: _ProgressStep(
     Icons.error_outline_rounded,
-    'Something went wrong.',
+    'Transmission Issue',
+    'Ensure Bluetooth and Location permissions are enabled.',
   ),
 };
 
@@ -87,7 +88,7 @@ class _SosProgressOverlayState extends State<SosProgressOverlay>
     super.initState();
     _pulseController = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 1400),
+      duration: const Duration(milliseconds: 1600),
     )..repeat(reverse: true);
 
     SosRepository.progressStream.listen((progress) {
@@ -107,56 +108,104 @@ class _SosProgressOverlayState extends State<SosProgressOverlay>
     final step = _stepsByProgress[_current]!;
     final isFailed = _current == SosProgress.failed;
     final isDelivered = _current == SosProgress.delivered;
+    final disableAnimations = MediaQuery.disableAnimationsOf(context);
+
     final iconColor = isFailed
         ? AppColors.emergency
-        : (isDelivered ? AppColors.success : AppColors.primary);
+        : (isDelivered ? AppColors.success : AppColors.accent);
 
     return PopScope(
       canPop: false,
       child: Scaffold(
-        backgroundColor: Theme.of(context).scaffoldBackgroundColor,
+        backgroundColor: AppColors.bgApp,
         body: SafeArea(
           child: Center(
             child: Padding(
-              padding: const EdgeInsets.all(AppSpacing.lg),
+              padding: const EdgeInsets.all(AppSpacing.xl),
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
                   AnimatedBuilder(
                     animation: _pulseController,
                     builder: (context, child) {
-                      final animate = !isFailed && !isDelivered;
-                      final scale = animate ? 1 + (_pulseController.value * 0.15) : 1.0;
+                      final animate = !isFailed && !isDelivered && !disableAnimations;
+                      final scale = animate ? 1.0 + (_pulseController.value * 0.12) : 1.0;
                       return Transform.scale(scale: scale, child: child);
                     },
                     child: Container(
-                      width: 96,
-                      height: 96,
+                      width: 108,
+                      height: 108,
                       decoration: BoxDecoration(
-                        color: iconColor.withValues(alpha: 0.12),
+                        color: iconColor.withValues(alpha: 0.14),
                         shape: BoxShape.circle,
+                        border: Border.all(
+                          color: iconColor.withValues(alpha: 0.35),
+                          width: 2,
+                        ),
                       ),
-                      child: Icon(step.icon, size: 48, color: iconColor),
+                      child: Icon(step.icon, size: 52, color: iconColor),
                     ),
                   ),
-                  const SizedBox(height: AppSpacing.xl),
+
+                  const SizedBox(height: AppSpacing.xxl),
+
                   AnimatedSwitcher(
-                    duration: const Duration(milliseconds: 350),
-                    child: Text(
-                      step.message,
+                    duration: const Duration(milliseconds: 300),
+                    child: Column(
                       key: ValueKey(_current),
-                      style: AppTypography.headline,
-                      textAlign: TextAlign.center,
+                      children: [
+                        Text(
+                          step.title,
+                          style: AppTypography.headline.copyWith(
+                            color: AppColors.textPrimary,
+                          ),
+                          textAlign: TextAlign.center,
+                        ),
+                        const SizedBox(height: AppSpacing.sm),
+                        ConstrainedBox(
+                          constraints: const BoxConstraints(maxWidth: 320),
+                          child: Text(
+                            step.details,
+                            style: AppTypography.body.copyWith(
+                              color: AppColors.textSecondary,
+                            ),
+                            textAlign: TextAlign.center,
+                          ),
+                        ),
+                      ],
                     ),
                   ),
-                  const SizedBox(height: AppSpacing.sm),
+
+                  const SizedBox(height: AppSpacing.xl),
+
                   if (!isFailed && !isDelivered)
-                    Text(
-                      'Please keep the app open.',
-                      style: AppTypography.caption.copyWith(
-                        color: Theme.of(context).textTheme.bodySmall?.color,
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                      decoration: BoxDecoration(
+                        color: AppColors.bgSurface,
+                        borderRadius: AppRadius.pillRadius,
+                        border: Border.all(color: AppColors.borderSubtle, width: 1),
                       ),
-                      textAlign: TextAlign.center,
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const SizedBox(
+                            width: 12,
+                            height: 12,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              valueColor: AlwaysStoppedAnimation<Color>(AppColors.accent),
+                            ),
+                          ),
+                          const SizedBox(width: 10),
+                          Text(
+                            'Keep app open — mesh relay active',
+                            style: AppTypography.caption.copyWith(
+                              color: AppColors.textDim,
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
                 ],
               ),

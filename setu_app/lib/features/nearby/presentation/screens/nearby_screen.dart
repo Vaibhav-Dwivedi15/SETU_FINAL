@@ -1,6 +1,16 @@
-import 'package:flutter/material.dart';
+// =====================================================
+// SETU Project
+// Module : Nearby Alerts Screen (Redesign)
+// =====================================================
 
-import 'package:setu_app/core/constants/app_colors.dart';
+import 'package:flutter/material.dart';
+import 'package:url_launcher/url_launcher.dart';
+
+import 'package:setu_app/core/design_system/app_colors.dart';
+import 'package:setu_app/core/design_system/app_radius.dart';
+import 'package:setu_app/core/design_system/app_spacing.dart';
+import 'package:setu_app/core/design_system/app_typography.dart';
+import 'package:setu_app/core/design_system/widgets/design_system_widgets.dart';
 
 import '../../data/models/nearby_alert_model.dart';
 import '../../data/repositories/nearby_repository.dart';
@@ -14,8 +24,8 @@ class NearbyScreen extends StatefulWidget {
 
 class _NearbyScreenState extends State<NearbyScreen> {
   final NearbyRepository repository = NearbyRepository();
-
   List<NearbyAlertModel> alerts = [];
+  bool _loading = true;
 
   @override
   void initState() {
@@ -24,97 +34,172 @@ class _NearbyScreenState extends State<NearbyScreen> {
   }
 
   Future<void> loadAlerts() async {
-    // Aug 5 2026: this list now genuinely includes real incoming
-    // AlertPackets from other nearby SETU devices, not just this
-    // device's own local public-SOS copy -- see MeshLocator's alert
-    // listener, which writes real incoming alerts into the same
-    // NearbyRepository this screen already reads from. Pull-to-refresh
-    // (below) is how a newly-arrived alert becomes visible if one
-    // comes in while this screen is already open -- same honestly-
-    // scoped choice as history_screen.dart's refresh pattern.
+    setState(() => _loading = true);
     alerts = await repository.getAlerts();
-
     if (!mounted) return;
-
-    setState(() {});
+    setState(() => _loading = false);
   }
 
-  Widget _buildEmptyState() {
-    return ListView(
-      children: const [
-        SizedBox(height: 120),
-        Icon(Icons.people_alt_outlined, size: 90, color: Colors.grey),
-        SizedBox(height: 20),
-        Center(
-          child: Text(
-            "No Nearby Alerts",
-            style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
-          ),
-        ),
-        SizedBox(height: 12),
-        Center(
-          child: Padding(
-            padding: EdgeInsets.symmetric(horizontal: 40),
-            child: Text(
-              "Public SOS alerts broadcast nearby will appear here.",
-              textAlign: TextAlign.center,
-              style: TextStyle(color: Colors.grey),
-            ),
-          ),
-        ),
-      ],
-    );
+  Future<void> _openMap(double lat, double lng) async {
+    final uri = Uri.parse("https://maps.google.com/?q=$lat,$lng");
+    if (await canLaunchUrl(uri)) {
+      await launchUrl(uri, mode: LaunchMode.externalApplication);
+    }
   }
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(title: const Text("Nearby Alerts")),
-      body: RefreshIndicator(
-        onRefresh: loadAlerts,
-        child: alerts.isEmpty
-            ? _buildEmptyState()
-            : ListView.builder(
-                padding: const EdgeInsets.all(12),
-                itemCount: alerts.length,
-                itemBuilder: (context, index) {
-                  final alert = alerts[index];
-                  final hasIncidentType = alert.incidentType.isNotEmpty;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
 
-                  return Card(
-                    margin: const EdgeInsets.only(bottom: 12),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(16),
-                    ),
-                    child: ListTile(
-                      contentPadding: const EdgeInsets.all(12),
-                      leading: Container(
-                        height: 46,
-                        width: 46,
-                        decoration: const BoxDecoration(
-                          gradient: AppColors.primaryGradient,
-                          shape: BoxShape.circle,
-                        ),
-                        child: const Icon(
-                          Icons.warning_amber_rounded,
-                          color: Colors.white,
-                        ),
+    return Scaffold(
+      backgroundColor: isDark ? AppColors.bgApp : AppColors.lightBackground,
+      appBar: AppBar(
+        title: const Text("Nearby Mesh Broadcasts"),
+        centerTitle: true,
+      ),
+      body: SafeArea(
+        child: RefreshIndicator(
+          onRefresh: loadAlerts,
+          child: _loading
+              ? const Center(child: CircularProgressIndicator())
+              : alerts.isEmpty
+                  ? const SetuEmptyState(
+                      icon: Icons.cell_tower_rounded,
+                      title: "No Nearby Distress Signals",
+                      description:
+                          "When nearby citizens broadcast public SOS alerts via Bluetooth or Wi-Fi mesh, they will be captured and displayed here in real time.",
+                    )
+                  : ListView.builder(
+                      physics: const AlwaysScrollableScrollPhysics(
+                        parent: BouncingScrollPhysics(),
                       ),
-                      title: Text(
-                        hasIncidentType
+                      padding: const EdgeInsets.all(AppSpacing.lg),
+                      itemCount: alerts.length,
+                      itemBuilder: (context, index) {
+                        final alert = alerts[index];
+                        final hasIncidentType = alert.incidentType.isNotEmpty;
+                        final title = hasIncidentType
                             ? alert.incidentType.toUpperCase()
-                            : alert.alertMode.name.toUpperCase(),
-                        style: const TextStyle(fontWeight: FontWeight.bold),
-                      ),
-                      subtitle: Text(
-                        "Lat: ${alert.latitude}\nLng: ${alert.longitude}",
-                      ),
-                      isThreeLine: true,
-                      trailing: const Icon(Icons.arrow_forward_ios, size: 16),
+                            : "${alert.alertMode.name.toUpperCase()} SOS";
+
+                        return Padding(
+                          padding: const EdgeInsets.only(bottom: AppSpacing.sm),
+                          child: SetuCard(
+                            padding: const EdgeInsets.all(AppSpacing.md),
+                            accentBorderLeft: AppColors.emergency,
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Row(
+                                  children: [
+                                    Container(
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 8,
+                                        vertical: 3,
+                                      ),
+                                      decoration: BoxDecoration(
+                                        color: AppColors.emergency
+                                            .withValues(alpha: 0.15),
+                                        borderRadius: AppRadius.pillRadius,
+                                        border: Border.all(
+                                          color: AppColors.emergency
+                                              .withValues(alpha: 0.4),
+                                        ),
+                                      ),
+                                      child: Row(
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: [
+                                          const Icon(
+                                            Icons.warning_rounded,
+                                            size: 12,
+                                            color: AppColors.emergency,
+                                          ),
+                                          const SizedBox(width: 4),
+                                          Text(
+                                            title,
+                                            style: AppTypography.metadata.copyWith(
+                                              color: AppColors.emergency,
+                                              fontWeight: FontWeight.bold,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                    const Spacer(),
+                                    Text(
+                                      "MESH BROADCAST",
+                                      style: AppTypography.metadata.copyWith(
+                                        color: isDark
+                                            ? AppColors.textDim
+                                            : AppColors.lightTextDim,
+                                        fontSize: 10,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+
+                                const SizedBox(height: AppSpacing.sm),
+
+                                Row(
+                                  children: [
+                                    Icon(
+                                      Icons.location_on_outlined,
+                                      size: 16,
+                                      color: isDark
+                                          ? AppColors.textDim
+                                          : AppColors.lightTextDim,
+                                    ),
+                                    const SizedBox(width: 6),
+                                    Expanded(
+                                      child: Text(
+                                        "Coordinates: ${alert.latitude.toStringAsFixed(4)}, ${alert.longitude.toStringAsFixed(4)}",
+                                        style: AppTypography.caption.copyWith(
+                                          color: isDark
+                                              ? AppColors.textSecondary
+                                              : AppColors.lightTextSecondary,
+                                        ),
+                                      ),
+                                    ),
+                                    InkWell(
+                                      onTap: () => _openMap(
+                                        alert.latitude,
+                                        alert.longitude,
+                                      ),
+                                      borderRadius: AppRadius.smRadius,
+                                      child: Padding(
+                                        padding: const EdgeInsets.symmetric(
+                                          horizontal: 6,
+                                          vertical: 2,
+                                        ),
+                                        child: Row(
+                                          mainAxisSize: MainAxisSize.min,
+                                          children: [
+                                            Text(
+                                              "View Location",
+                                              style: AppTypography.metadata.copyWith(
+                                                color: AppColors.accent,
+                                                fontWeight: FontWeight.bold,
+                                              ),
+                                            ),
+                                            const SizedBox(width: 2),
+                                            const Icon(
+                                              Icons.open_in_new_rounded,
+                                              size: 13,
+                                              color: AppColors.accent,
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ],
+                            ),
+                          ),
+                        );
+                      },
                     ),
-                  );
-                },
-              ),
+        ),
       ),
     );
   }

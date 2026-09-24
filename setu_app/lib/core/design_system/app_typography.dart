@@ -79,6 +79,37 @@ class AppTypography {
     height: 1.3,
   );
 
+  static const TextStyle sectionTitle = TextStyle(
+    fontSize: 12,
+    fontWeight: FontWeight.w700,
+    letterSpacing: 0.8,
+    height: 1.3,
+  );
+
+  static const TextStyle cardTitle = TextStyle(
+    fontSize: 15,
+    fontWeight: FontWeight.w600,
+    height: 1.35,
+  );
+
+  static const TextStyle metadata = TextStyle(
+    fontSize: 11,
+    fontWeight: FontWeight.w600,
+    letterSpacing: 0.6,
+    height: 1.3,
+  );
+
+  static const TextStyle supporting = TextStyle(
+    fontSize: 13,
+    fontWeight: FontWeight.normal,
+    height: 1.45,
+  );
+
+  static TextStyle get mono => GoogleFonts.jetBrainsMono(
+        fontSize: 13,
+        fontWeight: FontWeight.w500,
+      );
+
   /// The one exception to "everything from the scale" — the
   /// SOS button's own label is deliberately larger/bolder than
   /// anything else in the app, since it's the app's identity

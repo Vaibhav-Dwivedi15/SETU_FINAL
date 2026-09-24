@@ -32,6 +32,10 @@ class EmergencyCategorySelector extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
+    final selectedBg = isDark ? AppColors.accent : AppColors.primary;
+    final unselectedBg = isDark ? AppColors.bgSurfaceAlt : AppColors.lightBackground;
+    final unselectedBorder = isDark ? AppColors.borderSubtle : AppColors.lightBorder;
+    final unselectedText = isDark ? AppColors.textPrimary : AppColors.lightTextPrimary;
 
     return Wrap(
       spacing: AppSpacing.sm,
@@ -42,21 +46,27 @@ class EmergencyCategorySelector extends StatelessWidget {
         return ChoiceChip(
           selected: isSelected,
           onSelected: (_) => onChanged(category),
-          shape: RoundedRectangleBorder(borderRadius: AppRadius.pillRadius),
+          shape: RoundedRectangleBorder(
+            borderRadius: AppRadius.pillRadius,
+            side: BorderSide(
+              color: isSelected ? Colors.transparent : unselectedBorder,
+              width: 1,
+            ),
+          ),
           avatar: Icon(
             category.icon,
             size: 18,
-            color: isSelected ? Colors.white : AppColors.primary,
+            color: isSelected ? (isDark ? AppColors.bgApp : Colors.white) : AppColors.accent,
           ),
           label: Text(category.title),
-          selectedColor: AppColors.primary,
-          labelStyle: AppTypography.body.copyWith(
+          selectedColor: selectedBg,
+          labelStyle: AppTypography.bodyStrong.copyWith(
+            fontSize: 13.5,
             color: isSelected
-                ? Colors.white
-                : theme.textTheme.bodyLarge?.color,
-            fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                ? (isDark ? AppColors.bgApp : Colors.white)
+                : unselectedText,
           ),
-          backgroundColor: isDark ? Colors.white10 : AppColors.neutral100,
+          backgroundColor: unselectedBg,
         );
       }).toList(),
     );

@@ -1,17 +1,18 @@
-// Aug 6 2026: deleteContact() and openAddContact()'s post-navigation
-// reload now both trigger a fire-and-forget backend profile sync (see
-// profile_sync_service.dart) -- contacts are exactly the data the
-// backend's emergency-contact SMS notification needs, so any time the
-// local list changes, the backend's copy should be refreshed too.
-// POST /register upserts now (Aug 6 2026 backend fix), so calling this
-// on every contact change is safe and idempotent.
+// =====================================================
+// SETU Project
+// Module : Contacts Screen (Redesign)
+// =====================================================
 
 import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
-import 'package:setu_app/core/constants/app_colors.dart';
+import 'package:setu_app/core/design_system/app_colors.dart';
+import 'package:setu_app/core/design_system/app_radius.dart';
+import 'package:setu_app/core/design_system/app_spacing.dart';
+import 'package:setu_app/core/design_system/app_typography.dart';
+import 'package:setu_app/core/design_system/widgets/design_system_widgets.dart';
 import 'package:setu_app/core/services/profile_sync_service.dart';
 
 import '../../data/models/contact_model.dart';
@@ -29,6 +30,7 @@ class _ContactsScreenState extends State<ContactsScreen> {
   final ProfileSyncService _profileSyncService = ProfileSyncService();
 
   List<ContactModel> contacts = [];
+  bool _isLoading = true;
 
   @override
   void initState() {
@@ -37,14 +39,37 @@ class _ContactsScreenState extends State<ContactsScreen> {
   }
 
   Future<void> loadContacts() async {
-    contacts = await _repository.getContacts();
-
+    final list = await _repository.getContacts();
     if (mounted) {
-      setState(() {});
+      setState(() {
+        contacts = list;
+        _isLoading = false;
+      });
     }
   }
 
   Future<void> deleteContact(int index) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text("Delete Contact"),
+        content: Text("Remove ${contacts[index].name} from emergency broadcast list?"),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text("Cancel"),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(backgroundColor: AppColors.emergency),
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text("Delete"),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true) return;
+
     await _repository.deleteContact(index);
     await loadContacts();
 
@@ -68,8 +93,8 @@ class _ContactsScreenState extends State<ContactsScreen> {
         builder: (_) => AlertDialog(
           title: const Text("Maximum Limit Reached"),
           content: const Text(
-            "You can add only 5 emergency contacts.\n\n"
-            "Please delete an existing contact before adding a new one.",
+            "You can configure up to 5 emergency contacts.\n\n"
+            "Please remove an existing contact before adding a new one.",
           ),
           actions: [
             TextButton(
@@ -83,92 +108,168 @@ class _ContactsScreenState extends State<ContactsScreen> {
     }
 
     await context.push('/add-contact');
-
     await loadContacts();
-    // Covers the case where AddContactScreen itself doesn't sync (it
-    // does too, see add_contact_screen.dart -- this is a harmless
-    // redundant sync on return, not the only place it happens).
     unawaited(_profileSyncService.syncToBackend());
-  }
-
-  Widget _buildEmptyState() {
-    return ListView(
-      children: [
-        const SizedBox(height: 120),
-        const Icon(Icons.contacts_outlined, size: 90, color: Colors.grey),
-        const SizedBox(height: 20),
-        const Center(
-          child: Text(
-            "No Emergency Contacts",
-            style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
-          ),
-        ),
-        const SizedBox(height: 12),
-        Center(
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 40),
-            child: Text(
-              "Add up to 5 contacts who'll be notified the moment you "
-              "send an SOS.",
-              textAlign: TextAlign.center,
-              style: TextStyle(
-                color: Theme.of(context).textTheme.bodySmall?.color,
-              ),
-            ),
-          ),
-        ),
-      ],
-    );
   }
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(title: const Text("Emergency Contacts")),
-      body: contacts.isEmpty
-          ? _buildEmptyState()
-          : ListView.builder(
-              padding: const EdgeInsets.only(top: 8),
-              itemCount: contacts.length,
-              itemBuilder: (context, index) {
-                final contact = contacts[index];
+    final isDark = Theme.of(context).brightness == Brightness.dark;
 
-                return Card(
-                  margin: const EdgeInsets.symmetric(
-                    horizontal: 16,
-                    vertical: 8,
-                  ),
-                  child: ListTile(
-                    leading: Container(
-                      height: 44,
-                      width: 44,
-                      decoration: const BoxDecoration(
-                        gradient: AppColors.primaryGradient,
-                        shape: BoxShape.circle,
-                      ),
-                      child: const Icon(
-                        Icons.person,
-                        color: Colors.white,
-                        size: 22,
-                      ),
-                    ),
-                    title: Text(
-                      contact.name,
-                      style: const TextStyle(fontWeight: FontWeight.w600),
-                    ),
-                    subtitle: Text(contact.phone),
-                    trailing: IconButton(
-                      icon: const Icon(Icons.delete, color: Colors.red),
-                      onPressed: () => deleteContact(index),
-                    ),
-                  ),
-                );
-              },
-            ),
+    return Scaffold(
+      backgroundColor: isDark ? AppColors.bgApp : AppColors.lightBackground,
+      appBar: AppBar(
+        title: const Text("Emergency Contacts"),
+        centerTitle: true,
+      ),
       floatingActionButton: FloatingActionButton.extended(
         onPressed: openAddContact,
-        icon: const Icon(Icons.add),
-        label: const Text("Add"),
+        icon: const Icon(Icons.person_add_rounded),
+        label: const Text("Add Contact"),
+        backgroundColor: isDark ? AppColors.accent : AppColors.primary,
+        foregroundColor: isDark ? AppColors.bgApp : Colors.white,
+      ),
+      body: SafeArea(
+        child: _isLoading
+            ? const Center(child: CircularProgressIndicator())
+            : contacts.isEmpty
+                ? SetuEmptyState(
+                    icon: Icons.contacts_outlined,
+                    title: "No Emergency Contacts",
+                    description:
+                        "Add up to 5 trusted contacts who will immediately receive SMS notifications with your live GPS location when you fire SOS.",
+                    actionLabel: "Add Contact Now",
+                    onAction: openAddContact,
+                  )
+                : ListView(
+                    padding: const EdgeInsets.all(AppSpacing.lg),
+                    children: [
+                      // Information banner
+                      SetuCard(
+                        padding: const EdgeInsets.all(AppSpacing.md),
+                        backgroundColor: isDark ? AppColors.bgSurfaceAlt : AppColors.lightSurface,
+                        accentBorderLeft: AppColors.accent,
+                        child: Row(
+                          children: [
+                            Container(
+                              width: 38,
+                              height: 38,
+                              decoration: BoxDecoration(
+                                color: AppColors.accent.withValues(alpha: 0.14),
+                                borderRadius: AppRadius.smRadius,
+                              ),
+                              child: const Icon(Icons.shield_outlined, color: AppColors.accent, size: 20),
+                            ),
+                            const SizedBox(width: AppSpacing.md),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Row(
+                                    children: [
+                                      Text(
+                                        "Automated SMS Broadcast",
+                                        style: AppTypography.cardTitle.copyWith(
+                                          color: isDark ? AppColors.textPrimary : AppColors.lightTextPrimary,
+                                        ),
+                                      ),
+                                      const Spacer(),
+                                      Text(
+                                        "${contacts.length} / 5",
+                                        style: AppTypography.metadata.copyWith(
+                                          color: AppColors.accent,
+                                          fontWeight: FontWeight.bold,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                  const SizedBox(height: 2),
+                                  Text(
+                                    "When SOS is fired, encrypted packets and SMS alerts are dispatched to this list.",
+                                    style: AppTypography.caption.copyWith(
+                                      color: isDark ? AppColors.textSecondary : AppColors.lightTextSecondary,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+
+                      const SizedBox(height: AppSpacing.lg),
+
+                      const SetuSectionHeader(
+                        title: "Configured Contacts",
+                        subtitle: "Notified on private and public SOS",
+                        padding: EdgeInsets.only(bottom: AppSpacing.sm),
+                      ),
+
+                      ...contacts.asMap().entries.map((entry) {
+                        final index = entry.key;
+                        final contact = entry.value;
+
+                        return Padding(
+                          padding: const EdgeInsets.only(bottom: AppSpacing.xs),
+                          child: SetuCard(
+                            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                            child: Row(
+                              children: [
+                                Container(
+                                  width: 40,
+                                  height: 40,
+                                  decoration: BoxDecoration(
+                                    color: isDark ? AppColors.bgInput : AppColors.lightBackground,
+                                    shape: BoxShape.circle,
+                                    border: Border.all(
+                                      color: isDark ? AppColors.borderSubtle : AppColors.lightBorder,
+                                    ),
+                                  ),
+                                  child: const Icon(
+                                    Icons.person_rounded,
+                                    size: 20,
+                                    color: AppColors.accent,
+                                  ),
+                                ),
+                                const SizedBox(width: AppSpacing.md),
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        contact.name,
+                                        style: AppTypography.cardTitle.copyWith(
+                                          color: isDark ? AppColors.textPrimary : AppColors.lightTextPrimary,
+                                          fontSize: 14.5,
+                                        ),
+                                      ),
+                                      const SizedBox(height: 1),
+                                      Text(
+                                        contact.phone,
+                                        style: AppTypography.caption.copyWith(
+                                          color: isDark ? AppColors.textSecondary : AppColors.lightTextSecondary,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                                IconButton(
+                                  icon: const Icon(
+                                    Icons.delete_outline_rounded,
+                                    color: AppColors.emergency,
+                                    size: 20,
+                                  ),
+                                  tooltip: "Delete Contact",
+                                  onPressed: () => deleteContact(index),
+                                ),
+                              ],
+                            ),
+                          ),
+                        );
+                      }),
+                      const SizedBox(height: 80), // Room for FAB
+                    ],
+                  ),
       ),
     );
   }

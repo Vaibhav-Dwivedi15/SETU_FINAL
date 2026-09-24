@@ -1,13 +1,20 @@
+// =====================================================
+// SETU Project
+// Module : Preparedness Screen (Redesign)
+// =====================================================
+
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
+
+import 'package:setu_app/core/design_system/app_colors.dart';
+import 'package:setu_app/core/design_system/app_radius.dart';
+import 'package:setu_app/core/design_system/app_spacing.dart';
+import 'package:setu_app/core/design_system/app_typography.dart';
+import 'package:setu_app/core/design_system/widgets/design_system_widgets.dart';
 
 import '../../data/models/safety_guide_model.dart';
 import '../../data/services/preparedness_service.dart';
 
-/// BEFORE-disaster hub: offline safety guides + a link to the device
-/// readiness check. Minimal UI on purpose (session brief: functional
-/// engineering over cosmetics) -- plain Material widgets, no new design
-/// system component, list + detail is enough for what this needs to do.
 class PreparednessScreen extends StatefulWidget {
   const PreparednessScreen({super.key});
 
@@ -26,82 +33,268 @@ class _PreparednessScreenState extends State<PreparednessScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+
     return Scaffold(
-      appBar: AppBar(title: const Text('Preparedness')),
-      body: Column(
-        children: [
-          Padding(
-            padding: const EdgeInsets.all(16),
-            child: Card(
-              child: ListTile(
-                leading: const Icon(Icons.checklist_rtl),
-                title: const Text('Device readiness check'),
-                subtitle: const Text('Bluetooth, location, Wi-Fi and mesh status'),
-                trailing: const Icon(Icons.chevron_right),
-                onTap: () => context.push('/preparedness/readiness'),
+      backgroundColor: isDark ? AppColors.bgApp : AppColors.lightBackground,
+      appBar: AppBar(
+        title: const Text('Preparedness Hub'),
+        centerTitle: true,
+      ),
+      bottomNavigationBar: SetuBottomNavigation(
+        currentIndex: 1,
+        onTap: (index) {
+          switch (index) {
+            case 0:
+              context.go('/');
+              break;
+            case 1:
+              // Already here
+              break;
+            case 2:
+              context.push('/recovery');
+              break;
+            case 3:
+              context.push('/history');
+              break;
+          }
+        },
+      ),
+      body: SafeArea(
+        child: ListView(
+          padding: const EdgeInsets.all(AppSpacing.lg),
+          children: [
+            // Readiness Check hero card
+            SetuCard(
+              padding: const EdgeInsets.all(AppSpacing.md),
+              onTap: () => context.push('/preparedness/readiness'),
+              accentBorderLeft: AppColors.accent,
+              child: Row(
+                children: [
+                  Container(
+                    width: 44,
+                    height: 44,
+                    decoration: BoxDecoration(
+                      color: AppColors.accent.withValues(alpha: 0.14),
+                      borderRadius: AppRadius.smRadius,
+                    ),
+                    child: const Icon(
+                      Icons.checklist_rtl_rounded,
+                      color: AppColors.accent,
+                      size: 24,
+                    ),
+                  ),
+                  const SizedBox(width: AppSpacing.md),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            Expanded(
+                              child: Text(
+                                'Device Readiness Check',
+                                style: AppTypography.cardTitle.copyWith(
+                                  color: isDark
+                                      ? AppColors.textPrimary
+                                      : AppColors.lightTextPrimary,
+                                ),
+                              ),
+                            ),
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 6,
+                                vertical: 2,
+                              ),
+                              decoration: BoxDecoration(
+                                color: AppColors.accent.withValues(alpha: 0.15),
+                                borderRadius: AppRadius.pillRadius,
+                              ),
+                              child: Text(
+                                'DIAGNOSTIC',
+                                style: AppTypography.metadata.copyWith(
+                                  color: AppColors.accent,
+                                  fontSize: 9.5,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          'Test Bluetooth, Location, Wi-Fi and Mesh permissions before emergencies occur.',
+                          style: AppTypography.caption.copyWith(
+                            color: isDark
+                                ? AppColors.textSecondary
+                                : AppColors.lightTextSecondary,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(width: AppSpacing.xs),
+                  Icon(
+                    Icons.chevron_right_rounded,
+                    color: isDark ? AppColors.textDim : AppColors.lightTextDim,
+                  ),
+                ],
               ),
             ),
-          ),
-          const Padding(
-            padding: EdgeInsets.symmetric(horizontal: 16),
-            child: Align(
-              alignment: Alignment.centerLeft,
-              child: Text(
-                'Safety guides — work without internet',
-                style: TextStyle(fontWeight: FontWeight.w600),
-              ),
+
+            const SizedBox(height: AppSpacing.lg),
+
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                const SetuSectionHeader(
+                  title: 'Emergency Guides',
+                  subtitle: 'Actionable protocols for offline use',
+                  padding: EdgeInsets.zero,
+                ),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                  decoration: BoxDecoration(
+                    color: AppColors.success.withValues(alpha: 0.12),
+                    borderRadius: AppRadius.pillRadius,
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(Icons.download_done_rounded, size: 12, color: AppColors.success),
+                      const SizedBox(width: 4),
+                      Text(
+                        '100% OFFLINE',
+                        style: AppTypography.metadata.copyWith(
+                          color: AppColors.success,
+                          fontSize: 9.5,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
             ),
-          ),
-          const SizedBox(height: 8),
-          Expanded(
-            child: FutureBuilder<List<SafetyGuideModel>>(
+
+            const SizedBox(height: AppSpacing.sm),
+
+            FutureBuilder<List<SafetyGuideModel>>(
               future: _guides,
               builder: (context, snapshot) {
                 if (snapshot.connectionState != ConnectionState.done) {
-                  return const Center(child: CircularProgressIndicator());
+                  return const Padding(
+                    padding: EdgeInsets.symmetric(vertical: 40),
+                    child: Center(
+                      child: CircularProgressIndicator(),
+                    ),
+                  );
                 }
+
                 final guides = snapshot.data ?? const [];
                 if (guides.isEmpty) {
-                  return const Center(child: Text('Safety guides unavailable on this build.'));
+                  return const Padding(
+                    padding: EdgeInsets.symmetric(vertical: 40),
+                    child: SetuEmptyState(
+                      icon: Icons.menu_book_rounded,
+                      title: 'Guides Unavailable',
+                      description: 'No offline safety guides found on this installation.',
+                    ),
+                  );
                 }
-                return ListView.builder(
-                  itemCount: guides.length,
-                  itemBuilder: (context, index) {
-                    final guide = guides[index];
-                    return ListTile(
-                      leading: _iconFor(guide.id),
-                      title: Text(guide.title),
-                      subtitle: Text(guide.summary),
-                      onTap: () => context.push('/preparedness/guide/${guide.id}'),
+
+                return Column(
+                  children: guides.map((guide) {
+                    final icon = _iconFor(guide.id);
+                    return Padding(
+                      padding: const EdgeInsets.only(bottom: AppSpacing.sm),
+                      child: SetuCard(
+                        padding: const EdgeInsets.all(AppSpacing.md),
+                        onTap: () => context.push('/preparedness/guide/${guide.id}'),
+                        child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Container(
+                              width: 40,
+                              height: 40,
+                              decoration: BoxDecoration(
+                                color: isDark
+                                    ? AppColors.bgSurfaceAlt
+                                    : AppColors.lightBackground,
+                                borderRadius: AppRadius.smRadius,
+                                border: Border.all(
+                                  color: isDark
+                                      ? AppColors.borderSubtle
+                                      : AppColors.lightBorder,
+                                ),
+                              ),
+                              child: Icon(
+                                icon,
+                                size: 20,
+                                color: AppColors.accent,
+                              ),
+                            ),
+                            const SizedBox(width: AppSpacing.md),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    guide.title,
+                                    style: AppTypography.cardTitle.copyWith(
+                                      color: isDark
+                                          ? AppColors.textPrimary
+                                          : AppColors.lightTextPrimary,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 2),
+                                  Text(
+                                    guide.summary,
+                                    style: AppTypography.caption.copyWith(
+                                      color: isDark
+                                          ? AppColors.textSecondary
+                                          : AppColors.lightTextSecondary,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            const SizedBox(width: AppSpacing.xs),
+                            Icon(
+                              Icons.chevron_right_rounded,
+                              color: isDark ? AppColors.textDim : AppColors.lightTextDim,
+                            ),
+                          ],
+                        ),
+                      ),
                     );
-                  },
+                  }).toList(),
                 );
               },
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
 
-  Icon _iconFor(String id) {
+  IconData _iconFor(String id) {
     switch (id) {
       case 'flood':
-        return const Icon(Icons.water);
+        return Icons.water_rounded;
       case 'fire':
-        return const Icon(Icons.local_fire_department);
+        return Icons.local_fire_department_rounded;
       case 'earthquake':
-        return const Icon(Icons.vibration);
+        return Icons.vibration_rounded;
       case 'accident':
-        return const Icon(Icons.emergency);
+        return Icons.emergency_rounded;
       case 'women_safety':
-        return const Icon(Icons.shield);
+        return Icons.shield_rounded;
       case 'child_safety':
-        return const Icon(Icons.child_care);
+        return Icons.child_care_rounded;
       case 'senior_citizen':
-        return const Icon(Icons.elderly);
+        return Icons.elderly_rounded;
       default:
-        return const Icon(Icons.info_outline);
+        return Icons.info_outline_rounded;
     }
   }
 }

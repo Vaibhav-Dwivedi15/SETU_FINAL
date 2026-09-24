@@ -65,6 +65,26 @@ class AppDesignSystem {
       // package can't be const). This was a real compile break the
       // moment app_typography.dart changed -- `const TextTheme(...)`
       // requires every argument to be const.
+      cardTheme: CardThemeData(
+        color: AppColors.lightSurface,
+        elevation: 0,
+        shape: RoundedRectangleBorder(
+          borderRadius: AppRadius.mdRadius,
+          side: const BorderSide(color: AppColors.lightBorder),
+        ),
+        margin: EdgeInsets.zero,
+      ),
+      bottomNavigationBarTheme: const BottomNavigationBarThemeData(
+        backgroundColor: AppColors.lightSurface,
+        selectedItemColor: AppColors.primary,
+        unselectedItemColor: AppColors.lightTextDim,
+        type: BottomNavigationBarType.fixed,
+        elevation: 8,
+      ),
+      snackBarTheme: SnackBarThemeData(
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(borderRadius: AppRadius.smRadius),
+      ),
       textTheme: TextTheme(
         displayLarge: AppTypography.displayLarge,
         headlineMedium: AppTypography.headline,
@@ -82,7 +102,7 @@ class AppDesignSystem {
 
   static ThemeData get darkTheme {
     final colorScheme = ColorScheme.fromSeed(
-      seedColor: AppColors.primaryLight,
+      seedColor: AppColors.accent,
       brightness: Brightness.dark,
     );
 
@@ -103,8 +123,8 @@ class AppDesignSystem {
       ),
       elevatedButtonTheme: ElevatedButtonThemeData(
         style: ElevatedButton.styleFrom(
-          backgroundColor: AppColors.primaryLight,
-          foregroundColor: Colors.white,
+          backgroundColor: AppColors.accent,
+          foregroundColor: AppColors.darkBackground,
           minimumSize: const Size(double.infinity, 52),
           shape: RoundedRectangleBorder(borderRadius: AppRadius.mdRadius),
           textStyle: AppTypography.bodyStrong,
@@ -114,16 +134,50 @@ class AppDesignSystem {
         style: OutlinedButton.styleFrom(
           minimumSize: const Size(double.infinity, 52),
           side: const BorderSide(color: AppColors.darkBorder),
+          foregroundColor: AppColors.darkTextPrimary,
           shape: RoundedRectangleBorder(borderRadius: AppRadius.mdRadius),
           textStyle: AppTypography.bodyStrong,
         ),
       ),
       inputDecorationTheme: InputDecorationTheme(
         filled: true,
-        fillColor: AppColors.darkSurface,
+        fillColor: AppColors.bgInput,
         border: OutlineInputBorder(
           borderRadius: AppRadius.mdRadius,
           borderSide: const BorderSide(color: AppColors.darkBorder),
+        ),
+        enabledBorder: OutlineInputBorder(
+          borderRadius: AppRadius.mdRadius,
+          borderSide: const BorderSide(color: AppColors.darkBorder),
+        ),
+        focusedBorder: OutlineInputBorder(
+          borderRadius: AppRadius.mdRadius,
+          borderSide: const BorderSide(color: AppColors.accent, width: 1.5),
+        ),
+      ),
+      cardTheme: CardThemeData(
+        color: AppColors.darkSurface,
+        elevation: 0,
+        shape: RoundedRectangleBorder(
+          borderRadius: AppRadius.mdRadius,
+          side: const BorderSide(color: AppColors.darkBorder),
+        ),
+        margin: EdgeInsets.zero,
+      ),
+      bottomNavigationBarTheme: const BottomNavigationBarThemeData(
+        backgroundColor: AppColors.bgSidebar,
+        selectedItemColor: AppColors.accent,
+        unselectedItemColor: AppColors.darkTextDim,
+        type: BottomNavigationBarType.fixed,
+        elevation: 0,
+      ),
+      snackBarTheme: SnackBarThemeData(
+        behavior: SnackBarBehavior.floating,
+        backgroundColor: AppColors.darkSurfaceAlt,
+        contentTextStyle: const TextStyle(color: AppColors.darkTextPrimary),
+        shape: RoundedRectangleBorder(
+          borderRadius: AppRadius.smRadius,
+          side: const BorderSide(color: AppColors.darkBorder),
         ),
       ),
       textTheme: TextTheme(

@@ -1,15 +1,18 @@
+// =====================================================
+// SETU Project
+// Module : Relay Status Screen (Redesign)
+// =====================================================
+
 import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
 import 'package:setu_app/core/design_system/app_colors.dart';
-import 'package:setu_app/core/design_system/app_elevation.dart';
 import 'package:setu_app/core/design_system/app_radius.dart';
 import 'package:setu_app/core/design_system/app_spacing.dart';
 import 'package:setu_app/core/design_system/app_typography.dart';
-import 'package:setu_app/core/design_system/widgets/app_button.dart';
-import 'package:setu_app/core/design_system/widgets/status_chip.dart';
+import 'package:setu_app/core/design_system/widgets/design_system_widgets.dart';
 import 'package:setu_app/core/services/connectivity_mesh_controller.dart';
 import 'package:setu_app/features/relay/presentation/widgets/relay_trace_indicator.dart';
 import 'package:setu_app/mesh/services/mesh_metrics.dart';
@@ -50,59 +53,64 @@ class _RelayStatusScreenState extends State<RelayStatusScreen> {
     required String label,
     required int value,
     required String sublabel,
+    required bool isDark,
     Widget? trailing,
   }) {
-    return Container(
-      padding: const EdgeInsets.all(AppSpacing.md),
-      decoration: BoxDecoration(
-        color: Theme.of(context).cardColor,
-        borderRadius: AppRadius.lgRadius,
-        boxShadow: Theme.of(context).brightness == Brightness.dark
-            ? null
-            : AppElevation.level1,
-        border: Theme.of(context).brightness == Brightness.dark
-            ? Border.all(color: Theme.of(context).dividerColor)
-            : null,
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Container(
-                height: 48,
-                width: 48,
-                decoration: BoxDecoration(
-                  color: color.withValues(alpha: 0.12),
-                  borderRadius: AppRadius.mdRadius,
+    return Padding(
+      padding: const EdgeInsets.only(bottom: AppSpacing.sm),
+      child: SetuCard(
+        padding: const EdgeInsets.all(AppSpacing.md),
+        accentBorderLeft: color,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Container(
+                  height: 42,
+                  width: 42,
+                  decoration: BoxDecoration(
+                    color: color.withValues(alpha: 0.12),
+                    borderRadius: AppRadius.smRadius,
+                  ),
+                  child: Icon(icon, color: color, size: 22),
                 ),
-                child: Icon(icon, color: color, size: 24),
-              ),
-              const SizedBox(width: AppSpacing.md),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(label, style: AppTypography.subtitle),
-                    const SizedBox(height: 2),
-                    Text(
-                      sublabel,
-                      style: AppTypography.caption.copyWith(color: AppColors.neutral500),
-                    ),
-                  ],
+                const SizedBox(width: AppSpacing.md),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        label,
+                        style: AppTypography.cardTitle.copyWith(
+                          color: isDark ? AppColors.textPrimary : AppColors.lightTextPrimary,
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        sublabel,
+                        style: AppTypography.caption.copyWith(
+                          color: isDark ? AppColors.textSecondary : AppColors.lightTextSecondary,
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
-              ),
-              Text(
-                '$value',
-                style: AppTypography.headline.copyWith(color: color),
-              ),
+                Text(
+                  '$value',
+                  style: AppTypography.headline.copyWith(
+                    color: color,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ],
+            ),
+            if (trailing != null) ...[
+              const SizedBox(height: AppSpacing.sm),
+              trailing,
             ],
-          ),
-          if (trailing != null) ...[
-            const SizedBox(height: AppSpacing.sm),
-            trailing,
           ],
-        ],
+        ),
       ),
     );
   }
@@ -110,122 +118,132 @@ class _RelayStatusScreenState extends State<RelayStatusScreen> {
   @override
   Widget build(BuildContext context) {
     final metrics = MeshMetrics.instance;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     final isOffline = _networkStatus == NetworkStatus.offline;
 
     return Scaffold(
+      backgroundColor: isDark ? AppColors.bgApp : AppColors.lightBackground,
       appBar: AppBar(
-        title: const Text('Relay Status'),
+        title: const Text('Mesh Relay Diagnostics'),
+        centerTitle: true,
         actions: [
           IconButton(
-            icon: const Icon(Icons.history),
-            tooltip: 'Relay History',
+            icon: const Icon(Icons.history_rounded),
+            tooltip: 'Permanent Relay Log',
             onPressed: () => context.push('/relay/history'),
           ),
         ],
       ),
-      body: ListView(
-        padding: const EdgeInsets.all(AppSpacing.lg),
-        children: [
-          Container(
-            padding: const EdgeInsets.all(AppSpacing.lg),
-            decoration: BoxDecoration(
-              color: AppColors.primary,
-              borderRadius: AppRadius.xlRadius,
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  children: [
-                    const Icon(Icons.hub, color: Colors.white, size: 28),
-                    const SizedBox(width: AppSpacing.sm),
-                    Expanded(
-                      child: Text(
-                        'Your phone is part of the mesh',
-                        style: AppTypography.subtitle.copyWith(color: Colors.white),
+      body: SafeArea(
+        child: ListView(
+          padding: const EdgeInsets.all(AppSpacing.lg),
+          children: [
+            // Mesh Node Role Banner
+            SetuCard(
+              padding: const EdgeInsets.all(AppSpacing.md),
+              backgroundColor: isDark ? AppColors.bgSurfaceAlt : AppColors.lightSurface,
+              accentBorderLeft: AppColors.relay,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      const Icon(Icons.hub_rounded, color: AppColors.relay, size: 24),
+                      const SizedBox(width: AppSpacing.sm),
+                      Expanded(
+                        child: Text(
+                          'Decentralized Emergency Node',
+                          style: AppTypography.cardTitle.copyWith(
+                            color: isDark ? AppColors.textPrimary : AppColors.lightTextPrimary,
+                          ),
+                        ),
                       ),
+                    ],
+                  ),
+                  const SizedBox(height: AppSpacing.xs),
+                  Text(
+                    'Even with complete telecommunications blackout, this phone automatically relays authenticated emergency distress packets for people in your vicinity.',
+                    style: AppTypography.body.copyWith(
+                      color: isDark ? AppColors.textSecondary : AppColors.lightTextSecondary,
+                      fontSize: 13.5,
                     ),
-                  ],
-                ),
-                const SizedBox(height: AppSpacing.sm),
-                Text(
-                  'Even with no internet, your device helps carry emergency '
-                  'messages for people nearby.',
-                  style: AppTypography.body.copyWith(color: Colors.white70),
-                ),
-                const SizedBox(height: AppSpacing.md),
-                StatusChip(
-                  kind: isOffline ? StatusChipKind.meshActive : StatusChipKind.connected,
-                  labelOverride: isOffline ? 'Offline · Relaying for others' : 'Online · Can upload',
-                ),
-              ],
+                  ),
+                  const SizedBox(height: AppSpacing.md),
+                  SetuStatusIndicator(
+                    status: isOffline ? SetuStatusType.meshActive : SetuStatusType.online,
+                    labelOverride: isOffline
+                        ? 'Offline · Hop-by-Hop Relaying Active'
+                        : 'Online · Serving as Exit Gateway',
+                  ),
+                ],
+              ),
             ),
-          ),
 
-          const SizedBox(height: AppSpacing.sm),
-          // Aug 6 2026: these counters (MeshMetrics) are in-memory only
-          // and reset to 0 every time the app process restarts -- the
-          // Relay History screen below has the persistent record.
-          Text(
-            'Numbers below reset when the app restarts. See Relay History '
-            '(top-right) for a permanent record.',
-            style: AppTypography.caption.copyWith(color: AppColors.neutral500),
-          ),
+            const SizedBox(height: AppSpacing.lg),
 
-          const SizedBox(height: AppSpacing.lg),
+            const SetuSectionHeader(
+              title: 'Live Session Metrics',
+              subtitle: 'Packet counts since current application launch',
+              padding: EdgeInsets.only(bottom: AppSpacing.sm),
+            ),
 
-          Text('THIS SESSION\'S ACTIVITY',
-              style: AppTypography.label.copyWith(color: AppColors.neutral500)),
-          const SizedBox(height: AppSpacing.sm),
+            _metricCard(
+              icon: Icons.send_rounded,
+              color: AppColors.emergency,
+              label: 'Distress Beacons Sent',
+              value: metrics.sent,
+              sublabel: 'Packets originated by you',
+              isDark: isDark,
+            ),
 
-          _metricCard(
-            icon: Icons.send,
-            color: AppColors.emergency,
-            label: 'Sent',
-            value: metrics.sent,
-            sublabel: 'Your own SOS packets originated',
-          ),
-          const SizedBox(height: AppSpacing.sm),
-          _metricCard(
-            icon: Icons.call_received,
-            color: AppColors.primary,
-            label: 'Received',
-            value: metrics.received,
-            sublabel: 'Packets picked up from nearby devices',
-          ),
-          const SizedBox(height: AppSpacing.sm),
-          _metricCard(
-            icon: Icons.sync,
-            color: AppColors.info,
-            label: 'Relayed',
-            value: metrics.relayed,
-            sublabel: 'Carried forward for someone else',
-            trailing: RelayTraceIndicator(relayedCount: metrics.relayed),
-          ),
-          const SizedBox(height: AppSpacing.sm),
-          _metricCard(
-            icon: Icons.cloud_upload,
-            color: AppColors.success,
-            label: 'Uploaded',
-            value: metrics.uploaded,
-            sublabel: 'Delivered to the backend as exit node',
-          ),
-          const SizedBox(height: AppSpacing.sm),
-          _metricCard(
-            icon: Icons.block,
-            color: AppColors.neutral500,
-            label: 'Dropped',
-            value: metrics.dropped,
-            sublabel: 'Duplicates or invalid (correctly filtered)',
-          ),
+            _metricCard(
+              icon: Icons.call_received_rounded,
+              color: AppColors.accent,
+              label: 'Packets Received',
+              value: metrics.received,
+              sublabel: 'Picked up from nearby mesh nodes',
+              isDark: isDark,
+            ),
 
-          const SizedBox(height: AppSpacing.lg),
-          AppButton(
-            label: 'View Full Relay History',
-            icon: Icons.history,
-            onPressed: () => context.push('/relay/history'),
-          ),
-        ],
+            _metricCard(
+              icon: Icons.sync_rounded,
+              color: AppColors.relay,
+              label: 'Packets Relayed',
+              value: metrics.relayed,
+              sublabel: 'Carried forward on behalf of others',
+              isDark: isDark,
+              trailing: RelayTraceIndicator(relayedCount: metrics.relayed),
+            ),
+
+            _metricCard(
+              icon: Icons.cloud_upload_rounded,
+              color: AppColors.success,
+              label: 'Gateways Uploaded',
+              value: metrics.uploaded,
+              sublabel: 'Delivered to central responders as exit node',
+              isDark: isDark,
+            ),
+
+            _metricCard(
+              icon: Icons.block_rounded,
+              color: isDark ? AppColors.textDim : AppColors.lightTextDim,
+              label: 'Filtered / Dropped',
+              value: metrics.dropped,
+              sublabel: 'Duplicates, replays, or expired TTL',
+              isDark: isDark,
+            ),
+
+            const SizedBox(height: AppSpacing.md),
+
+            SetuButton(
+              label: 'VIEW PERSISTENT RELAY HISTORY',
+              icon: Icons.history_rounded,
+              onPressed: () => context.push('/relay/history'),
+              variant: SetuButtonVariant.secondary,
+              size: SetuButtonSize.md,
+            ),
+          ],
+        ),
       ),
     );
   }

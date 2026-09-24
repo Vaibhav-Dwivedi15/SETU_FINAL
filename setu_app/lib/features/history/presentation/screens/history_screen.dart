@@ -1,7 +1,17 @@
+// =====================================================
+// SETU Project
+// Module : History Screen (Redesign)
+// =====================================================
+
 import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
 import 'package:url_launcher/url_launcher.dart';
 
-import 'package:setu_app/core/constants/app_colors.dart';
+import 'package:setu_app/core/design_system/app_colors.dart';
+import 'package:setu_app/core/design_system/app_radius.dart';
+import 'package:setu_app/core/design_system/app_spacing.dart';
+import 'package:setu_app/core/design_system/app_typography.dart';
+import 'package:setu_app/core/design_system/widgets/design_system_widgets.dart';
 
 import '../../data/models/history_model.dart';
 import '../../data/repositories/history_repository.dart';
@@ -17,7 +27,6 @@ class _HistoryScreenState extends State<HistoryScreen> {
   final HistoryRepository _repository = HistoryRepository();
 
   List<HistoryModel> _history = [];
-
   bool _isLoading = true;
 
   @override
@@ -33,6 +42,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
 
     _history = await _repository.getHistory();
 
+    if (!mounted) return;
     setState(() {
       _isLoading = false;
     });
@@ -45,9 +55,8 @@ class _HistoryScreenState extends State<HistoryScreen> {
       await launchUrl(uri, mode: LaunchMode.externalApplication);
     } else {
       if (!mounted) return;
-
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("Unable to open Google Maps")),
+        const SnackBar(content: Text("Unable to open map application")),
       );
     }
   }
@@ -58,236 +67,187 @@ class _HistoryScreenState extends State<HistoryScreen> {
 
   @override
   Widget build(BuildContext context) {
-    // Scaffold/AppBar colors come from Theme (light/dark) —
-    // no more hardcoded white AppBar / light background.
-    return Scaffold(
-      appBar: AppBar(
-        centerTitle: true,
-        title: const Text(
-          "Emergency History",
-          style: TextStyle(fontWeight: FontWeight.bold),
-        ),
-      ),
-
-      body: RefreshIndicator(
-        // Aug 5 2026: pull-to-refresh is how a real ack update (see
-        // MeshLocator's acknowledgments listener + HistoryService.
-        // updateStatusByEmergencyId) becomes visible on this screen if
-        // it arrives while this screen is already open. There's no
-        // live stream subscription here -- that's a deliberate,
-        // honestly-scoped choice: a real-time listener on this screen
-        // would need careful lifecycle handling (subscribe/unsubscribe
-        // on screen enter/exit) that's a bigger change than this pass
-        // covers. Pull-to-refresh is a correct, if not instant, way to
-        // see the update.
-        onRefresh: _refresh,
-
-        child: _isLoading
-            ? const Center(child: CircularProgressIndicator())
-            : _history.isEmpty
-            ? _buildEmptyState()
-            : ListView.builder(
-                padding: const EdgeInsets.all(16),
-                itemCount: _history.length,
-                itemBuilder: (context, index) {
-                  final item = _history[index];
-
-                  return _buildHistoryCard(item);
-                },
-              ),
-      ),
-    );
-  }
-
-  Widget _buildEmptyState() {
-    return ListView(
-      children: const [
-        SizedBox(height: 120),
-
-        Icon(Icons.history, size: 90, color: Colors.grey),
-
-        SizedBox(height: 20),
-
-        Center(
-          child: Text(
-            "No Emergency History",
-            style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
-          ),
-        ),
-
-        SizedBox(height: 12),
-
-        Center(
-          child: Padding(
-            padding: EdgeInsets.symmetric(horizontal: 40),
-            child: Text(
-              "Every emergency event will automatically appear here.",
-              textAlign: TextAlign.center,
-            ),
-          ),
-        ),
-      ],
-    );
-  }
-
-  // Aug 5 2026: previously binary (isSuccess / not-success), and
-  // "not-success" rendered in AppColors.primary (blue) regardless of
-  // whether the status was "Failed" or anything else -- meaning an
-  // actual failed SOS never actually showed red, contradicting this
-  // file's own comment about honesty. Now three real states:
-  //   - "Delivered": genuinely confirmed (real ack, or awaited
-  //     backend confirmation for the online path) -- green.
-  //   - "Sent": handed off to mesh/SMS, awaiting real confirmation --
-  //     neutral/blue, hourglass icon. This is the honest default for
-  //     the offline/mesh path now, replacing the old immediate
-  //     "Delivered" claim (see sos_repository.dart).
-  //   - Anything else (i.e. "Failed"): genuine failure -- red.
-  bool _isDeliveredStatus(String status) => status.toLowerCase() == 'delivered';
-  bool _isSentStatus(String status) => status.toLowerCase() == 'sent';
-
-  Widget _buildHistoryCard(HistoryModel item) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final isDelivered = _isDeliveredStatus(item.status);
-    final isSent = _isSentStatus(item.status);
-    final isFailed = !isDelivered && !isSent;
 
-    final Color chipBg;
-    final Color chipText;
-    final IconData chipIcon;
+    return Scaffold(
+      backgroundColor: isDark ? AppColors.bgApp : AppColors.lightBackground,
+      appBar: AppBar(
+        title: const Text("Emergency Dispatch Log"),
+        centerTitle: true,
+      ),
+      bottomNavigationBar: SetuBottomNavigation(
+        currentIndex: 3,
+        onTap: (index) {
+          switch (index) {
+            case 0:
+              context.go('/');
+              break;
+            case 1:
+              context.push('/preparedness');
+              break;
+            case 2:
+              context.push('/recovery');
+              break;
+            case 3:
+              // Already here
+              break;
+          }
+        },
+      ),
+      body: SafeArea(
+        child: RefreshIndicator(
+          onRefresh: _refresh,
+          child: _isLoading
+              ? const Center(child: CircularProgressIndicator())
+              : _history.isEmpty
+                  ? const SetuEmptyState(
+                      icon: Icons.history_rounded,
+                      title: "No Emergency History",
+                      description:
+                          "Every distress beacon and recovery packet originated from this device will be logged here.",
+                    )
+                  : ListView.builder(
+                      physics: const AlwaysScrollableScrollPhysics(
+                        parent: BouncingScrollPhysics(),
+                      ),
+                      padding: const EdgeInsets.all(AppSpacing.lg),
+                      itemCount: _history.length,
+                      itemBuilder: (context, index) {
+                        final item = _history[index];
+                        return _buildHistoryCard(item, isDark);
+                      },
+                    ),
+        ),
+      ),
+    );
+  }
 
-    if (isDelivered) {
-      chipBg = isDark ? Colors.green.shade900.withValues(alpha: 0.35) : Colors.green.shade100;
-      chipText = isDark ? Colors.greenAccent : Colors.green;
-      chipIcon = Icons.check_circle;
-    } else if (isSent) {
-      chipBg = isDark
-          ? AppColors.primary.withValues(alpha: 0.3)
-          : AppColors.primary.withValues(alpha: 0.12);
-      chipText = AppColors.primary;
-      chipIcon = Icons.hourglass_top_rounded;
-    } else {
-      // Genuine failure -- now actually red, not blue.
-      chipBg = isDark
-          ? AppColors.danger.withValues(alpha: 0.3)
-          : AppColors.danger.withValues(alpha: 0.12);
-      chipText = AppColors.danger;
-      chipIcon = Icons.error;
-    }
+  Widget _buildHistoryCard(HistoryModel item, bool isDark) {
+    final isDelivered = item.status.toLowerCase() == 'delivered';
+    final isSent = item.status.toLowerCase() == 'sent';
 
-    return Card(
-      elevation: 4,
-      margin: const EdgeInsets.only(bottom: 16),
+    final SetuIncidentState incidentState = isDelivered
+        ? SetuIncidentState.delivered
+        : (isSent ? SetuIncidentState.pending : SetuIncidentState.failed);
 
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-
-      child: Padding(
-        padding: const EdgeInsets.all(18),
-
+    return Padding(
+      padding: const EdgeInsets.only(bottom: AppSpacing.sm),
+      child: SetuCard(
+        padding: const EdgeInsets.all(AppSpacing.md),
+        accentBorderLeft: isDelivered
+            ? AppColors.success
+            : (isSent ? AppColors.accent : AppColors.emergency),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
-
           children: [
             Row(
               children: [
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 12,
-                    vertical: 6,
-                  ),
-
-                  decoration: BoxDecoration(
-                    color: chipBg,
-                    borderRadius: BorderRadius.circular(30),
-                  ),
-
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(
-                        chipIcon,
-                        size: 14,
-                        color: chipText,
-                      ),
-                      const SizedBox(width: 6),
-                      Text(
-                        isSent ? '${item.status} · awaiting confirmation' : item.status,
-                        style: TextStyle(
-                          color: chipText,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                    ],
-                  ),
+                SetuIncidentStatusBadge(
+                  state: incidentState,
+                  customLabel: isSent ? 'SENT · AWAITING ACK' : null,
                 ),
-
                 const Spacer(),
-
                 Text(
-                  item.timestamp.toString(),
-                  style: const TextStyle(color: Colors.grey),
+                  _formatTimestamp(item.timestamp),
+                  style: AppTypography.metadata.copyWith(
+                    color: isDark ? AppColors.textDim : AppColors.lightTextDim,
+                    fontSize: 11,
+                  ),
                 ),
               ],
             ),
 
-            const SizedBox(height: 18),
+            const SizedBox(height: AppSpacing.sm),
 
             Row(
               children: [
-                const Icon(Icons.people),
-
-                const SizedBox(width: 10),
-
-                Text("${item.recipients.length} Contacts"),
+                Icon(
+                  Icons.people_outline_rounded,
+                  size: 16,
+                  color: isDark ? AppColors.textDim : AppColors.lightTextDim,
+                ),
+                const SizedBox(width: 6),
+                Text(
+                  "${item.recipients.length} Recipient Contact(s)",
+                  style: AppTypography.bodyStrong.copyWith(
+                    color: isDark
+                        ? AppColors.textPrimary
+                        : AppColors.lightTextPrimary,
+                    fontSize: 13.5,
+                  ),
+                ),
               ],
             ),
 
-            const SizedBox(height: 12),
+            const SizedBox(height: 4),
 
             Row(
               children: [
-                const Icon(Icons.location_on),
-
-                const SizedBox(width: 10),
-
-                Expanded(child: Text("${item.latitude}, ${item.longitude}")),
-              ],
-            ),
-
-            if (isFailed && item.errorReason.isNotEmpty) ...[
-              const SizedBox(height: 12),
-              Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Icon(Icons.info_outline, color: AppColors.danger, size: 20),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: Text(
-                      item.errorReason,
-                      style: const TextStyle(color: AppColors.danger, fontSize: 13),
+                Icon(
+                  Icons.location_on_outlined,
+                  size: 16,
+                  color: isDark ? AppColors.textDim : AppColors.lightTextDim,
+                ),
+                const SizedBox(width: 6),
+                Expanded(
+                  child: Text(
+                    "Coordinates: ${item.latitude.toStringAsFixed(4)}, ${item.longitude.toStringAsFixed(4)}",
+                    style: AppTypography.caption.copyWith(
+                      color: isDark
+                          ? AppColors.textSecondary
+                          : AppColors.lightTextSecondary,
                     ),
                   ),
-                ],
+                ),
+                if (item.mapsLink.isNotEmpty)
+                  InkWell(
+                    onTap: () => _openGoogleMaps(item.mapsLink),
+                    borderRadius: AppRadius.smRadius,
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(
+                            "View Map",
+                            style: AppTypography.metadata.copyWith(
+                              color: AppColors.accent,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                          const SizedBox(width: 2),
+                          const Icon(
+                            Icons.open_in_new_rounded,
+                            size: 13,
+                            color: AppColors.accent,
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+
+            if (item.errorReason.isNotEmpty) ...[
+              const SizedBox(height: 6),
+              Text(
+                "Error: ${item.errorReason}",
+                style: AppTypography.caption.copyWith(
+                  color: AppColors.emergency,
+                  fontSize: 11.5,
+                ),
               ),
             ],
-
-            const SizedBox(height: 20),
-
-            SizedBox(
-              width: double.infinity,
-
-              child: FilledButton.icon(
-                onPressed: () {
-                  _openGoogleMaps(item.mapsLink);
-                },
-
-                icon: const Icon(Icons.map),
-
-                label: const Text("Open Google Maps"),
-              ),
-            ),
           ],
         ),
       ),
     );
+  }
+
+  String _formatTimestamp(DateTime timestamp) {
+    final local = timestamp.toLocal();
+    final hh = local.hour.toString().padLeft(2, '0');
+    final mm = local.minute.toString().padLeft(2, '0');
+    return '${local.day}/${local.month}/${local.year} $hh:$mm';
   }
 }

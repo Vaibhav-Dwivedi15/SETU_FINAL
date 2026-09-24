@@ -1,21 +1,27 @@
+// =====================================================
+// SETU Project
+// Module : Recovery Report Form Screen (Redesign)
+// =====================================================
+
 import 'package:flutter/material.dart';
+
+import 'package:setu_app/core/design_system/app_colors.dart';
+import 'package:setu_app/core/design_system/app_radius.dart';
+import 'package:setu_app/core/design_system/app_spacing.dart';
+import 'package:setu_app/core/design_system/app_typography.dart';
+import 'package:setu_app/core/design_system/widgets/design_system_widgets.dart';
 
 import '../../data/models/recovery_report_type.dart';
 import '../../data/repositories/recovery_repository.dart';
 
-/// One generic form for every RecoveryReportType -- the type only
-/// changes the title, hint text, and message prefix (see
-/// RecoveryReportType.messagePrefix); the underlying send path
-/// (RecoveryRepository.submitReport) is identical. Minimal UI on
-/// purpose, matching PreparednessScreen/ReadinessCheckScreen's own
-/// stated bar: functional engineering over cosmetics for this sprint.
 class RecoveryReportFormScreen extends StatefulWidget {
   const RecoveryReportFormScreen({super.key, required this.type});
 
   final RecoveryReportType type;
 
   @override
-  State<RecoveryReportFormScreen> createState() => _RecoveryReportFormScreenState();
+  State<RecoveryReportFormScreen> createState() =>
+      _RecoveryReportFormScreenState();
 }
 
 class _RecoveryReportFormScreenState extends State<RecoveryReportFormScreen> {
@@ -24,10 +30,6 @@ class _RecoveryReportFormScreenState extends State<RecoveryReportFormScreen> {
   bool _sending = false;
   String? _error;
 
-  // Matches the backend's PacketIn.message bound (Field(max_length=2000)
-  // in schemas/packet.py, added the same sprint) so the form can't build
-  // a report the backend would reject anyway -- kept well under that
-  // limit for a comfortable on-screen counter, not to exactly mirror it.
   static const int _maxMessageLength = 500;
 
   @override
@@ -39,7 +41,7 @@ class _RecoveryReportFormScreenState extends State<RecoveryReportFormScreen> {
   Future<void> _submit() async {
     final message = _controller.text.trim();
     if (message.isEmpty) {
-      setState(() => _error = 'Please enter a message before sending.');
+      setState(() => _error = 'Please enter a description before transmitting.');
       return;
     }
 
@@ -52,7 +54,10 @@ class _RecoveryReportFormScreenState extends State<RecoveryReportFormScreen> {
       await _repository.submitReport(type: widget.type, message: message);
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('${widget.type.title} sent over the mesh.')),
+        SnackBar(
+          content: Text('${widget.type.title} broadcasted over mesh.'),
+          backgroundColor: AppColors.success,
+        ),
       );
       Navigator.of(context).pop(true);
     } catch (e) {
@@ -68,55 +73,154 @@ class _RecoveryReportFormScreenState extends State<RecoveryReportFormScreen> {
   @override
   Widget build(BuildContext context) {
     final type = widget.type;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+
     return Scaffold(
-      appBar: AppBar(title: Text(type.title)),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Row(
-              children: [
-                Icon(type.icon, size: 32),
-                const SizedBox(width: 12),
-                Expanded(child: Text(type.subtitle)),
-              ],
-            ),
-            const SizedBox(height: 16),
-            TextField(
-              controller: _controller,
-              maxLength: _maxMessageLength,
-              maxLines: 5,
-              decoration: const InputDecoration(
-                border: OutlineInputBorder(),
-                labelText: 'Details',
-                hintText: 'Describe what you want to report...',
+      backgroundColor: isDark ? AppColors.bgApp : AppColors.lightBackground,
+      appBar: AppBar(
+        title: Text(type.title),
+        centerTitle: true,
+      ),
+      body: SafeArea(
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.all(AppSpacing.lg),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              // Type Info Banner
+              SetuCard(
+                padding: const EdgeInsets.all(AppSpacing.md),
+                backgroundColor: isDark ? AppColors.bgSurfaceAlt : AppColors.lightSurface,
+                accentBorderLeft: AppColors.accent,
+                child: Row(
+                  children: [
+                    Container(
+                      width: 40,
+                      height: 40,
+                      decoration: BoxDecoration(
+                        color: AppColors.accent.withValues(alpha: 0.14),
+                        borderRadius: AppRadius.smRadius,
+                      ),
+                      child: Icon(type.icon, color: AppColors.accent, size: 22),
+                    ),
+                    const SizedBox(width: AppSpacing.md),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            type.title,
+                            style: AppTypography.cardTitle.copyWith(
+                              color: isDark ? AppColors.textPrimary : AppColors.lightTextPrimary,
+                            ),
+                          ),
+                          const SizedBox(height: 2),
+                          Text(
+                            type.subtitle,
+                            style: AppTypography.caption.copyWith(
+                              color: isDark ? AppColors.textSecondary : AppColors.lightTextSecondary,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
               ),
-            ),
-            if (_error != null) ...[
-              const SizedBox(height: 8),
-              Text(_error!, style: TextStyle(color: Theme.of(context).colorScheme.error)),
+
+              const SizedBox(height: AppSpacing.lg),
+
+              const SetuSectionHeader(
+                title: 'Incident Details',
+                subtitle: 'Include specific location identifiers, needs, or damage scale',
+                padding: EdgeInsets.only(bottom: AppSpacing.sm),
+              ),
+
+              TextField(
+                controller: _controller,
+                maxLength: _maxMessageLength,
+                maxLines: 6,
+                style: AppTypography.body.copyWith(
+                  color: isDark ? AppColors.textPrimary : AppColors.lightTextPrimary,
+                ),
+                decoration: InputDecoration(
+                  hintText: 'Describe details of ${type.title.toLowerCase()}...',
+                  hintStyle: AppTypography.body.copyWith(
+                    color: isDark ? AppColors.textDim : AppColors.lightTextDim,
+                  ),
+                ),
+              ),
+
+              if (_error != null) ...[
+                const SizedBox(height: AppSpacing.sm),
+                Container(
+                  padding: const EdgeInsets.all(AppSpacing.sm),
+                  decoration: BoxDecoration(
+                    color: isDark ? AppColors.emergencyContainer : const Color(0xFFFEE2E2),
+                    borderRadius: AppRadius.smRadius,
+                    border: Border.all(color: AppColors.emergency.withValues(alpha: 0.4)),
+                  ),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.error_outline_rounded, color: AppColors.emergency, size: 18),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          _error!,
+                          style: AppTypography.caption.copyWith(
+                            color: isDark ? AppColors.textPrimary : AppColors.emergency,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+
+              const SizedBox(height: AppSpacing.md),
+
+              // Metadata attached banner
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                decoration: BoxDecoration(
+                  color: isDark ? AppColors.bgSurface : AppColors.lightSurface,
+                  borderRadius: AppRadius.smRadius,
+                  border: Border.all(
+                    color: isDark ? AppColors.borderSubtle : AppColors.lightBorder,
+                  ),
+                ),
+                child: Row(
+                  children: [
+                    Icon(
+                      Icons.my_location_rounded,
+                      size: 16,
+                      color: isDark ? AppColors.textDim : AppColors.lightTextDim,
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        'Device GPS coordinates and timestamp will be attached automatically.',
+                        style: AppTypography.caption.copyWith(
+                          color: isDark ? AppColors.textDim : AppColors.lightTextDim,
+                          fontSize: 11.5,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+
+              const SizedBox(height: AppSpacing.xl),
+
+              SetuButton(
+                label: _sending ? 'Broadcasting...' : 'TRANSMIT REPORT TO MESH',
+                icon: Icons.send_rounded,
+                onPressed: _sending ? null : _submit,
+                isLoading: _sending,
+                size: SetuButtonSize.lg,
+              ),
             ],
-            const SizedBox(height: 16),
-            const Text(
-              'This is sent over the mesh -- no internet needed. It will '
-              'sync to the responder dashboard automatically once any '
-              'device in the relay chain regains connectivity.',
-              style: TextStyle(fontSize: 12, color: Colors.grey),
-            ),
-            const SizedBox(height: 16),
-            FilledButton.icon(
-              onPressed: _sending ? null : _submit,
-              icon: _sending
-                  ? const SizedBox(
-                      width: 16,
-                      height: 16,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    )
-                  : const Icon(Icons.send),
-              label: Text(_sending ? 'Sending...' : 'Send report'),
-            ),
-          ],
+          ),
         ),
       ),
     );
