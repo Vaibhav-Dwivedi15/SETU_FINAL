@@ -1,6 +1,7 @@
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
+from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 import logging
 
@@ -56,6 +57,17 @@ app.add_middleware(
 # Block 2: byte-counting body cap (independent of Content-Length; per-path
 # limits) -- see app/core/body_limit.py. Replaces the Content-Length-only guard.
 app.add_middleware(BodySizeLimitMiddleware)
+
+
+@app.exception_handler(Exception)
+async def unhandled_exception_handler(request: Request, exc: Exception):
+    """
+    Last-resort handler (Block 2): an unexpected error becomes a generic JSON 500.
+    The client never receives a traceback, exception text, SQL or a file path;
+    the details go to the server log only.
+    """
+    logging.getLogger("setu.errors").exception("Unhandled error on %s %s", request.method, request.url.path)
+    return JSONResponse(status_code=500, content={"detail": "Internal server error."})
 
 
 app.include_router(health.router)

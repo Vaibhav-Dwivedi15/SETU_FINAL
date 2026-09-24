@@ -1,3 +1,11 @@
+> **BLOCK 2 UPDATE (supersedes anything below that conflicts).** `POST /register`,
+> `POST /ingest/voice`, `GET /alerts/nearby` and `POST /alerts/{id}/respond` now require a
+> request signature made with the device's Ed25519 key (`X-Setu-*` headers), and
+> `POST /ingest` reports each packet as ACCEPTED / DUPLICATE / REJECTED / FAILED. See
+> [`docs/backend/PACKET_CONTRACT.md`](backend/PACKET_CONTRACT.md). The voice `sender_id`
+> form field is optional and must equal the signing key; `emergency_id`, if sent, must be
+> one of the caller's own emergencies.
+
 # SETU — Backend API contract for the mobile app (Aug 25, 2026)
 
 For Sudheer. These endpoints are **built, committed, and live on the backend**.

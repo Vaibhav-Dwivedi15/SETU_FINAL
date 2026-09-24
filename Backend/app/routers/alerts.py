@@ -29,6 +29,7 @@ from app.core.rate_limit import (
 )
 from app.core.security import verify_responder_api_key
 from app.db.base import get_db
+from app.schemas.common import IncidentId
 from app.models.incident import Incident
 from app.models.user_profile import UserProfile
 from app.services.request_auth import (
@@ -92,7 +93,7 @@ def nearby_alerts(
 
 @router.post("/alerts/{incident_id}/respond", response_model=CommunityResponseOut)
 def respond_to_alert(
-    incident_id: int,
+    incident_id: IncidentId,
     payload: RespondIn,
     db: Session = Depends(get_db),
     # PUBLIC-WRITE tier (lenient) -- see core/rate_limit.py.
@@ -118,7 +119,7 @@ def respond_to_alert(
 
 @router.get("/incidents/{incident_id}/responses", response_model=List[CommunityResponseOut])
 def get_incident_responses(
-    incident_id: int,
+    incident_id: IncidentId,
     db: Session = Depends(get_db),
     _: None = Depends(verify_responder_api_key),
 ):

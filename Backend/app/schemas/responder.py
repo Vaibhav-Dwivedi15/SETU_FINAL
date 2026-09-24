@@ -16,13 +16,13 @@ directly (see GET /responders/keys), confirmed with Vaibhav, Mesh Lead.
 from datetime import datetime
 from typing import List, Optional
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class ResponderIn(BaseModel):
-    public_key: str
-    name: str
-    organization: Optional[str] = None
+    public_key: str = Field(..., min_length=1, max_length=256)
+    name: str = Field(..., min_length=1, max_length=200)
+    organization: Optional[str] = Field(default=None, max_length=200)
 
 
 class ResponderOut(BaseModel):

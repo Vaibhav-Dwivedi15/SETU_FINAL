@@ -16,7 +16,7 @@ class OtpRequestIn(BaseModel):
     # Optional: the device's Ed25519 public key (hex), so a verified
     # email can be bound to the device identity in one step. See
     # app/models/email_otp.py on why this is a binding, not a session.
-    sender_id: Optional[str] = None
+    sender_id: Optional[str] = Field(default=None, max_length=256)
 
 
 class OtpRequestOut(BaseModel):

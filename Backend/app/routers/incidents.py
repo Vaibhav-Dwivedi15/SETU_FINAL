@@ -14,6 +14,7 @@ from sqlalchemy.orm import Session
 from app.core.rate_limit import enforce_responder_action_rate_limit
 from app.core.security import verify_responder_api_key
 from app.db.base import get_db
+from app.schemas.common import IncidentId
 from app.models.audit_log import IncidentAuditLog
 from app.models.incident import Incident
 from app.models.packet import RawPacket
@@ -26,7 +27,7 @@ router = APIRouter()
 
 @router.post("/incidents/{incident_id}/resolve", response_model=IncidentOut)
 def resolve_incident(
-    incident_id: int,
+    incident_id: IncidentId,
     db: Session = Depends(get_db),
     _: None = Depends(verify_responder_api_key),
     # SEP 2026: RESPONDER ACTION tier -- see responders.py's POST route
@@ -67,7 +68,7 @@ def list_incidents(
 
 @router.get("/incidents/{incident_id}/profile", response_model=List[ProfileOut])
 def get_incident_profiles(
-    incident_id: int,
+    incident_id: IncidentId,
     db: Session = Depends(get_db),
     _: None = Depends(verify_responder_api_key),
 ):
@@ -98,7 +99,7 @@ def get_incident_profiles(
 
 @router.get("/incidents/{incident_id}/history", response_model=List[AuditLogOut])
 def get_incident_history(
-    incident_id: int,
+    incident_id: IncidentId,
     db: Session = Depends(get_db),
     _: None = Depends(verify_responder_api_key),
 ):

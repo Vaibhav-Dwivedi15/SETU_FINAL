@@ -23,6 +23,7 @@ from sqlalchemy.orm import Session
 
 from app.core.security import verify_responder_api_key
 from app.db.base import get_db
+from app.schemas.common import IncidentId
 from app.models.government_notification import GovernmentNotificationLog
 from app.models.incident import Incident
 from app.schemas.government import GovernmentNotificationOut, GovernmentAdapterStatusOut
@@ -49,7 +50,7 @@ def _to_out(row: GovernmentNotificationLog) -> GovernmentNotificationOut:
 
 @router.get("/incidents/{incident_id}/government-notifications", response_model=List[GovernmentNotificationOut])
 def get_incident_government_notifications(
-    incident_id: int,
+    incident_id: IncidentId,
     db: Session = Depends(get_db),
     _: None = Depends(verify_responder_api_key),
 ):

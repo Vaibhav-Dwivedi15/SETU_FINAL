@@ -30,7 +30,7 @@ class NearbyIncidentOut(BaseModel):
 
 
 class RespondIn(BaseModel):
-    sender_id: str
+    sender_id: str = Field(..., min_length=1, max_length=256)
     response_type: ResponseType
 
 
