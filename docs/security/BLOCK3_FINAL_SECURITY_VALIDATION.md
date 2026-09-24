@@ -90,3 +90,52 @@ Dependabot config added for all five ecosystems + Actions.
 * Evidence, no signing material: `flutter build apk --release` → `BUILD FAILED … SETU RELEASE BUILD REFUSED: Release signing is not configured …` (VERIFIED).
 * Evidence, with a **throwaway** keystore generated for the test only (not committed, not production): release APK built; `apksigner verify --print-certs` → *Verifies*, 1 signer, `CN=SETU THROWAWAY VERIFICATION KEY, O=not-for-distribution` (not the Android debug certificate; this machine has no `~/.android/debug.keystore` to compare digests with) (VERIFIED). Only APK Signature Scheme v2 is present (v1/v3 absent; fine for minSdk ≥ 24).
 * **BLOCKED / REQUIRED:** the production keystore must be generated and kept by the release owner (`keytool` command in `key.properties.example`); a build signed with the throwaway key must not be distributed.
+
+## 15. Known limitations (not fixed; nothing hidden)
+1. One shared responder credential; no per-operator identity, no per-session server-side revocation (rotate `SESSION_SECRET`). **KNOWN LIMITATION**
+2. Dashboard token in `sessionStorage`; XSS would expose it (CSP is the mitigation). **KNOWN LIMITATION**
+3. Third-party origins in the dashboard CSP (Google Fonts, marker images from GitHub/unpkg) without SRI. **KNOWN LIMITATION**
+4. Device identities are self-issued keys: nothing stops an attacker from minting keys beyond the rate limits (Block 2 limitation, unchanged). **KNOWN LIMITATION**
+5. Rate limiting is per process and in memory; distributed abuse needs an edge/WAF layer. **KNOWN LIMITATION**
+6. PII (profile, contacts, medical notes, child profiles, recovery/location history) is stored unencrypted in app-private storage. **KNOWN LIMITATION**
+7. Repo guard R7 (sensitive logs) is a heuristic; `flutter analyze` has 13 pre-existing style infos (CI uses `--no-fatal-infos`). **KNOWN LIMITATION**
+8. Dart and Gradle dependency CVE audits could not be run (no advisory tool). **BLOCKED**
+9. ACK is still exit-node-signed, not backend-attested (Block 1/2 limitation, unchanged). **KNOWN LIMITATION**
+10. Release-mode (R8) native signature verification and everything radio/SMS/voice/foreground-service related: **UNTESTED on a device**.
+11. `flutter build apk --release` cold builds take several minutes here; the signing guard triggers only after Gradle configuration (correct, but not instant).
+
+## 16. Deployment blockers (must be done by whoever operates the deployment)
+1. **Rotate `RESPONDER_API_KEY`** on Render and delete any `VITE_API_KEY` from Vercel/CI (a Vite variable is public); redeploy the dashboard from this branch.
+2. Set on Render: `RESPONDER_API_KEY` (≥ 32 random chars), **`ADMIN_API_KEY`** (different), **`SESSION_SECRET`** (≥ 32), `DEBUG=false`, `CORS_ALLOWED_ORIGINS_RAW=<exact dashboard origin>`, and **`TRUSTED_PROXY_COUNT=<verified value>`** (verify the real `X-Forwarded-For` chain first; do not guess). Read the boot log for `CONFIG:` warnings — there must be none.
+3. Confirm `vercel.json` is picked up (`curl -I` the deployed dashboard and compare with `tests/headers.test.mjs`) and that its `connect-src` origin equals the deployed backend.
+4. Generate and safeguard the **production Android keystore**; build the release with `key.properties` or `SETU_RELEASE_*` secrets; never distribute the throwaway-key APK.
+5. Run the PostgreSQL migration procedure on a copy, then production (`POSTGRES_MIGRATION_RUNBOOK.md`); deploy backend before shipping the app (signed-request endpoints).
+6. Provision trusted responder keys through `POST /responders` with the admin key; verify `GET /responders/keys`.
+7. Install real dependencies (`openai-whisper` + ffmpeg, `sentence-transformers`) and configure the SMS gateway/SMTP **only via environment**; re-verify voice and SMS end to end (UNTESTED here).
+8. Run CI once on GitHub and fix whatever a real runner surfaces.
+
+## 17. Device-test prerequisites
+* Two or more Android phones (≥ 8 recommended for relay chains), Android 12+ (BLE/Nearby permissions), SIMs for SMS tests, one phone with data and one without.
+* A **release-mode** build signed with a non-production test keystore (to exercise R8 + BouncyCastle Ed25519 verification and the manifest as shipped), plus a debug build.
+* Backend deployed (or reachable staging) with the production-shaped configuration in §16 and a test responder key provisioned; dashboard on the real origin.
+* Cases to run: cross-device signature interoperability, unauthorized/authorized termination and queue cleanup, registration → nearby alerts → respond, voice SOS, SMS single-send vs backend, airplane-mode relay → exit-node upload → ACK, Android backup/restore refusal (`adb shell bmgr`), reinstall behaviour of the Keystore-wrapped identity, log review (`adb logcat`) for phone numbers/bodies/keys.
+
+## 14. Test results (exact, this environment; Python 3.14.4, Flutter 3.44.8, Node 24, JBR 17, PostgreSQL 18.4 embedded)
+| Command | Result |
+|---|---|
+| `cd Backend && pytest -q` | **399 passed, 6 skipped** (the 6 are the PostgreSQL tests, skipped without `SETU_TEST_POSTGRES_URL`) |
+| same with `SETU_TEST_POSTGRES_URL=<scratch PG 18.4>` `pytest tests/test_postgres_integration.py` | **6 passed** |
+| `cd Backend/setu_ai_service && pytest -q` | 38 passed (Block 2 run; not re-run this block, unchanged) |
+| `cd setu_dashboard && npm test` | **20 passed** (contract, secret canary, demo elimination, session/API failure, headers on real build) |
+| `npm run build`; `npm run check:csp` (headless Chrome) | built; login + dashboard rendered, **0 CSP violations**, negative control detected |
+| `npm audit` | **0 vulnerabilities** (after `npm audit fix`) |
+| `pip-audit` (pinned reqs) | no known vulnerabilities |
+| `python tools/security/repo_guard.py` | 0 findings |
+| `flutter analyze` | 13 `info`, **0 warnings/errors** (exit 1 only because infos are fatal by default; CI uses `--no-fatal-infos`) |
+| `flutter test` | **197 passed** (includes new `mobile_security_test.dart`) |
+| `./gradlew :app:testDebugUnitTest` | BUILD SUCCESSFUL |
+| `./gradlew :app:assembleDebug` | BUILD SUCCESSFUL |
+| `tools/cross_lang/run_gate.sh` | **PASS**: Python `RESULT: PASS`; Kotlin `tests=1 skipped=0 failures=0` (first run exposed a wrong report path in the gate script — fixed; a plain unit-test run overwrites the report with `skipped=1`, which the gate correctly treats as failure) |
+| `flutter build apk --release` (no signing material) | **refused**, `SETU RELEASE BUILD REFUSED` (exit 1) |
+| `flutter build apk --release` (throwaway keystore) | Built `app-release.apk` 58.2 MB; `apksigner`: verifies, 1 signer, throwaway CN |
+Failure classification: no test failures. Pre-existing/other: dashboard `eslint` config crash (unchanged, PRE-EXISTING); the shared checkout was, during this block, switched to another branch with uncommitted, non-compiling UI edits by another session — all Block 3 work was therefore built and tested from a separate git worktree (`/home/vaibhav/SETU_FINAL_block3`), which is ENVIRONMENT, not a SETU defect.
