@@ -190,6 +190,40 @@ void main() {
       expect(mesh.devices[1].queue.pendingCount, 0, reason: 'a permanent rejection must stop retrying');
     });
 
+    test('duplicate (backend already holds the identical packet) -> delivered, ACK originated once', () async {
+      final mesh = await SimulatedMesh.chain(2);
+      addTearDown(mesh.disposeAll);
+      mesh.devices[1].backend
+        ..internetAvailable = true
+        ..nextOutcome = UploadOutcome.duplicate;
+
+      await mesh.devices[0].mesh_.originate(sos());
+      await mesh.settle();
+
+      final acks = mesh.devices[1].transmitted
+          .map((b) => jsonDecode(utf8.decode(b)) as Map<String, dynamic>)
+          .where((j) => j['type'] == 'ack');
+      expect(acks, hasLength(1), reason: 'DUPLICATE means the backend holds it: delivered, one ACK');
+      expect(mesh.devices[1].queue.pendingCount, 0);
+    });
+
+    test('network failure -> no ACK and the packet stays queued', () async {
+      final mesh = await SimulatedMesh.chain(2);
+      addTearDown(mesh.disposeAll);
+      mesh.devices[1].backend
+        ..internetAvailable = true
+        ..nextOutcome = UploadOutcome.failed;
+
+      await mesh.devices[0].mesh_.originate(sos());
+      await mesh.settle();
+
+      final acks = mesh.devices[1].transmitted
+          .map((b) => jsonDecode(utf8.decode(b)) as Map<String, dynamic>)
+          .where((j) => j['type'] == 'ack');
+      expect(acks, isEmpty);
+      expect(mesh.devices[1].queue.pendingCount, 1);
+    });
+
     test('transient failure keeps the packet pending for retry', () async {
       final mesh = await SimulatedMesh.chain(2);
       addTearDown(mesh.disposeAll);

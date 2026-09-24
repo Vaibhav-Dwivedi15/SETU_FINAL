@@ -159,14 +159,21 @@ $mapsLink
         );
       }
 
+      // Block 2 (SMS responsibility): once the backend has ACCEPTED the SOS it
+      // notifies the registered contacts itself, exactly once (idempotent
+      // ledger). This app only sends its own direct SMS when the backend did
+      // not confirm SMS for all of the device's contacts.
+      int backendNotifiedContacts = 0;
+
       if (hasInternet && !meshFailed) {
         try {
-          final confirmed = await _backendService
-              .uploadPacket(emergencyPacket)
-              .timeout(const Duration(seconds: 10), onTimeout: () => false);
-          if (confirmed) {
+          final result = await _backendService
+              .uploadPacketResult(emergencyPacket)
+              .timeout(const Duration(seconds: 10), onTimeout: () => const IngestResult(UploadOutcome.failed));
+          if (result.delivered) {
             _progressController.add(SosProgress.backendConfirmed);
             status = "Delivered";
+            backendNotifiedContacts = result.smsContactsNotified;
           }
         } catch (_) {
           // status stays "Sent" -- packet is safely queued regardless.
@@ -186,11 +193,26 @@ $mapsLink
 
       // SMS: isolated (fixed earlier today) -- a mesh failure above no
       // longer prevents this from running.
+      final distinctContacts = phoneNumbers
+          .map((p) => p.replaceAll(RegExp(r'\D'), ''))
+          .map((d) => d.length > 10 ? d.substring(d.length - 10) : d)
+          .toSet()
+          .length;
+      final backendCoversContacts =
+          backendNotifiedContacts > 0 && backendNotifiedContacts >= distinctContacts;
+
       try {
-        await _smsRepository.sendBulkSMS(
-          message: message,
-          phoneNumbers: phoneNumbers,
-        );
+        if (backendCoversContacts) {
+          developer.log(
+            'Skipping direct SMS: backend queued SMS for $backendNotifiedContacts contact(s)',
+            name: 'SosRepository',
+          );
+        } else {
+          await _smsRepository.sendBulkSMS(
+            message: message,
+            phoneNumbers: phoneNumbers,
+          );
+        }
       } catch (e) {
         smsFailed = true;
         smsFailureReason = e.toString().replaceFirst("Exception: ", "");

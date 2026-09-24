@@ -30,6 +30,8 @@ import 'dart:developer' as developer;
 
 import 'package:http/http.dart' as http;
 
+import 'request_signer.dart';
+
 enum CommunityResponseType {
   nearby,
   canHelp,
@@ -86,9 +88,22 @@ class BackendNearbyAlert {
 }
 
 class BackendAlertsService {
-  BackendAlertsService({this.baseUrl = 'https://setu-backend-cy78.onrender.com'});
+  BackendAlertsService({
+    this.baseUrl = 'https://setu-backend-cy78.onrender.com',
+    RequestSigner? signer,
+    http.Client? client,
+  })  : _signer = signer ?? RequestSigner(),
+        _client = client;
 
   final String baseUrl;
+  final RequestSigner _signer;
+  final http.Client? _client;
+
+  Future<http.Response> _get(Uri uri, Map<String, String> headers) =>
+      _client?.get(uri, headers: headers) ?? http.get(uri, headers: headers);
+
+  Future<http.Response> _post(Uri uri, Map<String, String> headers, List<int> body) =>
+      _client?.post(uri, headers: headers, body: body) ?? http.post(uri, headers: headers, body: body);
 
   /// Fetches OPEN incidents within [radiusKm] of ([latitude], [longitude]).
   /// [senderId] is optional — when given, the backend excludes incidents
@@ -104,14 +119,25 @@ class BackendAlertsService {
     String? senderId,
   }) async {
     try {
+      // Block 2: nearby alerts are only served to a registered, signed device.
+      // The signature covers the RAW query strings sent below.
+      final latStr = latitude.toString();
+      final lonStr = longitude.toString();
+      final radiusStr = radiusKm.toString();
+      final signed = await _signer.headersFor(
+        method: 'GET',
+        path: '/alerts/nearby',
+        parts: [latStr, lonStr, radiusStr],
+      );
       final uri = Uri.parse('$baseUrl/alerts/nearby').replace(queryParameters: {
-        'lat': latitude.toString(),
-        'lon': longitude.toString(),
-        'radius_km': radiusKm.toString(),
-        if (senderId != null) 'sender_id': senderId,
+        'lat': latStr,
+        'lon': lonStr,
+        'radius_km': radiusStr,
+        // Must equal the signing key if present; the signer's key is always used.
+        if (senderId != null) 'sender_id': signed['X-Setu-Sender']!,
       });
 
-      final response = await http.get(uri).timeout(const Duration(seconds: 10));
+      final response = await _get(uri, signed).timeout(const Duration(seconds: 10));
 
       if (response.statusCode < 200 || response.statusCode >= 300) {
         developer.log(
@@ -145,16 +171,17 @@ class BackendAlertsService {
     required CommunityResponseType responseType,
   }) async {
     try {
-      final response = await http
-          .post(
-            Uri.parse('$baseUrl/alerts/$incidentId/respond'),
-            headers: {'Content-Type': 'application/json'},
-            body: jsonEncode({
-              'sender_id': senderId,
-              'response_type': responseType.apiValue,
-            }),
-          )
-          .timeout(const Duration(seconds: 10));
+      final path = '/alerts/$incidentId/respond';
+      final bodyBytes = jsonBodyBytes({
+        'sender_id': senderId,
+        'response_type': responseType.apiValue,
+      });
+      final signed = await _signer.headersForBody(method: 'POST', path: path, bodyBytes: bodyBytes);
+      final response = await _post(
+        Uri.parse('$baseUrl$path'),
+        {'Content-Type': 'application/json', ...signed},
+        bodyBytes,
+      ).timeout(const Duration(seconds: 10));
 
       final ok = response.statusCode >= 200 && response.statusCode < 300;
       developer.log(

@@ -34,6 +34,8 @@ import 'dart:io';
 
 import 'package:http/http.dart' as http;
 
+import 'request_signer.dart';
+
 class VoiceSosAvailability {
   final bool available;
   final String detail;
@@ -56,9 +58,13 @@ class VoiceSosResult {
 }
 
 class VoiceSosService {
-  VoiceSosService({this.baseUrl = 'https://setu-backend-cy78.onrender.com'});
+  VoiceSosService({
+    this.baseUrl = 'https://setu-backend-cy78.onrender.com',
+    RequestSigner? signer,
+  }) : _signer = signer ?? RequestSigner();
 
   final String baseUrl;
+  final RequestSigner _signer;
 
   /// Checks whether the backend can actually process voice right now
   /// (Whisper + ffmpeg installed server-side). Call this before showing
@@ -110,11 +116,27 @@ class VoiceSosService {
         'POST',
         Uri.parse('$baseUrl/ingest/voice'),
       );
+      // Block 2: the request is signed by this device's Ed25519 key over
+      // [sha256(audio), latitude, longitude, priority, emergency_id] -- the RAW
+      // form strings below -- so the backend can attribute the report to a real
+      // key and refuses replays / edited locations / swapped audio.
+      final audioBytes = await audioFile.readAsBytes();
+      final latStr = latitude.toString();
+      final lonStr = longitude.toString();
+      final signed = await _signer.headersFor(
+        method: 'POST',
+        path: '/ingest/voice',
+        parts: [await RequestSigner.sha256Hex(audioBytes), latStr, lonStr, priority ?? '', ''],
+      );
+      if (signed['X-Setu-Sender'] != senderId) {
+        return const VoiceSosResult(success: false, detail: 'Voice SOS needs this device\'s own identity key.');
+      }
+      request.headers.addAll(signed);
       request.fields['sender_id'] = senderId;
-      request.fields['latitude'] = latitude.toString();
-      request.fields['longitude'] = longitude.toString();
+      request.fields['latitude'] = latStr;
+      request.fields['longitude'] = lonStr;
       if (priority != null) request.fields['priority'] = priority;
-      request.files.add(await http.MultipartFile.fromPath('file', audioFile.path));
+      request.files.add(http.MultipartFile.fromBytes('file', audioBytes, filename: audioFile.uri.pathSegments.last));
 
       final streamedResponse = await request.send().timeout(const Duration(seconds: 60));
       final response = await http.Response.fromStream(streamedResponse);
