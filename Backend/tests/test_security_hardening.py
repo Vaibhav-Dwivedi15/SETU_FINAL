@@ -339,12 +339,23 @@ def test_register_in_rejects_too_many_emergency_contacts():
 
 def test_register_in_rejects_oversized_emergency_contact_entry():
     with pytest.raises(ValidationError):
-        RegisterIn(**_valid_register_kwargs(emergency_contacts=["x" * 33]))
+        RegisterIn(**_valid_register_kwargs(emergency_contacts=["9" * 33]))
 
 
 def test_register_in_accepts_emergency_contacts_at_the_boundary():
-    payload = RegisterIn(**_valid_register_kwargs(emergency_contacts=["x" * 32] * 5))
+    payload = RegisterIn(**_valid_register_kwargs(emergency_contacts=["+91 98765-43210"] * 5))
     assert len(payload.emergency_contacts) == 5
+
+
+def test_register_in_rejects_non_phone_contact():
+    for bad in ["x" * 10, "12345", "call me", "+", "1" * 16, "+91 98765 4321O"]:
+        with pytest.raises(ValidationError):
+            RegisterIn(**_valid_register_kwargs(emergency_contacts=[bad]))
+
+
+def test_register_in_rejects_blank_name():
+    with pytest.raises(ValidationError):
+        RegisterIn(**_valid_register_kwargs(name="   "))
 
 
 def test_register_in_rejects_empty_sender_id():

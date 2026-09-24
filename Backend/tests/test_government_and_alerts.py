@@ -27,6 +27,8 @@ from app.services.signature_service import build_signed_payload
 
 TEST_API_KEY = "test-responder-api-key"
 
+from tests.signing_helpers import register_profile, signed_json_post, signed_nearby, pubkey_hex
+
 _DEVICE_KEYS: dict[str, Ed25519PrivateKey] = {}
 
 
@@ -57,6 +59,34 @@ def _sign_packet(packet: dict, device_name: str) -> str:
     payload = build_signed_payload(payload_obj)
     signature_bytes = _private_key_for(device_name).sign(payload.encode("utf-8"))
     return signature_bytes.hex()
+
+
+def _key_for_sender(sender_id: str) -> Ed25519PrivateKey:
+    for key in _DEVICE_KEYS.values():
+        if pubkey_hex(key) == sender_id:
+            return key
+    raise KeyError(sender_id)
+
+
+def _ensure_registered(client, private_key) -> None:
+    registered = client.__dict__.setdefault("_registered_devices", set())
+    if pubkey_hex(private_key) not in registered:
+        resp = register_profile(client, private_key, name="Community Tester")
+        assert resp.status_code == 200, resp.text
+        registered.add(pubkey_hex(private_key))
+
+
+def _nearby(client, params, viewer="community-viewer"):
+    """Signed, registered /alerts/nearby call (Block 2: anonymous callers are refused)."""
+    key = _key_for_sender(params["sender_id"]) if "sender_id" in params else _private_key_for(viewer)
+    _ensure_registered(client, key)
+    return signed_nearby(client, key, params)
+
+
+def _respond(client, incident_id, payload):
+    key = _key_for_sender(payload["sender_id"])
+    _ensure_registered(client, key)
+    return signed_json_post(client, key, f"/alerts/{incident_id}/respond", payload)
 
 
 def make_emergency(packet_id="gp1", emergency_id="ge1", sender_id="gov-dev-1",
@@ -218,10 +248,7 @@ class TestNearbyAlerts:
     def test_nearby_returns_open_incident_within_radius(self, client):
         incident_id = _create_incident(client)  # lat/lng: 28.6139, 77.2090 (Delhi)
 
-        resp = client.get(
-            "/alerts/nearby",
-            params={"lat": 28.6139, "lon": 77.2090, "radius_km": 5},
-        )
+        resp = _nearby(client, {"lat": 28.6139, "lon": 77.2090, "radius_km": 5})
         assert resp.status_code == 200, resp.text
         results = resp.json()
         assert any(r["incident_id"] == incident_id for r in results)
@@ -230,10 +257,7 @@ class TestNearbyAlerts:
         _create_incident(client)  # Delhi
 
         # Mumbai -- roughly 1400km from Delhi, well outside a 5km radius.
-        resp = client.get(
-            "/alerts/nearby",
-            params={"lat": 19.0760, "lon": 72.8777, "radius_km": 5},
-        )
+        resp = _nearby(client, {"lat": 19.0760, "lon": 72.8777, "radius_km": 5})
         assert resp.status_code == 200, resp.text
         assert resp.json() == []
 
@@ -245,10 +269,7 @@ class TestNearbyAlerts:
         """
         _create_incident(client)
 
-        resp = client.get(
-            "/alerts/nearby",
-            params={"lat": 28.6139, "lon": 77.2090, "radius_km": 5},
-        )
+        resp = _nearby(client, {"lat": 28.6139, "lon": 77.2090, "radius_km": 5})
         assert resp.status_code == 200
         for row in resp.json():
             assert "sender_id" not in row
@@ -261,10 +282,7 @@ class TestNearbyAlerts:
 
     def test_nearby_message_matches_spec_wording(self, client):
         _create_incident(client)
-        resp = client.get(
-            "/alerts/nearby",
-            params={"lat": 28.6139, "lon": 77.2090, "radius_km": 5},
-        )
+        resp = _nearby(client, {"lat": 28.6139, "lon": 77.2090, "radius_km": 5})
         results = resp.json()
         assert len(results) >= 1
         assert results[0]["message"] == (
@@ -279,20 +297,14 @@ class TestNearbyAlerts:
         (Query(..., le=MAX_RADIUS_KM)) actually rejects an over-limit
         value rather than silently clamping (422, not 200).
         """
-        resp = client.get(
-            "/alerts/nearby",
-            params={"lat": 28.6139, "lon": 77.2090, "radius_km": 9999},
-        )
+        resp = _nearby(client, {"lat": 28.6139, "lon": 77.2090, "radius_km": 9999})
         assert resp.status_code == 422
 
     def test_respond_creates_a_response(self, client):
         incident_id = _create_incident(client)
         sender_id = _pubkey_hex_for("responder-community-1")
 
-        resp = client.post(
-            f"/alerts/{incident_id}/respond",
-            json={"sender_id": sender_id, "response_type": "CAN_HELP"},
-        )
+        resp = _respond(client, incident_id, {"sender_id": sender_id, "response_type": "CAN_HELP"})
         assert resp.status_code == 200, resp.text
         body = resp.json()
         assert body["response_type"] == "CAN_HELP"
@@ -307,17 +319,11 @@ class TestNearbyAlerts:
         incident_id = _create_incident(client)
         sender_id = _pubkey_hex_for("responder-community-2")
 
-        first = client.post(
-            f"/alerts/{incident_id}/respond",
-            json={"sender_id": sender_id, "response_type": "NEARBY"},
-        )
+        first = _respond(client, incident_id, {"sender_id": sender_id, "response_type": "NEARBY"})
         assert first.status_code == 200
         first_id = first.json()["id"]
 
-        second = client.post(
-            f"/alerts/{incident_id}/respond",
-            json={"sender_id": sender_id, "response_type": "ALREADY_RESPONDING"},
-        )
+        second = _respond(client, incident_id, {"sender_id": sender_id, "response_type": "ALREADY_RESPONDING"})
         assert second.status_code == 200
         assert second.json()["id"] == first_id
         assert second.json()["response_type"] == "ALREADY_RESPONDING"
@@ -332,10 +338,7 @@ class TestNearbyAlerts:
 
     def test_respond_404_for_unknown_incident(self, client):
         sender_id = _pubkey_hex_for("responder-community-3")
-        resp = client.post(
-            "/alerts/999999/respond",
-            json={"sender_id": sender_id, "response_type": "CAN_HELP"},
-        )
+        resp = _respond(client, 999999, {"sender_id": sender_id, "response_type": "CAN_HELP"})
         assert resp.status_code == 404
 
     def test_already_responded_excluded_from_next_fetch(self, client):
@@ -348,15 +351,9 @@ class TestNearbyAlerts:
         incident_id = _create_incident(client)
         sender_id = _pubkey_hex_for("responder-community-4")
 
-        client.post(
-            f"/alerts/{incident_id}/respond",
-            json={"sender_id": sender_id, "response_type": "NEARBY"},
-        )
+        _respond(client, incident_id, {"sender_id": sender_id, "response_type": "NEARBY"})
 
-        resp = client.get(
-            "/alerts/nearby",
-            params={"lat": 28.6139, "lon": 77.2090, "radius_km": 5, "sender_id": sender_id},
-        )
+        resp = _nearby(client, {"lat": 28.6139, "lon": 77.2090, "radius_km": 5, "sender_id": sender_id})
         assert resp.status_code == 200
         assert all(r["incident_id"] != incident_id for r in resp.json())
 

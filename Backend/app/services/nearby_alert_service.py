@@ -44,6 +44,8 @@ from app.models.community_response import CommunityResponse, ResponseType
 EARTH_RADIUS_KM = 6371.0
 DEFAULT_RADIUS_KM = 2.0
 MAX_RADIUS_KM = 15.0  # hard cap so a bad client value can't force a huge scan/response
+MAX_NEARBY_RESULTS = 20  # bounds the response (Block 2)
+DISTANCE_ROUND_KM = 1  # decimals: distance reported to 100 m -- limits location triangulation
 
 
 def haversine_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
@@ -103,7 +105,7 @@ def get_nearby_open_incidents(
             "incident_type": incident.incident_type,
             "sender_priority": incident.sender_priority,
             "ai_priority": incident.ai_priority,
-            "distance_km": round(distance_km, 2),
+            "distance_km": round(distance_km, DISTANCE_ROUND_KM),
             "created_at": incident.created_at,
             "message": (
                 "An emergency has been reported near your area. "
@@ -112,7 +114,7 @@ def get_nearby_open_incidents(
         })
 
     results.sort(key=lambda r: r["distance_km"])
-    return results
+    return results[:MAX_NEARBY_RESULTS]
 
 
 def record_response(

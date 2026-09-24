@@ -19,13 +19,24 @@ treating this as "real-time notification."
 """
 from typing import List
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy.orm import Session
 
-from app.core.rate_limit import enforce_public_write_rate_limit
+from app.core.rate_limit import (
+    enforce_public_write_rate_limit,
+    nearby_ip_limiter,
+    nearby_sender_limiter,
+)
 from app.core.security import verify_responder_api_key
 from app.db.base import get_db
 from app.models.incident import Incident
+from app.models.user_profile import UserProfile
+from app.services.request_auth import (
+    SignedHeaders,
+    require_signed_body,
+    signed_headers,
+    verify_signed_request,
+)
 from app.schemas.alert import NearbyIncidentOut, RespondIn, CommunityResponseOut
 from app.services.nearby_alert_service import (
     get_nearby_open_incidents,
@@ -38,20 +49,45 @@ from app.models.community_response import CommunityResponse
 router = APIRouter()
 
 
+def _require_registered(db: Session, sender_id: str) -> None:
+    if not db.query(UserProfile.id).filter(UserProfile.sender_id == sender_id).first():
+        raise HTTPException(status_code=403, detail="Register your profile before using community alerts.")
+
+
 @router.get("/alerts/nearby", response_model=List[NearbyIncidentOut])
 def nearby_alerts(
+    request: Request,
     lat: float = Query(..., ge=-90, le=90),
     lon: float = Query(..., ge=-180, le=180),
     radius_km: float = Query(DEFAULT_RADIUS_KM, gt=0, le=MAX_RADIUS_KM),
-    sender_id: str = Query(None, description="Excludes incidents this sender already responded to, if given."),
+    sender_id: str = Query(None, description="Optional; if present must equal the authenticated key."),
     db: Session = Depends(get_db),
+    headers: SignedHeaders = Depends(signed_headers),
 ):
     """
-    Polling endpoint: mobile app supplies its OWN current location on
-    each call (app open / periodic poll) -- nothing is stored server-side.
-    Returns privacy-safe OPEN-incident summaries only, nearest first.
+    Polling endpoint: the mobile app supplies its OWN current location on each
+    call -- nothing is stored server-side. Returns privacy-safe OPEN-incident
+    summaries only, nearest first.
+
+    AUTHORIZATION (Block 2): the request must be signed by a REGISTERED SETU
+    device key (services/request_auth.py; parts = [lat, lon, radius_km] as the
+    raw query strings), and is rate limited per IP and per key. Anonymous
+    callers can no longer enumerate incidents. Results are the minimum the app
+    needs: no coordinates, no reporter identity, distance rounded to 100 m,
+    at most MAX_NEARBY_RESULTS rows.
     """
-    return get_nearby_open_incidents(db, lat=lat, lon=lon, radius_km=radius_km, exclude_sender_id=sender_id)
+    nearby_ip_limiter.check(request)
+    signer = verify_signed_request(
+        db, headers, "GET", request.url.path,
+        [request.query_params.get("lat", ""), request.query_params.get("lon", ""),
+         request.query_params.get("radius_km", "")],
+    )
+    nearby_sender_limiter.check(request, key=signer)
+    if sender_id is not None and sender_id != signer:
+        raise HTTPException(status_code=403, detail="sender_id does not match the authenticated key.")
+    _require_registered(db, signer)
+
+    return get_nearby_open_incidents(db, lat=lat, lon=lon, radius_km=radius_km, exclude_sender_id=signer)
 
 
 @router.post("/alerts/{incident_id}/respond", response_model=CommunityResponseOut)
@@ -59,19 +95,20 @@ def respond_to_alert(
     incident_id: int,
     payload: RespondIn,
     db: Session = Depends(get_db),
-    # SEP 2026: this is public/unauthenticated (see module docstring) AND
-    # a write, so it gets the lenient PUBLIC WRITE tier -- not the strict
-    # auth/responder tiers, and NOT left uncapped like /ingest, which is
-    # a different kind of endpoint (signed, deduplicated, TTL-bounded
-    # emergency data) with its own protections already in place.
+    # PUBLIC-WRITE tier (lenient) -- see core/rate_limit.py.
     _rate_limit: None = Depends(enforce_public_write_rate_limit),
+    signer: str = Depends(require_signed_body),
 ):
     """
-    Records/updates a community member's response action for an
-    incident. Upsert by (incident_id, sender_id) -- see
-    nearby_alert_service.record_response for why a resend updates
-    in place instead of duplicating.
+    Records/updates a community member's response action for an incident.
+    Upsert by (incident_id, sender_id). Block 2: the request must be signed by
+    the key it claims to respond as (no more free-text sender_id), and that key
+    must be a registered profile.
     """
+    if payload.sender_id != signer:
+        raise HTTPException(status_code=403, detail="sender_id does not match the authenticated key.")
+    _require_registered(db, signer)
+
     incident = db.query(Incident).filter(Incident.id == incident_id).first()
     if not incident:
         raise HTTPException(status_code=404, detail="Incident not found.")

@@ -160,4 +160,6 @@ class PacketBatchIn(BaseModel):
     right (session brief: "protect ... backend ingestion ... against
     packet floods").
     """
-    packets: List[Dict[str, Any]] = Field(..., max_length=500)
+    # List[Any], not List[Dict]: a non-object entry (string, number, null) must be
+    # rejected as ONE packet by ingest_service.validate_packet, not 422 the whole batch.
+    packets: List[Any] = Field(..., max_length=500)
