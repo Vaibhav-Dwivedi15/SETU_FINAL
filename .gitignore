@@ -8,3 +8,7 @@ dist/
 *.iml
 .idea/
 *.class
+
+# Block 2: stale duplicate AI tree (canonical copy is Backend/setu_ai_service/). The
+# working-tree remnant is read-only and left for the owner to delete; keep it untracked.
+/setu_ai_service/
