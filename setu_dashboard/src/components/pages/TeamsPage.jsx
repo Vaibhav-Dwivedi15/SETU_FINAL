@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { fetchResponders } from "../../services/api";
-import mockTeams from "../../data/teams";
+import { demoTeams } from "../../demo/demoData";
+import { DEMO_MODE } from "../../config";
 import { SkeletonGrid } from "../Skeleton";
 import { ActionIcons, NavIcons, StatusIcons } from "../../icons";
 import { StatusBadge, SectionHeader, MetricCard, EmptyState } from "../ui/Primitives";
@@ -25,25 +26,25 @@ import { StatusBadge, SectionHeader, MetricCard, EmptyState } from "../ui/Primit
 // Only fields that actually exist in the data (name, organization,
 // area, status) render real values.
 function TeamsPage() {
-  const [teams, setTeams] = useState(mockTeams);
-  const [source, setSource] = useState("mock"); // "mock" | "backend"
+  const [teams, setTeams] = useState(demoTeams);
+  const [source, setSource] = useState(DEMO_MODE ? "mock" : "backend"); // "mock" only in an explicit DEMO build
+  const [loadError, setLoadError] = useState(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     let cancelled = false;
+    if (DEMO_MODE) {
+      setLoading(false);
+      return undefined;
+    }
     fetchResponders()
       .then((responders) => {
         if (cancelled) return;
-        if (responders.length > 0) {
-          setTeams(responders);
-          setSource("backend");
-        }
-        // if the backend is reachable but has zero registered responders,
-        // keep showing mock data rather than an empty page
+        setTeams(responders); // an empty registry is shown as empty, never replaced by sample teams
+        setSource("backend");
       })
-      .catch(() => {
-        // backend unreachable or not yet auth-configured for this key —
-        // mock data (already the initial state) stays as-is
+      .catch((err) => {
+        if (!cancelled) setLoadError(err?.message || "Could not load responders.");
       })
       .finally(() => {
         if (!cancelled) setLoading(false);
@@ -61,6 +62,15 @@ function TeamsPage() {
     );
   }
 
+  if (loadError) {
+    return (
+      <div className="teams-page">
+        <SectionHeader title="Response Teams" description="Operational readiness across registered responder teams." />
+        <p role="alert" className="teams-source-note">Could not load the responder registry: {loadError}</p>
+      </div>
+    );
+  }
+
   if (teams.length === 0) {
     return (
       <div className="teams-page">
@@ -68,7 +78,7 @@ function TeamsPage() {
         <EmptyState
           icon={NavIcons.teams}
           title="NO TEAMS REGISTERED"
-          description="No responder teams are currently registered in the backend or sample data."
+          description="No responder teams are currently registered in the backend."
         />
       </div>
     );
@@ -94,7 +104,7 @@ function TeamsPage() {
       <p className="teams-source-note">
         {source === "backend"
           ? "Showing registered responders from the backend."
-          : "Backend responder registry not reachable — showing sample teams."}
+          : "DEMO MODE — sample teams, not real responders."}
       </p>
 
       <div className="teams-grid">
