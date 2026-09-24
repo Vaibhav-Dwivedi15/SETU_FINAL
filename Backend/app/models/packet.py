@@ -12,7 +12,7 @@ gets stored.
 """
 
 import enum
-from sqlalchemy import ForeignKey
+from sqlalchemy import ForeignKey, UniqueConstraint, Index
 from sqlalchemy import Column, String, Integer, Float, DateTime, Enum as SAEnum, JSON
 from sqlalchemy.sql import func
 
@@ -28,12 +28,28 @@ class PacketStatus(str, enum.Enum):
 
 
 class RawPacket(Base):
+    """
+    Only AUTHENTICATED, ACCEPTED packets live here (Block 2). Rejected
+    packets (bad signature, stale, malformed, ...) are recorded in
+    RejectedPacket instead, so junk can never occupy a packet_id.
+
+    IDENTITY (Block 2, packet-ID squatting fix): a packet is identified by
+    (sender_id, packet_id). sender_id is the Ed25519 public key and the
+    signature was verified against it BEFORE this row is written, so the pair
+    cannot be claimed by anyone but the key holder. The previous UNIQUE on
+    packet_id alone let anyone who saw a packet_id on the mesh submit a
+    packet with that id first and make the genuine one answer "duplicate".
+    packet_id keeps a plain (non-unique) index for lookups.
+    """
     __tablename__ = "raw_packets"
+    __table_args__ = (
+        UniqueConstraint("sender_id", "packet_id", name="uq_raw_packets_sender_packet"),
+    )
 
     id = Column(Integer, primary_key=True, index=True)
     incident_id = Column(Integer, ForeignKey("incidents.id"), nullable=True, index=True)
 
-    packet_id = Column(String, unique=True, index=True, nullable=False)
+    packet_id = Column(String, index=True, nullable=False)
     sender_id = Column(String, nullable=False)
     type = Column(String, nullable=False)  # "emergency" or "termination"
     timestamp = Column(String, nullable=False)  # ISO 8601, stored as-received
@@ -63,4 +79,21 @@ class RawPacket(Base):
 
     status = Column(SAEnum(PacketStatus), default=PacketStatus.RECEIVED, nullable=False)
 
+    received_at = Column(DateTime(timezone=True), server_default=func.now())
+
+
+class RejectedPacket(Base):
+    """
+    Audit trail of packets /ingest refused. Deliberately NOT unique on
+    packet_id and NOT consulted by dedup: a rejected packet has no standing.
+    Only metadata is kept (no message/location) and every text field is
+    truncated, so this table cannot be used as free storage.
+    """
+    __tablename__ = "rejected_packets"
+
+    id = Column(Integer, primary_key=True, index=True)
+    packet_id = Column(String(64), nullable=True, index=True)
+    sender_id = Column(String(64), nullable=True)
+    code = Column(String(48), nullable=False)
+    reason = Column(String(200), nullable=True)
     received_at = Column(DateTime(timezone=True), server_default=func.now())

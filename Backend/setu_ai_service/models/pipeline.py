@@ -99,6 +99,7 @@ def process_message(
         "similarity": dup_result["similarity"],
         "match_method": dup_result["match_method"],
         "distance_meters": dup_result["distance_meters"],
+        "dedup_reason": dup_result["dedup_reason"],
     }
     if gemini_note:
         result["gemini_note"] = gemini_note

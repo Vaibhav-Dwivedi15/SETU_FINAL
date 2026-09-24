@@ -299,7 +299,9 @@ def test_duplicate_packet_id_rejected(client):
     resp = client.post("/ingest", json={"packets": [packet]})
     body = resp.json()
     assert body["accepted"] == []
-    assert body["rejected"][0]["reason"] == "duplicate packet_id"
+    assert body["rejected"] == []
+    assert body["duplicates"][0]["packet_id"] == "dup-1"
+    assert body["duplicates"][0]["status"] == "DUPLICATE"
 
 
 def test_expired_ttl_rejected(client):
@@ -308,7 +310,7 @@ def test_expired_ttl_rejected(client):
     resp = client.post("/ingest", json={"packets": [packet]})
     body = resp.json()
     assert body["accepted"] == []
-    assert body["rejected"][0]["reason"] == "TTL expired"
+    assert body["rejected"][0]["code"] == "stale"
 
 
 def test_nearby_same_type_reports_merge_into_one_incident(client):

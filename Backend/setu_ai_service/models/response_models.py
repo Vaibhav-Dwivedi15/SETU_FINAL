@@ -66,6 +66,14 @@ class TriageResponse(BaseModel):
             "(the packet spec's 0.0/0.0 fallback), in which case matching fell back to text+time only."
         ),
     )
+    dedup_reason: Optional[str] = Field(
+        None,
+        description=(
+            "Why the duplicate decision was made: 'text_and_geo_match', "
+            "'text_match_location_unverified' (one side had no GPS fix), or "
+            "'no_similar_recent_report'."
+        ),
+    )
     gemini_note: Optional[str] = Field(
         None,
         description="Only present when the rule-based classifier returned Unknown AND the Gemini fallback flag is on.",

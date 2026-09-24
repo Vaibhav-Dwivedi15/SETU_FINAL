@@ -117,6 +117,7 @@ def check_duplicate(
           "similarity": float,
           "match_method": "embedding" | "lexical",
           "distance_meters": float | None,
+          "dedup_reason": str,   # Block 2: why (see below)
         }
     """
     _prune_expired()
@@ -155,6 +156,9 @@ def check_duplicate(
             "similarity": round(float(score), 2),
             "match_method": method,
             "distance_meters": round(distance, 1) if distance is not None else None,
+            # Block 2: explainable decision. "location_unverified" = at least one
+            # side had no GPS fix, so this merge rests on text similarity + time only.
+            "dedup_reason": "text_and_geo_match" if distance is not None else "text_match_location_unverified",
         }
 
     _CLUSTERS.append(
@@ -173,6 +177,7 @@ def check_duplicate(
         "similarity": 0.0,
         "match_method": "embedding" if message_embedding is not None else "lexical",
         "distance_meters": None,
+        "dedup_reason": "no_similar_recent_report",
     }
 
 

@@ -45,9 +45,11 @@ notify_government itself and can never affect the response returned to
 the mesh device.
 """
 
+from dataclasses import dataclass, field
 from typing import Optional
 from datetime import datetime, timezone
 from sqlalchemy import text
+import logging
 import zlib
 from sqlalchemy.orm import Session
 
@@ -57,8 +59,9 @@ from app.models.packet import RawPacket
 from app.models.user_profile import UserProfile
 from app.schemas.packet import PacketIn, IncidentType
 from app.services.classification_service import infer_incident_type
-from app.services.deduplication_service import find_matching_incident
-from app.services.sms_service import notify_emergency_contacts
+from app.core.contract import AI_DEDUP_RADIUS_METERS
+from app.services.deduplication_service import find_matching_incident, haversine_distance_meters, resolve_incident_type
+from app.services.sms_service import notify_emergency_contacts, count_notified
 from app.services.government_notification_service import notify_government
 
 
@@ -73,6 +76,7 @@ def _find_incident_by_emergency_id(db: Session, emergency_id: str) -> Optional[I
     original_packet = (
         db.query(RawPacket)
         .filter(RawPacket.emergency_id == emergency_id, RawPacket.type == "emergency")
+        .order_by(RawPacket.id.asc())
         .first()
     )
     if not original_packet or not original_packet.incident_id:
@@ -156,50 +160,153 @@ def create_incident_from_packet(db: Session, packet: PacketIn, ai_result: Option
     return incident
 
 
-def handle_sos_packet(db: Session, packet: PacketIn, ai_result: Optional[dict] = None) -> Incident:
+@dataclass
+class DedupDecision:
     """
-    Attach to an existing incident if one matches, else create new.
-    Also links the already-stored RawPacket row to the resulting
-    incident, via RawPacket.incident_id -- this is what makes closing
+    Explainable new-vs-merge decision (Block 2). The AI service PROPOSES a
+    match; this backend decides, using facts it can verify itself (incident
+    status, distance, category). The AI is never the sole source of truth for
+    incident identity.
+
+    decision: "NEW_INCIDENT" | "MERGED"
+    reason  (stable machine code):
+      no_ai_match                 AI found no similar recent report -> new incident
+      ai_match_accepted           AI match, target OPEN, categories compatible,
+                                  location consistent (or unverifiable, see evidence)
+      ai_match_vetoed_closed      AI match pointed at a CLOSED incident -> not merged
+      ai_match_vetoed_unresolved  AI cluster id has no incident in the database
+      ai_match_vetoed_category    both reports have a definite, different category
+      ai_match_vetoed_distance    backend-computed distance exceeds the dedup radius
+      fallback_match / fallback_no_match
+                                  AI unavailable (or its match was vetoed): the
+                                  backend's own DB-backed OPEN-incident dedup
+    """
+    decision: str
+    reason: str
+    matched_incident_id: Optional[int] = None
+    evidence: dict = field(default_factory=dict)
+
+    def as_dict(self) -> dict:
+        return {
+            "dedup_decision": self.decision,
+            "matched_incident_id": self.matched_incident_id,
+            "dedup_reason": self.reason,
+            "dedup_evidence": self.evidence,
+        }
+
+    def audit_detail(self) -> str:
+        bits = [f"dedup={self.reason}"]
+        if self.matched_incident_id is not None:
+            bits.append(f"matched_incident={self.matched_incident_id}")
+        for key in ("similarity", "match_method", "distance_meters"):
+            if self.evidence.get(key) is not None:
+                bits.append(f"{key}={self.evidence[key]}")
+        return " ".join(bits)[:250]
+
+
+@dataclass
+class SosOutcome:
+    incident: Incident
+    is_new_incident: bool
+    dedup: DedupDecision
+    sms_contacts_notified: int = 0
+
+
+def _has_gps(lat: Optional[float], lon: Optional[float]) -> bool:
+    return lat is not None and lon is not None and not (lat == 0.0 and lon == 0.0)
+
+
+def _definite(value: Optional[str]) -> Optional[str]:
+    """Normalise a category; 'unknown'/'other'/empty carry no information."""
+    if not value:
+        return None
+    value = str(value).strip().lower()
+    return None if value in ("unknown", "other", "") else value
+
+
+def _categories_conflict(incident: Incident, packet: PacketIn, ai_result: Optional[dict]) -> bool:
+    ai_new = _definite((ai_result or {}).get("ai_incident_type"))
+    ai_old = _definite(incident.ai_incident_type)
+    if ai_new and ai_old and ai_new != ai_old:
+        return True
+    new_type = _definite(resolve_incident_type(packet))
+    old_type = _definite(incident.incident_type)
+    return bool(new_type and old_type and new_type != old_type)
+
+
+def decide_dedup(db: Session, packet: PacketIn, ai_result: Optional[dict]) -> tuple[Optional[Incident], DedupDecision]:
+    """Returns (incident to merge into or None, the explainable decision)."""
+    evidence = {}
+    if ai_result is not None:
+        evidence = {
+            "similarity": ai_result.get("similarity"),
+            "match_method": ai_result.get("match_method"),
+            "distance_meters": ai_result.get("distance_meters"),
+        }
+
+    if ai_result is None:
+        fallback = find_matching_incident(db, packet)
+        if fallback is not None:
+            return fallback, DedupDecision("MERGED", "fallback_match", fallback.id, {"source": "db_fallback"})
+        return None, DedupDecision("NEW_INCIDENT", "fallback_no_match", None, {"source": "db_fallback"})
+
+    if not (ai_result.get("is_duplicate") and ai_result.get("matched_cluster_id")):
+        return None, DedupDecision("NEW_INCIDENT", "no_ai_match", None, evidence)
+
+    candidate = _find_incident_by_emergency_id(db, ai_result["matched_cluster_id"])
+    veto = None
+    if candidate is None:
+        veto = "ai_match_vetoed_unresolved"
+    elif candidate.status != IncidentStatus.OPEN:
+        veto = "ai_match_vetoed_closed"
+    elif _categories_conflict(candidate, packet, ai_result):
+        veto = "ai_match_vetoed_category"
+    elif _has_gps(packet.latitude, packet.longitude) and _has_gps(candidate.latitude, candidate.longitude):
+        backend_distance = haversine_distance_meters(
+            packet.latitude, packet.longitude, candidate.latitude, candidate.longitude
+        )
+        evidence["backend_distance_meters"] = round(backend_distance, 1)
+        if backend_distance > AI_DEDUP_RADIUS_METERS:
+            veto = "ai_match_vetoed_distance"
+
+    if veto is None:
+        if not _has_gps(packet.latitude, packet.longitude) or not _has_gps(candidate.latitude, candidate.longitude):
+            evidence["location_verified"] = False  # text+time match only; one side had no GPS fix
+        return candidate, DedupDecision("MERGED", "ai_match_accepted", candidate.id, evidence)
+
+    # The AI proposed a merge the backend cannot support. Do NOT silently drop
+    # into the closed/foreign incident; consult the backend's own OPEN-incident
+    # dedup instead (which can still join a genuinely nearby OPEN incident, e.g.
+    # the one a previous vetoed report just created).
+    evidence["vetoed_incident_id"] = candidate.id if candidate is not None else None
+    fallback = find_matching_incident(db, packet)
+    if fallback is not None:
+        evidence["ai_veto"] = veto
+        return fallback, DedupDecision("MERGED", "fallback_match", fallback.id, evidence)
+    return None, DedupDecision("NEW_INCIDENT", veto, None, evidence)
+
+
+def process_sos_packet(db: Session, packet: PacketIn, ai_result: Optional[dict] = None) -> SosOutcome:
+    """
+    Attach to an existing OPEN incident if the dedup decision says so, else
+    create a new one. Also links the already-stored RawPacket row to the
+    resulting incident (RawPacket.incident_id), which is what makes closing
     an incident later an exact lookup instead of a location-based guess.
 
-    ai_result is used for BOTH dedup and incident enrichment as of the
-    reversed decision (see app/services/ai_analysis_service.py module
-    docstring for full history/reasoning): the AI service's
-    is_duplicate/matched_cluster_id is now the primary source of truth
-    for new-vs-merge, NOT this backend's own find_matching_incident().
-    find_matching_incident() is kept only as a FALLBACK for when
-    ai_result is None (AI call failed/unavailable) -- never blend the
-    two for a single packet; it's always one or the other, never both.
+    See DedupDecision for the (explainable) decision rules. The AI service's
+    duplicate proposal is used, but verified by the backend; the backend's own
+    DB dedup is the fallback when the AI is unavailable or its proposal is
+    vetoed. Never blend the two for the same packet without recording why.
 
-    SMS notification fires ONLY when a brand-new incident is created
-    (existing is None) -- never on a merge into an existing incident,
-    since that would spam the same contacts once per corroborating report.
-    The government notification adapter call (Phase 2) follows the exact
-    same rule, for the exact same reason.
+    SMS: exactly once per NEW incident (never on merge), via the idempotent
+    ledger in sms_service. Government adapter: same rule.
 
-    RACE CONDITION FIX (load test, Aug 2): a Postgres advisory transaction
-    lock, scoped per incident_type, serializes the check+create section
-    below so concurrent same-type packets can't each create their own
-    incident. FOLLOW-UP FIX (same day): SMS notification was originally
-    sent BEFORE commit, meaning it ran while the lock was still held --
-    a slow network call inside a lock meant every other same-type packet
-    queued behind that one HTTP request, causing timeouts under load.
-    Moved SMS to after commit/lock-release: the lock now only covers
-    fast DB work, and a slow SMS send only blocks its OWN request, not
-    everyone else's. The government adapter call (Phase 2) follows after
-    SMS, same reasoning -- it never runs while the lock is held.
-
-    DIALECT GUARD (Aug, found via local pytest run): pg_advisory_xact_lock
-    is Postgres-only -- SQLite (used by the test suite's in-memory DB,
-    see tests/test_ingest.py) has no such function and raises
-    OperationalError. Gated behind a dialect check so real deployments
-    (Neon/Postgres) keep the actual concurrency protection, while local
-    tests on SQLite skip the lock harmlessly. This does mean the race
-    condition this lock exists to prevent is UNTESTED on SQLite -- the
-    concurrent-load scenario this fixes was only ever verified against
-    real Postgres (see load test notes, Aug 2), not reproducible in the
-    local suite.
+    RACE CONDITION FIX (load test, Aug 2): a Postgres advisory transaction lock,
+    scoped per incident_type, serializes the check+create section so concurrent
+    same-type packets can't each create their own incident. SMS and the
+    government adapter run AFTER commit/lock release (a slow send must not hold
+    the lock). The lock is Postgres-only (dialect guard) -- the race it prevents
+    is untested on SQLite.
     """
     incident_type_for_lock = (
         packet.incident_type.value if packet.incident_type
@@ -209,94 +316,103 @@ def handle_sos_packet(db: Session, packet: PacketIn, ai_result: Optional[dict] =
     if db.get_bind().dialect.name == "postgresql":
         db.execute(text("SELECT pg_advisory_xact_lock(:key)"), {"key": lock_key})
 
-    if ai_result is not None:
-        # AI-driven dedup path (source of truth as of the reversed decision).
-        # matched_cluster_id is an emergency_id (per setu_ai_service's own
-        # handoff doc), not an incident id -- resolve it via the lookup
-        # helper above. is_duplicate=False means this packet IS its own
-        # new cluster (matched_cluster_id points to itself in that case),
-        # so existing stays None and a new incident gets created below.
-        existing = (
-            _find_incident_by_emergency_id(db, ai_result["matched_cluster_id"])
-            if ai_result.get("is_duplicate") and ai_result.get("matched_cluster_id")
-            else None
-        )
-    else:
-        # FALLBACK ONLY: AI call failed/unavailable this request. Falls
-        # back to this backend's own DB-backed dedup rather than treating
-        # every packet as new (which would spam duplicate incidents for
-        # the whole duration of an AI outage).
-        existing = find_matching_incident(db, packet)
+    existing, decision = decide_dedup(db, packet, ai_result)
 
     is_new_incident = existing is None
     incident = existing if existing else create_incident_from_packet(db, packet, ai_result=ai_result)
 
-    raw = db.query(RawPacket).filter(RawPacket.packet_id == packet.packet_id).first()
+    raw = (
+        db.query(RawPacket)
+        .filter(RawPacket.packet_id == packet.packet_id, RawPacket.sender_id == packet.sender_id)
+        .first()
+    )
     if raw:
         raw.incident_id = incident.id
 
-    if is_new_incident:
-        _log_incident_action(db, incident.id, AuditAction.CREATED, packet_id=packet.packet_id, commit=False)
-    else:
-        _log_incident_action(db, incident.id, AuditAction.MERGED, packet_id=packet.packet_id, commit=False)
+    _log_incident_action(
+        db, incident.id,
+        AuditAction.CREATED if is_new_incident else AuditAction.MERGED,
+        packet_id=packet.packet_id, detail=decision.audit_detail(), commit=False,
+    )
 
     db.commit()  # releases the advisory lock here -- next same-type request can proceed now
 
-    # SMS and the government notification adapter both happen AFTER
-    # commit/lock-release -- a slow send only delays this one request's
-    # response, not every other packet waiting on the lock. Both fire
-    # only for genuinely new incidents, never on a merge.
+    notified = 0
     if is_new_incident:
-        profile = db.query(UserProfile).filter(
-            UserProfile.sender_id == packet.sender_id
-        ).first()
+        notified = send_incident_notifications(db, incident, packet.sender_id)
+        # Mock government adapter. Never blocking, never able to affect the response.
+        notify_government(db, incident)
 
-        if profile and profile.emergency_contacts:
-            notify_emergency_contacts(
+    return SosOutcome(incident=incident, is_new_incident=is_new_incident, dedup=decision, sms_contacts_notified=notified)
+
+
+def sms_event_key(incident_id: int) -> str:
+    return f"incident-created:{incident_id}"
+
+
+def send_incident_notifications(db: Session, incident: Incident, sender_id: str) -> int:
+    """Idempotent emergency-contact SMS for a newly created incident. Returns contacts handled."""
+    profile = db.query(UserProfile).filter(UserProfile.sender_id == sender_id).first()
+    if profile and profile.emergency_contacts:
+        try:
+            return notify_emergency_contacts(
+                db,
+                event_key=sms_event_key(incident.id),
                 sender_name=profile.name,
                 contacts=profile.emergency_contacts,
                 incident_type=incident.incident_type,
                 incident_id=incident.id,
             )
+        except Exception:
+            db.rollback()
+            logging.getLogger("setu.incident").exception("SMS notification failed for incident %s", incident.id)
+    return 0
 
-        # Phase 2: mock government notification adapter. Never blocking,
-        # never able to affect the response below -- see
-        # government_notification_service.notify_government's docstring.
-        notify_government(db, incident)
 
-    return incident
+def handle_sos_packet(db: Session, packet: PacketIn, ai_result: Optional[dict] = None) -> Incident:
+    """Back-compat wrapper: returns only the Incident. Prefer process_sos_packet."""
+    return process_sos_packet(db, packet, ai_result=ai_result).incident
 
 
 def close_incident_by_emergency_id(db: Session, emergency_id: Optional[str]) -> Optional[Incident]:
     """
-    Find the incident linked to the emergency packet that this
-    termination references (via RawPacket.emergency_id -> incident_id),
-    and close it. Returns None if no such packet/incident exists, or the
-    incident is already CLOSED (silent no-op, per project convention --
-    termination never errors).
+    Close every OPEN incident linked to an emergency packet carrying this
+    emergency_id (via RawPacket.emergency_id -> incident_id). emergency_id is
+    not sender-scoped in the frozen packet spec, so an authorized responder's
+    termination resolves ALL incidents that share it -- a squatted or colliding
+    emergency_id can therefore never leave the genuine incident open.
+
+    Returns the first incident closed, or None if there was nothing to close
+    (no such packet/incident, or already CLOSED: silent no-op, per project
+    convention -- termination never errors).
     """
     if not emergency_id:
         return None
 
-    original_packet = (
+    originals = (
         db.query(RawPacket)
-        .filter(RawPacket.emergency_id == emergency_id, RawPacket.type == "emergency")
-        .first()
+        .filter(RawPacket.emergency_id == emergency_id, RawPacket.type == "emergency",
+                RawPacket.incident_id.isnot(None))
+        .order_by(RawPacket.id.asc())
+        .all()
     )
-    if not original_packet or not original_packet.incident_id:
-        return None
 
-    incident = db.query(Incident).filter(Incident.id == original_packet.incident_id).first()
-    if not incident or incident.status == IncidentStatus.CLOSED:
-        return None
-
-    incident.status = IncidentStatus.CLOSED
-    incident.closed_at = datetime.now(timezone.utc)
-
-    _log_incident_action(db, incident.id, AuditAction.CLOSED, packet_id=original_packet.packet_id, commit=False)
+    closed_first: Optional[Incident] = None
+    seen = set()
+    for original_packet in originals:
+        if original_packet.incident_id in seen:
+            continue
+        seen.add(original_packet.incident_id)
+        incident = db.query(Incident).filter(Incident.id == original_packet.incident_id).first()
+        if not incident or incident.status == IncidentStatus.CLOSED:
+            continue
+        incident.status = IncidentStatus.CLOSED
+        incident.closed_at = datetime.now(timezone.utc)
+        _log_incident_action(db, incident.id, AuditAction.CLOSED, packet_id=original_packet.packet_id, commit=False)
+        closed_first = closed_first or incident
 
     db.commit()
-    return incident
+    return closed_first
 
 
 def resolve_incident_by_id(db: Session, incident_id: int) -> Optional[Incident]:

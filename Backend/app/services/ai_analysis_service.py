@@ -95,4 +95,9 @@ def analyze(message: str, emergency_id: str, relay_count: int, age_seconds: int,
         "ai_priority": result.get("priority"),
         "is_duplicate": result.get("is_duplicate"),
         "matched_cluster_id": result.get("matched_cluster_id"),
+        # Evidence for the explainable dedup decision (Block 2).
+        "similarity": result.get("similarity"),
+        "match_method": result.get("match_method"),
+        "distance_meters": result.get("distance_meters"),
+        "dedup_reason": result.get("dedup_reason"),
     }

@@ -28,8 +28,10 @@ from app.models.incident import Incident, IncidentStatus
 from app.schemas.packet import PacketIn
 from app.services.classification_service import infer_incident_type
 
-DEDUP_DISTANCE_METERS = 150
-DEDUP_TIME_WINDOW_MINUTES = 15
+from app.core.contract import INCIDENT_DEDUP_RADIUS_METERS, INCIDENT_DEDUP_WINDOW_SECONDS
+
+DEDUP_DISTANCE_METERS = INCIDENT_DEDUP_RADIUS_METERS
+DEDUP_TIME_WINDOW_MINUTES = INCIDENT_DEDUP_WINDOW_SECONDS // 60
 
 EARTH_RADIUS_METERS = 6371000
 
