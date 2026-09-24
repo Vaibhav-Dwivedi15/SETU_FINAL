@@ -46,7 +46,7 @@ def _looks_like_default_key() -> bool:
     return settings.responder_api_key == _DEFAULT_KEY_MARKER
 
 
-def verify_responder_api_key(x_api_key: str = Header(...)):
+def verify_responder_api_key(x_api_key: str | None = Header(default=None)):
     if not settings.debug and _looks_like_default_key():
         # Fail loudly and safely: reject every request rather than
         # accept a well-known placeholder credential in what looks like
@@ -62,5 +62,9 @@ def verify_responder_api_key(x_api_key: str = Header(...)):
             ),
         )
 
-    if not hmac.compare_digest(x_api_key, settings.responder_api_key):
+    # Block 2: a MISSING header is an authentication failure (401), not a
+    # request-validation failure (422 from Header(...)).
+    if not x_api_key or not hmac.compare_digest(
+        x_api_key.encode("utf-8"), settings.responder_api_key.encode("utf-8")
+    ):
         raise HTTPException(status_code=401, detail="Invalid or missing API key.")

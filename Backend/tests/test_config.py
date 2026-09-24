@@ -23,8 +23,9 @@ def test_settings_load_from_env(monkeypatch):
     assert test_settings.database_url == "postgresql+psycopg2://u:p@localhost:5432/testdb"
 
 
-def test_settings_have_sane_defaults():
+def test_settings_have_sane_defaults(monkeypatch):
     """Settings should have working defaults even without a .env file."""
+    monkeypatch.delenv("DATABASE_URL", raising=False)
     test_settings = Settings(_env_file=None)
 
     assert test_settings.app_name

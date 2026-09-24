@@ -265,7 +265,9 @@ class TestRouterRegistration:
     """
 
     def test_all_new_routes_are_registered(self):
-        registered_paths = {route.path for route in app.routes}
+        # openapi() is stable across FastAPI versions (app.routes may nest
+        # _IncludedRouter objects without a .path on newer releases).
+        registered_paths = set(app.openapi()["paths"].keys())
         expected = {
             "/auth/request-otp",
             "/auth/verify-otp",

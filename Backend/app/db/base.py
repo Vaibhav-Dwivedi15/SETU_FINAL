@@ -18,12 +18,13 @@ from app.core.config import settings
 # latency because most were queued waiting for a free connection, not
 # actually doing slow work. Bumped explicitly; pool_pre_ping avoids using
 # a connection that's gone stale (e.g. after a long idle period).
-engine = create_engine(
-    settings.database_url,
-    pool_size=20,
-    max_overflow=30,
-    pool_pre_ping=True,
-)
+# Pool sizing only applies to server databases; SQLite (local dev / hermetic
+# tests) uses a different pool class that rejects these arguments.
+_engine_kwargs = {"pool_pre_ping": True}
+if not settings.database_url.startswith("sqlite"):
+    _engine_kwargs.update(pool_size=20, max_overflow=30)
+
+engine = create_engine(settings.database_url, **_engine_kwargs)
 
 # Each request gets its own Session from this factory.
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)

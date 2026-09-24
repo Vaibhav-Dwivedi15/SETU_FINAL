@@ -25,6 +25,18 @@ importable) instead of manually reaching into Backend/setu_ai_service/,
 so this stays correct even if that vendoring path ever changes.
 """
 
+import os
+import tempfile
+
+# Hermetic test environment (Block 2): the developer-local, git-ignored
+# Backend/.env can leave DATABASE_URL empty, which made every test module
+# fail at import (create_engine("")). Tests never touch this database (they
+# override get_db with in-memory SQLite) but app.db.base builds an engine at
+# import time, so make sure it is a valid throwaway SQLite URL. A non-empty
+# DATABASE_URL supplied by the caller is respected.
+if not os.environ.get("DATABASE_URL"):
+    os.environ["DATABASE_URL"] = "sqlite:///" + os.path.join(tempfile.gettempdir(), "setu_test_unused.db")
+
 import pytest
 
 from app.utils.setu_ai_import_guard import ensure_setu_ai_service_importable
