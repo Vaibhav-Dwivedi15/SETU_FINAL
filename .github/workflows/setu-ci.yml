@@ -73,6 +73,46 @@ jobs:
         working-directory: setu_app
         run: flutter test
 
+  backend-and-dashboard-tests:
+    # Block 2. NOT yet run on a GitHub runner -- the same commands were run locally
+    # (see docs/backend/BLOCK2_FINAL_VALIDATION.md). Python 3.14 is the version they
+    # were verified on. openai-whisper / sentence-transformers are excluded: they pull
+    # multi-GB torch, and the suite is written to run without them (embedding dedup
+    # falls back to lexical; voice transcription is stubbed in tests).
+    name: Backend pytest + dashboard contract/build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.14"
+
+      - name: Install backend dependencies (test subset)
+        working-directory: Backend
+        run: |
+          grep -v -e '^#' -e '^$' -e 'openai-whisper' -e 'sentence-transformers' requirements.txt > /tmp/req.txt
+          pip install -r /tmp/req.txt numpy
+
+      - name: Backend tests
+        working-directory: Backend
+        run: python -m pytest -q
+
+      - name: AI service tests
+        working-directory: Backend/setu_ai_service
+        run: python -m pytest -q
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+
+      - name: Dashboard install, contract test, build
+        working-directory: setu_dashboard
+        run: |
+          npm ci
+          npm test
+          npm run build
+
   native-unit-tests:
     name: Native Kotlin unit tests (setu_app/android)
     runs-on: ubuntu-latest
