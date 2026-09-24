@@ -17,7 +17,7 @@ echo "== 2/3 Python: real backend verify_signature over the Dart wire packets"
 "$PY" "$ROOT/tools/cross_lang/verify_python.py" "$OUT"
 
 echo "== 3/3 Kotlin: production SignatureVerifier + PacketRelayEngine over the same packets"
-( cd android && SETU_XLANG_DIR="$OUT" ./gradlew :app:testDebugUnitTest --tests '*CrossLanguageVectorTest*' --no-daemon --rerun-tasks )
+( cd android && SETU_XLANG_DIR="$OUT" ./gradlew :app:cleanTestDebugUnitTest :app:testDebugUnitTest --tests '*CrossLanguageVectorTest*' --no-daemon )
 REPORT="$ROOT/setu_app/android/app/build/test-results/testDebugUnitTest/TEST-com.setu.mesh.CrossLanguageVectorTest.xml"
 "$PY" - "$REPORT" <<'PYEOF'
 import sys, xml.etree.ElementTree as ET
