@@ -141,7 +141,7 @@ Environment: Python 3.14.4 venv outside the repo; `requirements.txt` minus `open
 |---|---|
 | `cd Backend && env -u DATABASE_URL pytest -q` | **322 passed**, 0 failed (baseline 89/93) |
 | `cd Backend/setu_ai_service && pytest -q` | **38 passed** |
-| `cd setu_app && flutter test` | **185 passed** (163 before Block 2 work + 22 new incl. 21 real-backend scenarios; all pass) |
+| `cd setu_app && flutter test` | **185 passed**, 0 failed (includes 38 in the new `backend_contract_test.dart` and 2 new cases in `block1_mesh_test.dart`) |
 | `cd setu_app && flutter analyze` | 13 `info`, 0 warnings, 0 errors (none new of consequence: 2 `prefer_initializing_formals` in files touched) |
 | `cd setu_dashboard && npm test` | 4 passed |
 | `cd setu_dashboard && npm run build` | built OK (existing chunk-size warning) |
