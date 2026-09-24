@@ -1,0 +1,16 @@
+emergency	true
+emergency_wholedeg	true
+ack	true
+termination	true
+alert	true
+tamper_message	false
+tamper_timestamp	false
+tamper_latitude	false
+tamper_longitude	false
+tamper_sender_id	false
+tamper_signature	false
+tamper_priority	false
+tamper_nonce	false
+tamper_packet_id	false
+tamper_emergency_id	false
+relay_rewrites_ttl_hop	true

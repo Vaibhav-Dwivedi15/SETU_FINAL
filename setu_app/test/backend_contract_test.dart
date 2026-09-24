@@ -149,6 +149,26 @@ void main() {
     });
   });
 
+  group('REAL backend responses (docs/backend/contract/ingest_scenarios.json)', () {
+    // Recorded by Backend/tests/test_e2e_contract.py from the real /ingest pipeline.
+    final scenarios = (jsonDecode(File('../docs/backend/contract/ingest_scenarios.json').readAsStringSync()) as List)
+        .cast<Map<String, dynamic>>();
+
+    test('scenario file is non-trivial and covers every backend state', () {
+      expect(scenarios.length, greaterThan(15));
+      expect(scenarios.map((s) => s['backend_state']).toSet(), containsAll(['ACCEPTED', 'DUPLICATE', 'REJECTED']));
+    });
+
+    for (final s in scenarios) {
+      test('${s['scenario']}: backend ${s['backend_state']} == mobile ${s['mobile_outcome']}', () {
+        final outcome = BackendService.classifyIngestResponse(s['response_body'] as String, s['packet_id'] as String);
+        expect(outcome.name, s['mobile_outcome'], reason: 'mobile must read the backend state it was given');
+        final delivered = outcome == UploadOutcome.accepted || outcome == UploadOutcome.duplicate;
+        expect(delivered, s['mobile_acks'], reason: 'ACK iff the backend holds the packet');
+      });
+    }
+  });
+
   group('signed requests (shared cross-language vectors)', () {
     final cases = (vectors['cases'] as List).cast<Map<String, dynamic>>();
 

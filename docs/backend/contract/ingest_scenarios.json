@@ -1,0 +1,170 @@
+[
+  {
+    "backend_state": "ACCEPTED",
+    "mobile_acks": true,
+    "mobile_outcome": "accepted",
+    "packet_id": "03a107bf-1790245815123456",
+    "response_body": "{\"accepted\": [{\"dedup_decision\": \"NEW_INCIDENT\", \"dedup_evidence\": {\"distance_meters\": null, \"match_method\": \"lexical\", \"similarity\": 0.0}, \"dedup_reason\": \"no_ai_match\", \"incident_id\": 1, \"matched_incident_id\": null, \"packet_id\": \"03a107bf-1790245815123456\", \"sms_contacts_notified\": 0, \"status\": \"ACCEPTED\"}], \"duplicates\": [], \"failed\": [], \"rejected\": []}",
+    "scenario": "1_accepted_emergency"
+  },
+  {
+    "backend_state": "DUPLICATE",
+    "mobile_acks": true,
+    "mobile_outcome": "duplicate",
+    "packet_id": "03a107bf-1790245815123456",
+    "response_body": "{\"accepted\": [], \"duplicates\": [{\"code\": \"duplicate\", \"incident_id\": 1, \"packet_id\": \"03a107bf-1790245815123456\", \"reason\": \"duplicate packet_id (identical packet already accepted)\", \"sms_contacts_notified\": 0, \"status\": \"DUPLICATE\"}], \"failed\": [], \"rejected\": []}",
+    "scenario": "2_duplicate_emergency"
+  },
+  {
+    "backend_state": "DUPLICATE",
+    "mobile_acks": true,
+    "mobile_outcome": "duplicate",
+    "packet_id": "03a107bf-1790245815123456",
+    "response_body": "{\"accepted\": [], \"duplicates\": [{\"code\": \"duplicate\", \"incident_id\": 1, \"packet_id\": \"03a107bf-1790245815123456\", \"reason\": \"duplicate packet_id (identical packet already accepted)\", \"sms_contacts_notified\": 0, \"status\": \"DUPLICATE\"}], \"failed\": [], \"rejected\": []}",
+    "scenario": "2b_relayed_copy_is_duplicate"
+  },
+  {
+    "backend_state": "REJECTED",
+    "mobile_acks": false,
+    "mobile_outcome": "rejected",
+    "packet_id": "03a107bf-1790245815123456",
+    "response_body": "{\"accepted\": [], \"duplicates\": [], \"failed\": [], \"rejected\": [{\"code\": \"invalid_signature\", \"packet_id\": \"03a107bf-1790245815123456\", \"reason\": \"invalid signature\", \"status\": \"REJECTED\"}]}",
+    "scenario": "3_rejected_tamper_message"
+  },
+  {
+    "backend_state": "REJECTED",
+    "mobile_acks": false,
+    "mobile_outcome": "rejected",
+    "packet_id": "03a107bf-1790245815123456",
+    "response_body": "{\"accepted\": [], \"duplicates\": [], \"failed\": [], \"rejected\": [{\"code\": \"invalid_signature\", \"packet_id\": \"03a107bf-1790245815123456\", \"reason\": \"invalid signature\", \"status\": \"REJECTED\"}]}",
+    "scenario": "3_rejected_tamper_latitude"
+  },
+  {
+    "backend_state": "REJECTED",
+    "mobile_acks": false,
+    "mobile_outcome": "rejected",
+    "packet_id": "03a107bf-1790245815123456",
+    "response_body": "{\"accepted\": [], \"duplicates\": [], \"failed\": [], \"rejected\": [{\"code\": \"invalid_signature\", \"packet_id\": \"03a107bf-1790245815123456\", \"reason\": \"invalid signature\", \"status\": \"REJECTED\"}]}",
+    "scenario": "3_rejected_tamper_priority"
+  },
+  {
+    "backend_state": "REJECTED",
+    "mobile_acks": false,
+    "mobile_outcome": "rejected",
+    "packet_id": "03a107bf-1790245815123456",
+    "response_body": "{\"accepted\": [], \"duplicates\": [], \"failed\": [], \"rejected\": [{\"code\": \"invalid_signature\", \"packet_id\": \"03a107bf-1790245815123456\", \"reason\": \"invalid signature\", \"status\": \"REJECTED\"}]}",
+    "scenario": "3_rejected_tamper_signature"
+  },
+  {
+    "backend_state": "REJECTED",
+    "mobile_acks": false,
+    "mobile_outcome": "rejected",
+    "packet_id": "03a107bf-1790245815123456",
+    "response_body": "{\"accepted\": [], \"duplicates\": [], \"failed\": [], \"rejected\": [{\"code\": \"invalid_signature\", \"packet_id\": \"03a107bf-1790245815123456\", \"reason\": \"invalid signature\", \"status\": \"REJECTED\"}]}",
+    "scenario": "3_rejected_tamper_sender_id"
+  },
+  {
+    "backend_state": "REJECTED",
+    "mobile_acks": false,
+    "mobile_outcome": "rejected",
+    "packet_id": "03a107bf-1790245815123456",
+    "response_body": "{\"accepted\": [], \"duplicates\": [], \"failed\": [], \"rejected\": [{\"code\": \"invalid_signature\", \"packet_id\": \"03a107bf-1790245815123456\", \"reason\": \"invalid signature\", \"status\": \"REJECTED\"}]}",
+    "scenario": "3_rejected_tamper_emergency_id"
+  },
+  {
+    "backend_state": "REJECTED",
+    "mobile_acks": false,
+    "mobile_outcome": "rejected",
+    "packet_id": "03a107bf-1790245815123456",
+    "response_body": "{\"accepted\": [], \"duplicates\": [], \"failed\": [], \"rejected\": [{\"code\": \"invalid_signature\", \"packet_id\": \"03a107bf-1790245815123456\", \"reason\": \"invalid signature\", \"status\": \"REJECTED\"}]}",
+    "scenario": "3_rejected_tamper_timestamp"
+  },
+  {
+    "backend_state": "REJECTED",
+    "mobile_acks": false,
+    "mobile_outcome": "rejected",
+    "packet_id": "03a107bf-1790245815123456",
+    "response_body": "{\"accepted\": [], \"duplicates\": [], \"failed\": [], \"rejected\": [{\"code\": \"invalid_signature\", \"packet_id\": \"03a107bf-1790245815123456\", \"reason\": \"invalid signature\", \"status\": \"REJECTED\"}]}",
+    "scenario": "3_rejected_tamper_nonce"
+  },
+  {
+    "backend_state": "REJECTED",
+    "mobile_acks": false,
+    "mobile_outcome": "rejected",
+    "packet_id": "other-id",
+    "response_body": "{\"accepted\": [], \"duplicates\": [], \"failed\": [], \"rejected\": [{\"code\": \"invalid_signature\", \"packet_id\": \"other-id\", \"reason\": \"invalid signature\", \"status\": \"REJECTED\"}]}",
+    "scenario": "3_rejected_tamper_packet_id"
+  },
+  {
+    "backend_state": "REJECTED",
+    "mobile_acks": false,
+    "mobile_outcome": "rejected",
+    "packet_id": "wholedeg-1",
+    "response_body": "{\"accepted\": [], \"duplicates\": [], \"failed\": [], \"rejected\": [{\"code\": \"stale\", \"packet_id\": \"wholedeg-1\", \"reason\": \"packet is 8085s old (max 3600s)\", \"status\": \"REJECTED\"}]}",
+    "scenario": "4_stale_emergency"
+  },
+  {
+    "backend_state": "ACCEPTED",
+    "mobile_acks": true,
+    "mobile_outcome": "accepted",
+    "packet_id": "wholedeg-1",
+    "response_body": "{\"accepted\": [{\"dedup_decision\": \"NEW_INCIDENT\", \"dedup_evidence\": {\"distance_meters\": null, \"match_method\": \"lexical\", \"similarity\": 0.0}, \"dedup_reason\": \"no_ai_match\", \"incident_id\": 2, \"matched_incident_id\": null, \"packet_id\": \"wholedeg-1\", \"sms_contacts_notified\": 0, \"status\": \"ACCEPTED\"}], \"duplicates\": [], \"failed\": [], \"rejected\": []}",
+    "scenario": "4b_same_packet_when_fresh"
+  },
+  {
+    "backend_state": "REJECTED",
+    "mobile_acks": false,
+    "mobile_outcome": "rejected",
+    "packet_id": "wholedeg-2",
+    "response_body": "{\"accepted\": [], \"duplicates\": [], \"failed\": [], \"rejected\": [{\"code\": \"invalid_signature\", \"packet_id\": \"wholedeg-2\", \"reason\": \"invalid signature\", \"status\": \"REJECTED\"}]}",
+    "scenario": "5a_squat_invalid_signature"
+  },
+  {
+    "backend_state": "ACCEPTED",
+    "mobile_acks": true,
+    "mobile_outcome": "accepted",
+    "packet_id": "wholedeg-2",
+    "response_body": "{\"accepted\": [{\"dedup_decision\": \"MERGED\", \"dedup_evidence\": {\"backend_distance_meters\": 0.0, \"distance_meters\": 0.0, \"match_method\": \"lexical\", \"similarity\": 1.0}, \"dedup_reason\": \"ai_match_accepted\", \"incident_id\": 2, \"matched_incident_id\": 2, \"packet_id\": \"wholedeg-2\", \"sms_contacts_notified\": 0, \"status\": \"ACCEPTED\"}], \"duplicates\": [], \"failed\": [], \"rejected\": []}",
+    "scenario": "5b_genuine_after_collision"
+  },
+  {
+    "backend_state": "REJECTED",
+    "mobile_acks": false,
+    "mobile_outcome": "rejected",
+    "packet_id": "term-e2e",
+    "response_body": "{\"accepted\": [], \"duplicates\": [], \"failed\": [], \"rejected\": [{\"code\": \"unauthorized_responder\", \"packet_id\": \"term-e2e\", \"reason\": \"unauthorized responder\", \"status\": \"REJECTED\"}]}",
+    "scenario": "10a_termination_unauthorized"
+  },
+  {
+    "backend_state": "ACCEPTED",
+    "mobile_acks": true,
+    "mobile_outcome": "accepted",
+    "packet_id": "term-e2e",
+    "response_body": "{\"accepted\": [{\"closed_incident_id\": 1, \"packet_id\": \"term-e2e\", \"status\": \"ACCEPTED\"}], \"duplicates\": [], \"failed\": [], \"rejected\": []}",
+    "scenario": "10b_termination_authorized"
+  },
+  {
+    "backend_state": "DUPLICATE",
+    "mobile_acks": true,
+    "mobile_outcome": "duplicate",
+    "packet_id": "term-e2e",
+    "response_body": "{\"accepted\": [], \"duplicates\": [{\"code\": \"duplicate\", \"packet_id\": \"term-e2e\", \"reason\": \"duplicate packet_id (identical packet already accepted)\", \"status\": \"DUPLICATE\"}], \"failed\": [], \"rejected\": []}",
+    "scenario": "10c_termination_retry_is_duplicate"
+  },
+  {
+    "backend_state": "REJECTED",
+    "mobile_acks": false,
+    "mobile_outcome": "rejected",
+    "packet_id": "ack-1",
+    "response_body": "{\"accepted\": [], \"duplicates\": [], \"failed\": [], \"rejected\": [{\"code\": \"unsupported_type\", \"packet_id\": \"ack-1\", \"reason\": \"packet type 'ack' is mesh-only and not accepted by /ingest\", \"status\": \"REJECTED\"}]}",
+    "scenario": "11_ack_never_accepted"
+  },
+  {
+    "backend_state": "REJECTED",
+    "mobile_acks": false,
+    "mobile_outcome": "rejected",
+    "packet_id": "alert-1",
+    "response_body": "{\"accepted\": [], \"duplicates\": [], \"failed\": [], \"rejected\": [{\"code\": \"unsupported_type\", \"packet_id\": \"alert-1\", \"reason\": \"packet type 'alert' is mesh-only and not accepted by /ingest\", \"status\": \"REJECTED\"}]}",
+    "scenario": "11_alert_never_accepted"
+  }
+]
