@@ -46,7 +46,7 @@ def test_verify_responder_api_key_rejects_default_key_outside_debug(monkeypatch)
     monkeypatch.setattr(security_module.settings, "responder_api_key", "changeme-dev-key")
 
     with pytest.raises(HTTPException) as exc_info:
-        verify_responder_api_key(x_api_key="anything")
+        verify_responder_api_key(_FakeRequest(), x_api_key="anything")
 
     assert exc_info.value.status_code == 500
 
@@ -61,7 +61,7 @@ def test_verify_responder_api_key_allows_default_key_in_debug(monkeypatch):
     # Should not raise the 500 misconfiguration error; a wrong key still
     # 401s normally, which is the expected non-default-key path.
     with pytest.raises(HTTPException) as exc_info:
-        verify_responder_api_key(x_api_key="wrong-key")
+        verify_responder_api_key(_FakeRequest(), x_api_key="wrong-key")
     assert exc_info.value.status_code == 401
 
 
@@ -72,7 +72,7 @@ def test_verify_responder_api_key_accepts_correct_key(monkeypatch):
     monkeypatch.setattr(security_module.settings, "responder_api_key", "a-real-key")
 
     # Should not raise.
-    verify_responder_api_key(x_api_key="a-real-key")
+    verify_responder_api_key(_FakeRequest(), x_api_key="a-real-key")
 
 
 def test_uses_timing_safe_comparison():
@@ -103,14 +103,14 @@ class _FakeRequest:
 
 
 def test_rate_limiter_allows_under_the_limit():
-    limiter = InMemoryRateLimiter(max_requests=3, window_seconds=60)
+    limiter = InMemoryRateLimiter("t", max_requests=3, window_seconds=60)
     req = _FakeRequest()
     for _ in range(3):
         limiter.check(req)  # should not raise
 
 
 def test_rate_limiter_blocks_over_the_limit():
-    limiter = InMemoryRateLimiter(max_requests=2, window_seconds=60)
+    limiter = InMemoryRateLimiter("t", max_requests=2, window_seconds=60)
     req = _FakeRequest()
     limiter.check(req)
     limiter.check(req)
@@ -121,36 +121,98 @@ def test_rate_limiter_blocks_over_the_limit():
 
 
 def test_rate_limiter_tracks_ips_independently():
-    limiter = InMemoryRateLimiter(max_requests=1, window_seconds=60)
+    limiter = InMemoryRateLimiter("t", max_requests=1, window_seconds=60)
     limiter.check(_FakeRequest(host="1.1.1.1"))
     # A different IP must not be affected by the first IP's usage.
     limiter.check(_FakeRequest(host="2.2.2.2"))
 
 
-def test_rate_limiter_prefers_x_forwarded_for():
-    limiter = InMemoryRateLimiter(max_requests=1, window_seconds=60)
-    limiter.check(_FakeRequest(host="10.0.0.1", forwarded_for="9.9.9.9, 10.0.0.1"))
-    with pytest.raises(HTTPException):
-        # Same forwarded client, different proxy hop host -- should
-        # still be recognized as the same limited client.
-        limiter.check(_FakeRequest(host="10.0.0.2", forwarded_for="9.9.9.9, 10.0.0.2"))
+def test_client_ip_ignores_client_supplied_x_forwarded_for_entries(monkeypatch):
+    """Block 2: only the entry appended by the trusted proxy (N-th from the RIGHT) counts."""
+    from app.core import rate_limit as rl
+
+    monkeypatch.setattr(rl.settings, "trusted_proxy_count", 1)
+    # attacker prepends fake entries; the proxy appended the real peer last
+    req = _FakeRequest(host="10.0.0.1", forwarded_for="6.6.6.6, 7.7.7.7, 9.9.9.9")
+    assert rl.client_ip(req) == "9.9.9.9"
+    req2 = _FakeRequest(host="10.0.0.1", forwarded_for="1.1.1.1, 9.9.9.9")
+    assert rl.client_ip(req2) == "9.9.9.9"  # rotating the spoofed prefix does not change the identity
 
 
-def test_rate_limiter_fails_open_on_internal_error():
-    """A limiter bug must never become a second way to deny service."""
-    limiter = InMemoryRateLimiter(max_requests=1, window_seconds=60)
+def test_client_ip_ignores_x_forwarded_for_when_no_trusted_proxy(monkeypatch):
+    from app.core import rate_limit as rl
+
+    monkeypatch.setattr(rl.settings, "trusted_proxy_count", 0)
+    assert rl.client_ip(_FakeRequest(host="10.0.0.1", forwarded_for="6.6.6.6")) == "10.0.0.1"
+
+
+def test_client_ip_falls_back_to_peer_on_garbage_or_short_header(monkeypatch):
+    from app.core import rate_limit as rl
+
+    monkeypatch.setattr(rl.settings, "trusted_proxy_count", 2)
+    assert rl.client_ip(_FakeRequest(host="10.0.0.1", forwarded_for="9.9.9.9")) == "10.0.0.1"  # fewer hops than proxies
+    monkeypatch.setattr(rl.settings, "trusted_proxy_count", 1)
+    assert rl.client_ip(_FakeRequest(host="10.0.0.1", forwarded_for="not-an-ip")) == "10.0.0.1"
+
+
+def test_rate_limiter_rotating_spoofed_xff_does_not_bypass_limit(monkeypatch):
+    from app.core import rate_limit as rl
+
+    monkeypatch.setattr(rl.settings, "trusted_proxy_count", 1)
+    limiter = InMemoryRateLimiter("t", max_requests=1, window_seconds=60)
+    limiter.check(_FakeRequest(host="10.0.0.1", forwarded_for="1.1.1.1, 9.9.9.9"))
+    with pytest.raises(HTTPException) as exc_info:
+        limiter.check(_FakeRequest(host="10.0.0.1", forwarded_for="2.2.2.2, 9.9.9.9"))
+    assert exc_info.value.status_code == 429
+
+
+def test_rate_limiter_fail_open_limiter_allows_on_internal_error():
+    """Emergency-critical limiters: a limiter bug must never deny service."""
+    limiter = InMemoryRateLimiter("t", max_requests=1, window_seconds=60, fail_open=True)
 
     class _BrokenRequest:
+        client = None
+
         @property
         def headers(self):
             raise RuntimeError("boom")
 
-    # Must not raise -- fail-open swallows the internal error.
-    limiter.check(_BrokenRequest())
+    limiter.check(_BrokenRequest())  # must not raise
+
+
+def test_rate_limiter_fail_closed_limiter_returns_503_on_internal_error():
+    """Abuse-sensitive limiters must not silently run unmetered."""
+    limiter = InMemoryRateLimiter("t", max_requests=1, window_seconds=60, fail_open=False)
+
+    class _BrokenRequest:
+        client = None
+
+        @property
+        def headers(self):
+            raise RuntimeError("boom")
+
+    with pytest.raises(HTTPException) as exc_info:
+        limiter.check(_BrokenRequest())
+    assert exc_info.value.status_code == 503
+
+
+def test_rate_limiter_state_is_bounded():
+    limiter = InMemoryRateLimiter("t", max_requests=5, window_seconds=60, max_keys=50)
+    for i in range(500):
+        limiter.check(_FakeRequest(host=f"10.1.{i // 250}.{i % 250}"))
+    assert len(limiter._hits) <= 50
+
+
+def test_rate_limiter_cost_counts_packets():
+    limiter = InMemoryRateLimiter("t", max_requests=10, window_seconds=60)
+    req = _FakeRequest()
+    limiter.check(req, cost=10)
+    with pytest.raises(HTTPException):
+        limiter.check(req, cost=1)
 
 
 def test_rate_limiter_reset_clears_state():
-    limiter = InMemoryRateLimiter(max_requests=1, window_seconds=60)
+    limiter = InMemoryRateLimiter("t", max_requests=1, window_seconds=60)
     req = _FakeRequest()
     limiter.check(req)
     limiter.reset()
@@ -359,13 +421,13 @@ def test_alerts_respond_rejects_oversized_body(http_client):
     otherwise 404/422 quickly so the test isn't relying on any one
     specific endpoint's own validation to produce the 413.
     """
-    from app.main import MAX_REQUEST_BODY_BYTES
+    from app.core.body_limit import DEFAULT_LIMIT_BYTES
 
     big_body = b"x" * 100  # actual body is small; only the header lies
     resp = http_client.post(
         "/alerts/1/respond",
         content=big_body,
-        headers={"Content-Length": str(MAX_REQUEST_BODY_BYTES + 1)},
+        headers={"Content-Length": str(DEFAULT_LIMIT_BYTES + 1)},
     )
     assert resp.status_code == 413
 

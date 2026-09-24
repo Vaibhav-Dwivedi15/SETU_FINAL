@@ -21,7 +21,7 @@ from typing import List
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
-from app.core.rate_limit import enforce_responder_action_rate_limit
+from app.core.rate_limit import enforce_responder_action_rate_limit, enforce_responder_keys_rate_limit
 from app.core.security import verify_responder_api_key
 from app.db.base import get_db
 from app.models.responder import ResponderProfile
@@ -73,7 +73,10 @@ def list_responders(
 
 
 @router.get("/responders/keys", response_model=ResponderKeysOut)
-def list_responder_public_keys(db: Session = Depends(get_db)):
+def list_responder_public_keys(
+    db: Session = Depends(get_db),
+    _rate_limit: None = Depends(enforce_responder_keys_rate_limit),
+):
     """
     Public, unauthenticated -- consumed by mesh relay devices to verify
     a TerminationPacket's sender_id before honoring it client-side.

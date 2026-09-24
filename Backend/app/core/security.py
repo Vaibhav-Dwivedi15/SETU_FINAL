@@ -35,9 +35,10 @@ model itself is unchanged):
 
 import hmac
 
-from fastapi import Header, HTTPException
+from fastapi import Header, HTTPException, Request
 
 from app.core.config import settings
+from app.core.rate_limit import api_key_failure_limiter
 
 _DEFAULT_KEY_MARKER = "changeme-dev-key"
 
@@ -46,7 +47,7 @@ def _looks_like_default_key() -> bool:
     return settings.responder_api_key == _DEFAULT_KEY_MARKER
 
 
-def verify_responder_api_key(x_api_key: str | None = Header(default=None)):
+def verify_responder_api_key(request: Request, x_api_key: str | None = Header(default=None)):
     if not settings.debug and _looks_like_default_key():
         # Fail loudly and safely: reject every request rather than
         # accept a well-known placeholder credential in what looks like
@@ -62,9 +63,15 @@ def verify_responder_api_key(x_api_key: str | None = Header(default=None)):
             ),
         )
 
+    # Block 2: brute-force damper -- after 20 failed attempts/min from one client
+    # IP, answer 429 before comparing anything.
+    if api_key_failure_limiter.is_blocked(request):
+        raise HTTPException(status_code=429, detail="Too many failed authentication attempts.")
+
     # Block 2: a MISSING header is an authentication failure (401), not a
     # request-validation failure (422 from Header(...)).
     if not x_api_key or not hmac.compare_digest(
         x_api_key.encode("utf-8"), settings.responder_api_key.encode("utf-8")
     ):
+        api_key_failure_limiter.record(request)
         raise HTTPException(status_code=401, detail="Invalid or missing API key.")

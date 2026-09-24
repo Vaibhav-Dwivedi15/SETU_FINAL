@@ -72,16 +72,10 @@ def _reset_rate_limiters():
     IPs) -- purely a test-isolation gap, fixed the same way the AI
     dedup one was.
     """
-    from app.core.rate_limit import (
-        auth_rate_limiter,
-        public_write_rate_limiter,
-        responder_action_rate_limiter,
-    )
+    from app.core.rate_limit import ALL_LIMITERS
 
-    auth_rate_limiter.reset()
-    responder_action_rate_limiter.reset()
-    public_write_rate_limiter.reset()
+    for limiter in ALL_LIMITERS:
+        limiter.reset()
     yield
-    auth_rate_limiter.reset()
-    responder_action_rate_limiter.reset()
-    public_write_rate_limiter.reset()
+    for limiter in ALL_LIMITERS:
+        limiter.reset()

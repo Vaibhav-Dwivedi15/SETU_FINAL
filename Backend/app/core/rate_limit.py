@@ -1,125 +1,164 @@
 """
-Lightweight, dependency-free per-IP rate limiting.
+Abuse controls: per-endpoint sliding-window rate limits, safe client-IP
+extraction, and (in core/body_limit.py) a byte-counting body-size cap.
 
-WHY NOT A LIBRARY: adding slowapi/redis (or any new dependency) inside
-this session is unverifiable -- no way to pip install and actually run
-it here (see the session's own verification notes). A single-process
-in-memory sliding window is a real, if modest, control: it stops a
-single client from hammering an endpoint from one IP, which is exactly
-the T3 (Malicious Internet Client) brute-force/enumeration case this
-covers. It does NOT stop a distributed attack across many IPs -- that
-needs an edge/WAF layer, which is a deployment concern, not something
-to fake here.
+Dependency-free and in-process on purpose (no Redis in this stack). What that
+does and does not give you -- stated plainly:
 
-DESIGN, matching the session brief's own categories:
-  AUTH (request-otp, verify-otp)  -> strict
-  RESPONDER ACTION (write routes) -> strict
-  PUBLIC WRITE (unauthenticated citizen-facing writes, e.g.
-    POST /alerts/{id}/respond) -> lenient. This is NOT emergency
-    ingestion (that's /ingest, left uncapped -- see below); it's a
-    community "I'm safe" / "on my way" style action. It still needs
-    SOME ceiling since it's unauthenticated and writes a DB row per
-    call (spam/flood risk), but the ceiling must sit far above any
-    real citizen's usage pattern (a person clicks this once or twice
-    per incident, not in a loop) so a slow client, retry-on-timeout,
-    or a shaky disaster-time connection never gets a real user
-    blocked.
-  everything else (mesh /ingest, /register, public reads)  -> UNCHANGED,
-    deliberately not rate-limited here. The brief is explicit: rate
-    limiting must not break emergency ingestion, and /ingest already has
-    its own bound via PacketBatchIn.packets' new max_length (see
-    schemas/packet.py) plus signature/duplicate/TTL rejection. A global
-    limiter in front of the one endpoint that MUST keep working under
-    disaster load is a worse trade than leaving it uncapped here.
+  * It bounds a single client / single key on one process. Behind N workers the
+    effective limit is N x the configured one (each worker counts separately).
+    A distributed flood needs an edge/WAF layer or a shared store.
+  * State is BOUNDED: at most `max_keys` tracked keys per limiter; stale keys
+    are pruned and the least-recently-seen evicted, so the limiter cannot be
+    used to exhaust memory by rotating identities.
 
-FAIL-OPEN: any internal error in the limiter allows the request through
-rather than blocking it. A bug in rate limiting must never become a
-second way to deny service to a legitimate emergency responder action.
+CLIENT IP (Block 2 fix): `X-Forwarded-For` is client-controlled, so it is only
+honoured for as many hops as `settings.trusted_proxy_count` says are real
+proxies, taking the entry that the OUTERMOST trusted proxy appended (N-th from
+the right). Anything a client prepends is never used. With 0 trusted proxies
+only the socket peer counts.
 
-MULTI-WORKER CAVEAT, stated plainly: this dict lives in one process's
-memory. Behind multiple Uvicorn/Gunicorn workers, each worker enforces
-its own independent limit, so the EFFECTIVE limit is (per-worker limit x
-worker count) -- looser than the configured number, never stricter. That
-is an accepted, documented limitation of an in-memory limiter, not a
-silent gap; a real production deployment behind multiple workers should
-move this to Redis (see docs/SECURITY_SCORECARD.md).
+FAILURE POSTURE (Block 2 fix): each limiter states what happens if its own
+state handling errors:
+  * fail_open=True  -- emergency-critical paths (/ingest, /responders/keys): a
+    limiter bug must never block an SOS.
+  * fail_open=False -- abuse-sensitive paths (register, voice, nearby, auth,
+    responder actions): answer 503 rather than run unmetered.
+
+EMERGENCY TRAFFIC: /ingest limits are per IP and deliberately far above one
+device's behaviour (a device uploads a handful of packets; a shared carrier IP
+may front hundreds of devices). Exceeding them yields 429, which the mobile
+client treats as "not delivered, retry later" -- packets are never lost.
 """
 
+import ipaddress
 import time
-from collections import defaultdict, deque
-from typing import Deque, Dict, Tuple
+from collections import OrderedDict, deque
+from typing import Deque, List, Optional, Tuple
 
 from fastapi import HTTPException, Request
 
+from app.core.config import settings
+
+ALL_LIMITERS: List["InMemoryRateLimiter"] = []
+
+
+def client_ip(request: Request) -> str:
+    peer = request.client.host if request.client else "unknown"
+    proxies = settings.trusted_proxy_count
+    if proxies <= 0:
+        return peer
+    forwarded = request.headers.get("x-forwarded-for", "")
+    parts = [p.strip() for p in forwarded.split(",") if p.strip()]
+    if len(parts) < proxies:
+        return peer  # fewer hops than trusted proxies: header is not from our proxy chain
+    candidate = parts[-proxies]
+    try:
+        return str(ipaddress.ip_address(candidate))
+    except ValueError:
+        return peer
+
 
 class InMemoryRateLimiter:
-    def __init__(self, max_requests: int, window_seconds: float):
+    def __init__(self, name: str, max_requests: int, window_seconds: float,
+                 fail_open: bool = False, max_keys: int = 20000):
+        self.name = name
         self.max_requests = max_requests
         self.window_seconds = window_seconds
-        self._hits: Dict[str, Deque[float]] = defaultdict(deque)
+        self.fail_open = fail_open
+        self.max_keys = max_keys
+        # key -> (deque[(timestamp, cost)], running_total)
+        self._hits: "OrderedDict[str, Tuple[Deque[Tuple[float, int]], int]]" = OrderedDict()
+        ALL_LIMITERS.append(self)
 
-    def _client_key(self, request: Request) -> str:
-        # X-Forwarded-For is attacker-controllable in general, but this
-        # backend sits behind Render's own proxy in practice, and the
-        # alternative (request.client.host) is just "the proxy" for
-        # every request when deployed -- neither is perfect without
-        # knowing the exact deployment's trusted-proxy chain. Preferring
-        # the first XFF hop is the common pragmatic choice; documented
-        # as a known limitation rather than presented as airtight.
-        forwarded = request.headers.get("x-forwarded-for")
-        if forwarded:
-            return forwarded.split(",")[0].strip()
-        client = request.client
-        return client.host if client else "unknown"
+    # -- core -------------------------------------------------------------
+    def _prune(self, now: float, key: str) -> Tuple[Deque[Tuple[float, int]], int]:
+        hits, total = self._hits.get(key, (deque(), 0))
+        while hits and now - hits[0][0] > self.window_seconds:
+            total -= hits.popleft()[1]
+        return hits, total
 
-    def check(self, request: Request) -> None:
+    def _evict_if_needed(self) -> None:
+        while len(self._hits) > self.max_keys:
+            self._hits.popitem(last=False)  # least recently seen
+
+    def _check_key(self, key: str, cost: int, record: bool = True) -> None:
+        now = time.monotonic()
+        hits, total = self._prune(now, key)
+        if total + cost > self.max_requests:
+            oldest = hits[0][0] if hits else now
+            retry_after = max(0.0, self.window_seconds - (now - oldest))
+            raise HTTPException(
+                status_code=429,
+                detail="Too many requests. Please slow down and try again shortly.",
+                headers={"Retry-After": str(int(retry_after) + 1)},
+            )
+        if record:
+            hits.append((now, cost))
+            total += cost
+        self._hits[key] = (hits, total)
+        self._hits.move_to_end(key)
+        self._evict_if_needed()
+
+    def check(self, request: Request, key: Optional[str] = None, cost: int = 1) -> None:
         try:
-            key = self._client_key(request)
-            now = time.monotonic()
-            hits = self._hits[key]
-
-            while hits and now - hits[0] > self.window_seconds:
-                hits.popleft()
-
-            if len(hits) >= self.max_requests:
-                retry_after = max(0, self.window_seconds - (now - hits[0]))
-                raise HTTPException(
-                    status_code=429,
-                    detail="Too many requests. Please slow down and try again shortly.",
-                    headers={"Retry-After": str(int(retry_after) + 1)},
-                )
-
-            hits.append(now)
+            self._check_key(key if key is not None else client_ip(request), cost)
         except HTTPException:
             raise
         except Exception:
-            # Fail open -- see module docstring.
-            return
+            if self.fail_open:
+                return
+            raise HTTPException(status_code=503, detail="Service temporarily unavailable.")
+
+    def is_blocked(self, request: Request) -> bool:
+        """Non-recording check (used to gate on prior FAILURES)."""
+        try:
+            self._check_key(client_ip(request), 1, record=False)
+            return False
+        except HTTPException:
+            return True
+        except Exception:
+            return not self.fail_open
+
+    def record(self, request: Request) -> None:
+        try:
+            now = time.monotonic()
+            key = client_ip(request)
+            hits, total = self._prune(now, key)
+            hits.append((now, 1))
+            self._hits[key] = (hits, total + 1)
+            self._hits.move_to_end(key)
+            self._evict_if_needed()
+        except Exception:
+            pass
 
     def reset(self) -> None:
         """Test-only: clears all tracked clients between test cases."""
         self._hits.clear()
 
 
-# AUTH: strict. 10 requests / 5 minutes per IP across OTP request+verify
-# combined is generous for a genuine user (who needs at most 1-2 of
-# each) while meaningfully slowing a brute-force attempt against the
-# 6-digit code (which otp_service.py already caps at 5 attempts per
-# code server-side -- this is a second, IP-level layer on top of that).
-auth_rate_limiter = InMemoryRateLimiter(max_requests=10, window_seconds=300)
+# AUTH (request-otp, verify-otp): strict. 10 / 5 min per IP.
+auth_rate_limiter = InMemoryRateLimiter("auth", 10, 300)
+# RESPONDER ACTION (privileged writes): 20 / min per IP.
+responder_action_rate_limiter = InMemoryRateLimiter("responder_action", 20, 60)
+# PUBLIC WRITE (community respond): lenient, 30 / min per IP.
+public_write_rate_limiter = InMemoryRateLimiter("public_write", 30, 60)
+# FAILED responder API-key attempts: 20 / min per IP, then 429 (brute-force damper).
+api_key_failure_limiter = InMemoryRateLimiter("api_key_failures", 20, 60)
 
-# RESPONDER ACTION: strict. Provisioning a responder / any future
-# privileged write is rare in normal operation; 20 requests/minute per
-# IP is far above legitimate dashboard usage and low enough to blunt a
-# credential-stuffing attempt against verify_responder_api_key.
-responder_action_rate_limiter = InMemoryRateLimiter(max_requests=20, window_seconds=60)
+# EMERGENCY INGEST -- fail OPEN, generous.
+ingest_request_limiter = InMemoryRateLimiter("ingest_requests", 300, 60, fail_open=True)
+ingest_packet_limiter = InMemoryRateLimiter("ingest_packets", 3000, 60, fail_open=True)
+# Public registry poll (mesh devices every 5 min): fail open.
+responder_keys_limiter = InMemoryRateLimiter("responder_keys", 60, 60, fail_open=True)
 
-# PUBLIC WRITE: lenient. 30 requests/minute per IP is far above any real
-# citizen's usage (a handful of taps per incident) while still bounding
-# an unauthenticated write endpoint against scripted spam/flood of the
-# CommunityResponse table. Deliberately much looser than the auth/
-# responder-action tiers above -- this is not a privileged action.
-public_write_rate_limiter = InMemoryRateLimiter(max_requests=30, window_seconds=60)
+# Authenticated-by-signature endpoints: per IP and per sender key (fail closed).
+voice_ip_limiter = InMemoryRateLimiter("voice_ip", 10, 60)
+voice_sender_limiter = InMemoryRateLimiter("voice_sender", 5, 300)
+register_ip_limiter = InMemoryRateLimiter("register_ip", 10, 60)
+register_sender_limiter = InMemoryRateLimiter("register_sender", 10, 600)
+nearby_ip_limiter = InMemoryRateLimiter("nearby_ip", 60, 60)
+nearby_sender_limiter = InMemoryRateLimiter("nearby_sender", 30, 60)
 
 
 def enforce_auth_rate_limit(request: Request) -> None:
@@ -132,3 +171,12 @@ def enforce_responder_action_rate_limit(request: Request) -> None:
 
 def enforce_public_write_rate_limit(request: Request) -> None:
     public_write_rate_limiter.check(request)
+
+
+def enforce_responder_keys_rate_limit(request: Request) -> None:
+    responder_keys_limiter.check(request)
+
+
+def enforce_ingest_rate_limit(request: Request, packet_count: int) -> None:
+    ingest_request_limiter.check(request)
+    ingest_packet_limiter.check(request, cost=max(packet_count, 1))

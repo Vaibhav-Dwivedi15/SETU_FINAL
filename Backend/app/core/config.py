@@ -81,6 +81,14 @@ class Settings(BaseSettings):
         "http://localhost:3000"
     )
 
+    # --- Client-IP resolution for rate limiting (Block 2) ---
+    # Number of trusted reverse proxies in front of the app (Render = 1).
+    # 0 = trust only the socket peer and IGNORE X-Forwarded-For entirely.
+    # With N > 0 the client IP is the N-th entry from the RIGHT of
+    # X-Forwarded-For (entries to its left are client-controlled and never
+    # trusted). Set TRUSTED_PROXY_COUNT=0 if the app is exposed directly.
+    trusted_proxy_count: int = 1
+
     @property
     def cors_allowed_origins(self) -> list[str]:
         return [
