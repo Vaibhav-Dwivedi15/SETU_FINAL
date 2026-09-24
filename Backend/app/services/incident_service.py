@@ -448,3 +448,65 @@ def resolve_incident_by_id(db: Session, incident_id: int) -> Optional[Incident]:
 
     db.commit()
     db.refresh(incident)
+    # Block 2 fix: this `return` was missing, so the first resolve of an open incident
+    # closed it in the DB but the router saw None and answered 404 "Incident not found".
+    return incident
+
+
+# --- Dashboard view (Block 2) -------------------------------------------------
+
+def display_priority(ai_priority: Optional[float], sender_priority: Optional[str]) -> str:
+    """
+    The one place the "priority label" rule lives. AI assessment (1.0-5.0)
+    wins when present; otherwise the reporter's declared priority; else Medium.
+    Thresholds match what the dashboard used before this moved server-side.
+    """
+    if isinstance(ai_priority, (int, float)):
+        if ai_priority >= 4.5:
+            return "Critical"
+        if ai_priority >= 3.5:
+            return "High"
+        if ai_priority >= 2.0:
+            return "Medium"
+        return "Low"
+    mapping = {"low": "Low", "medium": "Medium", "high": "High", "critical": "Critical"}
+    return mapping.get((sender_priority or "").lower(), "Medium")
+
+
+def report_counts(db: Session, incident_ids: list[int]) -> dict[int, int]:
+    """Emergency packets linked to each incident (>=1 report per incident)."""
+    if not incident_ids:
+        return {}
+    from sqlalchemy import func
+    rows = (
+        db.query(RawPacket.incident_id, func.count(RawPacket.id))
+        .filter(RawPacket.incident_id.in_(incident_ids), RawPacket.type == "emergency")
+        .group_by(RawPacket.incident_id)
+        .all()
+    )
+    return {incident_id: count for incident_id, count in rows}
+
+
+def incident_view(incident: Incident, report_count: Optional[int] = None) -> dict:
+    return {
+        "id": incident.id,
+        "incident_type": incident.incident_type,
+        "latitude": incident.latitude,
+        "longitude": incident.longitude,
+        "status": incident.status.value if hasattr(incident.status, "value") else str(incident.status),
+        "hop_count": incident.hop_count,
+        "relay_path": incident.relay_path,
+        "sender_priority": incident.sender_priority,
+        "ai_incident_type": incident.ai_incident_type,
+        "ai_incident_confidence": incident.ai_incident_confidence,
+        "ai_incident_explanation": incident.ai_incident_explanation,
+        "ai_urgency": incident.ai_urgency,
+        "ai_urgency_confidence": incident.ai_urgency_confidence,
+        "ai_urgency_explanation": incident.ai_urgency_explanation,
+        "ai_priority": incident.ai_priority,
+        "display_priority": display_priority(incident.ai_priority, incident.sender_priority),
+        "report_count": max(report_count or 1, 1),
+        "created_at": incident.created_at,
+        "updated_at": incident.updated_at,
+        "closed_at": incident.closed_at,
+    }

@@ -245,10 +245,10 @@ function App() {
     for (const item of items) {
       const key = item.clusterKey || item.id;
       if (!groups.has(key)) {
-        groups.set(key, { ...item, reportCount: 1 });
+        groups.set(key, { ...item, reportCount: item.reportCount || 1 });
       } else {
         const existing = groups.get(key);
-        existing.reportCount += 1;
+        existing.reportCount += item.reportCount || 1;
         if ((PRIORITY_ORDER[item.priority] || 0) > (PRIORITY_ORDER[existing.priority] || 0)) {
           Object.assign(existing, item, { reportCount: existing.reportCount });
         }

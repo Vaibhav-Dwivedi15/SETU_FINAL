@@ -1,0 +1,25 @@
+{
+  "ai_incident_confidence": 0.5,
+  "ai_incident_explanation": "No incident-type keywords matched; classified as 'Unknown' (baseline, low confidence).",
+  "ai_incident_type": "Unknown",
+  "ai_priority": 4.0,
+  "ai_urgency": 4,
+  "ai_urgency_confidence": 0.65,
+  "ai_urgency_explanation": "Urgency 4 because message matched: 'emergency'.",
+  "closed_at": null,
+  "created_at": "2026-09-24T14:44:08",
+  "display_priority": "High",
+  "hop_count": 2,
+  "id": 1,
+  "incident_type": "fire",
+  "latitude": 28.6139,
+  "longitude": 77.209,
+  "relay_path": [
+    "h1a2b3c4d",
+    "h5e6f7a8b"
+  ],
+  "report_count": 1,
+  "sender_priority": "high",
+  "status": "OPEN",
+  "updated_at": "2026-09-24T14:44:08"
+}

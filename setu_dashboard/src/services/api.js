@@ -37,13 +37,16 @@
 // per the backend model's own "never let one silently overwrite the
 // other" instruction.
 
-const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || "http://localhost:8000";
+// `import.meta.env` only exists under Vite; the guard lets the same module be
+// imported by the node contract test (tests/contract.test.mjs).
+const ENV = import.meta.env || {};
+const BACKEND_URL = ENV.VITE_BACKEND_URL || "http://localhost:8000";
 const POLL_INTERVAL_MS = 5000;
 
 // Per the role brief (Section 6): only verified responders should see
 // this dashboard; it's gated by X-API-Key on the backend. Read from env,
 // never hardcoded.
-const API_KEY = import.meta.env.VITE_API_KEY || "";
+const API_KEY = ENV.VITE_API_KEY || "";
 
 function authHeaders() {
   return API_KEY ? { "X-API-Key": API_KEY } : {};
@@ -113,7 +116,7 @@ const SENDER_PRIORITY_LABEL = {
   critical: "Critical",
 };
 
-function normalizeIncident(raw) {
+export function normalizeIncident(raw) {
   const lat = raw.latitude ?? raw.lat;
   const lng = raw.longitude ?? raw.lng;
 
@@ -126,7 +129,12 @@ function normalizeIncident(raw) {
   // reporter declared, then Medium. Both raw values are preserved below
   // so the detail drawer can show them side by side without either
   // having overwritten the other.
-  const displayPriority = aiPriority || senderPriority || "Medium";
+  // Block 2: the backend now returns `display_priority` (single authoritative
+  // rule, see Backend incident_service.display_priority); the local derivation
+  // is kept only as a fallback for older backend deployments.
+  const displayPriority =
+    SENDER_PRIORITY_LABEL[String(raw.display_priority || "").toLowerCase()] ||
+    aiPriority || senderPriority || "Medium";
 
   return {
     id: raw.id,
@@ -165,6 +173,9 @@ function normalizeIncident(raw) {
 
     hopCount: typeof raw.hop_count === "number" ? raw.hop_count : raw.hopCount,
     relayPath: raw.relay_path || null,
+    // Independent reports merged into this incident (authoritative, from the backend).
+    reportCount: typeof raw.report_count === "number" ? raw.report_count : 1,
+    updatedAt: raw.updated_at || null,
   };
 }
 

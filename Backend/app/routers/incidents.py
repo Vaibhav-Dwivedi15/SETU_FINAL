@@ -19,7 +19,7 @@ from app.models.incident import Incident
 from app.models.packet import RawPacket
 from app.models.user_profile import UserProfile
 from app.schemas.incident import IncidentOut, ProfileOut, AuditLogOut
-from app.services.incident_service import resolve_incident_by_id
+from app.services.incident_service import incident_view, report_counts, resolve_incident_by_id
 
 router = APIRouter()
 
@@ -52,7 +52,7 @@ def resolve_incident(
     incident = resolve_incident_by_id(db, incident_id)
     if incident is None:
         raise HTTPException(status_code=404, detail="Incident not found.")
-    return incident
+    return incident_view(incident, report_counts(db, [incident.id]).get(incident.id))
 
 
 @router.get("/incidents", response_model=List[IncidentOut])
@@ -60,7 +60,9 @@ def list_incidents(
     db: Session = Depends(get_db),
     _: None = Depends(verify_responder_api_key),
 ):
-    return db.query(Incident).order_by(Incident.created_at.desc()).all()
+    incidents = db.query(Incident).order_by(Incident.created_at.desc()).all()
+    counts = report_counts(db, [i.id for i in incidents])
+    return [incident_view(i, counts.get(i.id)) for i in incidents]
 
 
 @router.get("/incidents/{incident_id}/profile", response_model=List[ProfileOut])
