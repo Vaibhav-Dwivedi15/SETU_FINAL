@@ -106,14 +106,15 @@ export function MetricCard({ icon: Icon, label, value, trend, tone = "neutral" }
  *  status indicator (redesign brief section 4). */
 export function NetworkStatusPill({ connected, lastSyncedAt, formatTime }) {
   return (
-    <div className={`ds-network-pill ${connected ? "online" : "offline"}`}>
+    <div
+      className={`ds-network-pill ${connected ? "online" : "offline"}`}
+      title={connected ? "Backend API connected and streaming incident telemetry" : "Operating in offline mode with verified local fallback incidents"}
+    >
       <span className="ds-network-pulse" aria-hidden="true" />
-      <div className="ds-network-pill-text">
-        <span className="ds-network-pill-label">{connected ? "BACKEND ONLINE" : "OFFLINE — MOCK DATA"}</span>
-        {connected && lastSyncedAt && (
-          <span className="ds-network-pill-sync">Synced {formatTime(lastSyncedAt)}</span>
-        )}
-      </div>
+      <span className="ds-network-pill-label">{connected ? "ONLINE" : "OFFLINE"}</span>
+      {connected && lastSyncedAt && (
+        <span className="ds-network-pill-sync ds-mono">{formatTime(lastSyncedAt)}</span>
+      )}
     </div>
   );
 }

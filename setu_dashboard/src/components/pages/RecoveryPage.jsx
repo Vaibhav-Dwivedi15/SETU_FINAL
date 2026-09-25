@@ -3,8 +3,9 @@ import {
   LuPackage, LuUsers, LuCircleCheck, 
   LuSearch, LuMapPin, LuArrowRight, LuActivity, LuCheck
 } from 'react-icons/lu';
-import { EmptyState } from '../ui/Primitives';
-import { MiscIcons } from '../../icons';
+import { EmptyState, PriorityBadge } from '../ui/Primitives';
+import { MiscIcons, ActionIcons } from '../../icons';
+import './recovery-v2.css';
 
 const INITIAL_DAMAGE = [
   {
@@ -111,119 +112,144 @@ export default function RecoveryPage() {
     m.lastSeen.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
+  const categories = ['ALL', ...new Set(damageReports.map(d => d.category))];
+  const reunitedCount = missingPersons.filter(m => m.status === 'Reunited').length;
+
   return (
-    <div style={{ padding: '20px', color: 'var(--text-primary)', background: 'var(--bg-primary)', minHeight: '100%' }}>
-      {/* Metric Cards Banner */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '14px', marginBottom: '20px' }}>
-        <div style={{ background: 'var(--bg-surface)', border: '1px solid var(--border-subtle)', borderRadius: 'var(--radius-md)', padding: '16px' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: 'var(--accent)', fontSize: '13px', fontWeight: 600 }}>
-            <LuPackage /> Total Damage Reports
-          </div>
-          <div style={{ fontSize: '26px', fontWeight: 700, marginTop: '8px', color: 'var(--text-primary)' }}>{damageReports.length}</div>
-          <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>Verified field submissions</span>
-        </div>
-
-        <div style={{ background: 'var(--bg-surface)', border: '1px solid var(--border-subtle)', borderRadius: 'var(--radius-md)', padding: '16px' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: 'var(--warning)', fontSize: '13px', fontWeight: 600 }}>
-            <LuUsers /> Missing Persons
-          </div>
-          <div style={{ fontSize: '26px', fontWeight: 700, marginTop: '8px', color: 'var(--text-primary)' }}>{missingPersons.length}</div>
-          <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>{missingPersons.filter(m => m.status === 'Reunited').length} Reunited / Safe</span>
-        </div>
-
-        <div style={{ background: 'var(--bg-surface)', border: '1px solid var(--border-subtle)', borderRadius: 'var(--radius-md)', padding: '16px' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: 'var(--success)', fontSize: '13px', fontWeight: 600 }}>
-            <LuActivity /> Mesh ACK Delivery Rate
-          </div>
-          <div style={{ fontSize: '26px', fontWeight: 700, marginTop: '8px', color: 'var(--success)' }}>100%</div>
-          <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>Sent → Relayed → Delivered</span>
+    <div className="recovery-page">
+      {/* Top Operational Intelligence Banner */}
+      <div className="recovery-hero-banner">
+        <div className="recovery-hero-left">
+          <h2>Disaster Recovery &amp; Reunification Operations</h2>
+          <p>Verified field assessments, structural damage reports, and missing persons registry.</p>
         </div>
       </div>
 
-      {/* Tab Switcher & Search Bar */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '14px', marginBottom: '18px' }}>
-        <div style={{ display: 'flex', gap: '4px', background: 'var(--bg-surface-alt)', padding: '3px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-subtle)' }}>
-          <button 
-            onClick={() => setActiveTab('damage')} 
-            style={{ 
-              padding: '6px 14px', borderRadius: 'var(--radius-sm)', border: 'none', cursor: 'pointer', fontSize: '12px', fontWeight: 600,
-              background: activeTab === 'damage' ? 'var(--accent)' : 'transparent', color: activeTab === 'damage' ? '#fff' : 'var(--text-secondary)'
-            }}
-          >
-            Damage & Infrastructure ({damageReports.length})
-          </button>
-          <button 
-            onClick={() => setActiveTab('missing')} 
-            style={{ 
-              padding: '6px 14px', borderRadius: 'var(--radius-sm)', border: 'none', cursor: 'pointer', fontSize: '12px', fontWeight: 600,
-              background: activeTab === 'missing' ? 'var(--accent)' : 'transparent', color: activeTab === 'missing' ? '#fff' : 'var(--text-secondary)'
-            }}
-          >
-            Missing Persons Registry ({missingPersons.length})
-          </button>
+      {/* Metrics Row */}
+      <div className="recovery-stats-strip">
+        <div className="recovery-stat-tile">
+          <div className="recovery-stat-icon damage">
+            <LuPackage />
+          </div>
+          <div className="recovery-stat-meta">
+            <span>DAMAGE ASSESSMENTS</span>
+            <strong>{damageReports.length}</strong>
+            <small>Verified field submissions</small>
+          </div>
         </div>
 
-        <div style={{ position: 'relative', minWidth: '280px' }}>
-          <LuSearch style={{ position: 'absolute', left: '12px', top: '11px', color: 'var(--text-muted)' }} />
-          <input 
-            type="text" 
-            placeholder={activeTab === 'damage' ? 'Search damage report, location...' : 'Search missing person by name...'}
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            style={{ 
-              width: '100%', background: 'var(--bg-surface)', border: '1px solid var(--border-subtle)', borderRadius: 'var(--radius-sm)', 
-              padding: '8px 12px 8px 34px', color: 'var(--text-primary)', fontSize: '13px', outline: 'none' 
-            }}
-          />
+        <div className="recovery-stat-tile">
+          <div className="recovery-stat-icon missing">
+            <LuUsers />
+          </div>
+          <div className="recovery-stat-meta">
+            <span>MISSING PERSONS</span>
+            <strong>{missingPersons.length}</strong>
+            <small>{reunitedCount} Reunited / Verified Safe</small>
+          </div>
+        </div>
+
+        <div className="recovery-stat-tile">
+          <div className="recovery-stat-icon ack">
+            <LuActivity />
+          </div>
+          <div className="recovery-stat-meta">
+            <span>MESH ACK DELIVERY RATE</span>
+            <strong>100%</strong>
+            <small>Sent → Relayed → Delivered (ACK)</small>
+          </div>
         </div>
       </div>
 
-      {/* Content Area */}
+      {/* Navigation & Search Bar */}
+      <div className="recovery-nav-bar">
+        <div className="recovery-tabs" role="tablist">
+          <button 
+            role="tab"
+            aria-selected={activeTab === 'damage'}
+            className={`recovery-tab-btn ${activeTab === 'damage' ? 'active' : ''}`}
+            onClick={() => setActiveTab('damage')}
+          >
+            <LuPackage /> Damage &amp; Infrastructure ({damageReports.length})
+          </button>
+          <button 
+            role="tab"
+            aria-selected={activeTab === 'missing'}
+            className={`recovery-tab-btn ${activeTab === 'missing' ? 'active' : ''}`}
+            onClick={() => setActiveTab('missing')}
+          >
+            <LuUsers /> Missing Persons Registry ({missingPersons.length})
+          </button>
+        </div>
+
+        <div className="recovery-search-filter">
+          <div className="recovery-search-box">
+            <LuSearch />
+            <input 
+              type="text" 
+              className="recovery-search-input"
+              placeholder={activeTab === 'damage' ? 'Search damage, location...' : 'Search missing person...'}
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              aria-label="Search records"
+            />
+          </div>
+
+          {activeTab === 'damage' && (
+            <select
+              className="recovery-filter-select"
+              value={categoryFilter}
+              onChange={(e) => setCategoryFilter(e.target.value)}
+              aria-label="Filter category"
+            >
+              {categories.map(c => (
+                <option key={c} value={c}>{c === 'ALL' ? 'All Categories' : c}</option>
+              ))}
+            </select>
+          )}
+        </div>
+      </div>
+
+      {/* Content Stream */}
       {activeTab === 'damage' ? (
         filteredDamage.length === 0 ? (
           <EmptyState
             icon={MiscIcons.empty}
-            title="NO DAMAGE REPORTS FOUND"
-            description="No damage reports match your active search criteria."
+            title="NO DAMAGE REPORTS MATCH CRITERIA"
+            description="No damage reports match your active search and category filter. Try clearing filters to view all assessments."
           />
         ) : (
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(360px, 1fr))', gap: '16px' }}>
+          <div className="recovery-grid">
             {filteredDamage.map(report => (
-              <div key={report.id} style={{ background: 'var(--bg-surface)', border: '1px solid var(--border-subtle)', borderRadius: 'var(--radius-md)', padding: '16px' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
-                  <span style={{ fontSize: '11px', fontWeight: 700, padding: '3px 8px', borderRadius: '4px', background: 'var(--bg-surface-alt)', color: 'var(--text-secondary)', border: '1px solid var(--border-subtle)' }}>
-                    {report.category}
-                  </span>
-                  <span style={{ 
-                    fontSize: '11px', fontWeight: 700, padding: '3px 8px', borderRadius: '4px',
-                    background: report.severity === 'Critical' ? 'var(--danger-dim, rgba(239, 68, 68, 0.2))' : report.severity === 'High' ? 'var(--warning-dim, rgba(245, 158, 11, 0.2))' : 'var(--caution-dim, rgba(234, 179, 8, 0.2))',
-                    color: report.severity === 'Critical' ? 'var(--danger)' : report.severity === 'High' ? 'var(--warning)' : 'var(--caution)'
-                  }}>
-                    {report.severity}
-                  </span>
+              <div key={report.id} className="recovery-card">
+                <div className="recovery-card-top">
+                  <span className="recovery-tag">{report.category}</span>
+                  <PriorityBadge priority={report.severity} size="sm" />
                 </div>
 
-                <h3 style={{ fontSize: '15px', fontWeight: 700, marginBottom: '6px', color: 'var(--text-primary)' }}>{report.title}</h3>
-                <p style={{ fontSize: '13px', color: 'var(--text-secondary)', lineHeight: '1.5', marginBottom: '12px' }}>{report.description}</p>
+                <h3 className="recovery-card-title">{report.title}</h3>
+                <p className="recovery-card-desc">{report.description}</p>
 
-                <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12px', color: 'var(--warning)', marginBottom: '14px' }}>
-                  <LuMapPin /> {report.location}
+                <div className="recovery-location">
+                  <LuMapPin />
+                  <span>{report.location}</span>
                 </div>
 
-                {/* Delivery State Lifecycle: Sent -> Relayed -> Delivered */}
-                <div style={{ background: 'var(--bg-surface-alt)', border: '1px solid var(--border-subtle)', borderRadius: 'var(--radius-sm)', padding: '10px 12px', marginBottom: '12px' }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '11px', color: 'var(--text-muted)', marginBottom: '6px' }}>
-                    <span>Packet Trajectory ({report.hopCount} hops)</span>
-                    <span style={{ fontWeight: 700, color: report.status === 'Delivered' ? 'var(--success)' : 'var(--accent)' }}>
-                      Status: {report.status}
-                    </span>
+                <div className="recovery-trajectory">
+                  <div className="recovery-trajectory-meta">
+                    <span className="ds-mono">Mesh Trajectory ({report.hopCount} hops)</span>
+                    <strong className="ds-mono" style={{ color: report.status === 'Delivered' ? 'var(--success)' : 'var(--accent)' }}>
+                      {report.status}
+                    </strong>
                   </div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '11px', fontWeight: 600 }}>
-                    <span style={{ color: 'var(--success)' }}>Sent</span>
-                    <LuArrowRight style={{ color: 'var(--text-muted)' }} />
-                    <span style={{ color: report.status === 'Relayed' || report.status === 'Delivered' ? 'var(--success)' : 'var(--text-muted)' }}>Relayed</span>
-                    <LuArrowRight style={{ color: 'var(--text-muted)' }} />
-                    <span style={{ color: report.status === 'Delivered' ? 'var(--success)' : 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: '3px' }}>
+                  <div className="recovery-trajectory-steps">
+                    <span className="recovery-step done">Sent</span>
+                    <LuArrowRight style={{ color: 'var(--text-dim)' }} />
+                    <span className={`recovery-step ${report.status === 'Relayed' || report.status === 'Delivered' ? 'done' : ''}`}>
+                      Relayed
+                    </span>
+                    <LuArrowRight style={{ color: 'var(--text-dim)' }} />
+                    <span className={`recovery-step ${report.status === 'Delivered' ? 'done' : ''}`}>
                       {report.status === 'Delivered' && <LuCircleCheck />} Delivered (ACK)
                     </span>
                   </div>
@@ -231,12 +257,10 @@ export default function RecoveryPage() {
 
                 {report.status !== 'Delivered' && (
                   <button 
+                    className="recovery-action-btn"
                     onClick={() => advanceDamageStatus(report.id)}
-                    style={{ 
-                      width: '100%', padding: '8px', background: 'var(--accent)', color: '#fff', border: 'none', 
-                      borderRadius: 'var(--radius-sm)', fontSize: '12px', fontWeight: 600, cursor: 'pointer' 
-                    }}
                   >
+                    <ActionIcons.refresh className="ds-icon-sm" aria-hidden="true" />
                     Transmit Mesh ACK: Advance to {report.status === 'Sent' ? 'Relayed' : 'Delivered'}
                   </button>
                 )}
@@ -252,46 +276,51 @@ export default function RecoveryPage() {
             description="No registered missing persons match your active search query."
           />
         ) : (
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(360px, 1fr))', gap: '16px' }}>
-            {filteredMissing.map(person => (
-              <div key={person.id} style={{ background: 'var(--bg-surface)', border: '1px solid var(--border-subtle)', borderRadius: 'var(--radius-md)', padding: '16px' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
-                  <span style={{ fontSize: '16px', fontWeight: 700, color: 'var(--text-primary)' }}>{person.name}</span>
-                  <span style={{ 
-                    fontSize: '11px', fontWeight: 700, padding: '3px 8px', borderRadius: '4px',
-                    background: person.status === 'Reunited' ? 'var(--success-dim, rgba(16, 185, 129, 0.2))' : person.status === 'Sighted' ? 'var(--warning-dim, rgba(245, 158, 11, 0.2))' : 'var(--danger-dim, rgba(239, 68, 68, 0.2))',
-                    color: person.status === 'Reunited' ? 'var(--success)' : person.status === 'Sighted' ? 'var(--warning)' : 'var(--danger)'
-                  }}>
-                    {person.status}
-                  </span>
+          <div className="recovery-grid">
+            {filteredMissing.map(person => {
+              const isReunited = person.status === 'Reunited';
+              const isSighted = person.status === 'Sighted';
+              return (
+                <div key={person.id} className="recovery-card">
+                  <div className="recovery-card-top">
+                    <h3 className="recovery-card-title">{person.name}</h3>
+                    <span 
+                      className="recovery-tag"
+                      style={{
+                        background: isReunited ? 'var(--success-dim)' : isSighted ? 'var(--warning-dim)' : 'var(--danger-dim)',
+                        color: isReunited ? 'var(--success)' : isSighted ? 'var(--warning)' : 'var(--danger)',
+                        borderColor: isReunited ? 'var(--success-border)' : isSighted ? 'var(--warning-border)' : 'var(--danger-border)',
+                      }}
+                    >
+                      {person.status}
+                    </span>
+                  </div>
+
+                  <div className="missing-person-details">
+                    <span>Age: <strong>{person.age}</strong></span>
+                    <span>•</span>
+                    <span>Gender: <strong>{person.gender}</strong></span>
+                  </div>
+
+                  <p className="recovery-card-desc">
+                    <strong style={{ color: 'var(--warning)' }}>Last Seen:</strong> {person.lastSeen}
+                  </p>
+
+                  <div className="missing-reporter">
+                    Reported by: <span>{person.reportedBy}</span> ({person.contact})
+                  </div>
+
+                  {!isReunited && (
+                    <button 
+                      className="recovery-action-btn reunited"
+                      onClick={() => markReunited(person.id)}
+                    >
+                      <LuCheck /> Confirm Sighting / Mark Reunited
+                    </button>
+                  )}
                 </div>
-
-                <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginBottom: '8px' }}>
-                  Age: <strong style={{ color: 'var(--text-primary)' }}>{person.age}</strong> | Gender: <strong style={{ color: 'var(--text-primary)' }}>{person.gender}</strong>
-                </div>
-
-                <p style={{ fontSize: '13px', color: 'var(--text-secondary)', marginBottom: '12px', lineHeight: '1.5' }}>
-                  <strong style={{ color: 'var(--warning)' }}>Last Seen:</strong> {person.lastSeen}
-                </p>
-
-                <div style={{ fontSize: '12px', color: 'var(--text-muted)', borderTop: '1px solid var(--border-subtle)', paddingTop: '10px', marginBottom: '12px' }}>
-                  Reported by: <span style={{ color: 'var(--text-primary)' }}>{person.reportedBy}</span> ({person.contact})
-                </div>
-
-                {person.status !== 'Reunited' && (
-                  <button 
-                    onClick={() => markReunited(person.id)}
-                    style={{ 
-                      width: '100%', padding: '8px', background: 'var(--success)', color: '#fff', border: 'none', 
-                      borderRadius: 'var(--radius-sm)', fontSize: '12px', fontWeight: 600, cursor: 'pointer', display: 'flex',
-                      alignItems: 'center', justifyContent: 'center', gap: '6px'
-                    }}
-                  >
-                    <LuCheck /> Confirm Sighting / Mark Reunited
-                  </button>
-                )}
-              </div>
-            ))}
+              );
+            })}
           </div>
         )
       )}

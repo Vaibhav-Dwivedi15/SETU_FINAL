@@ -183,10 +183,15 @@
 }
 
 .map-legend{
+  position:absolute;
+  bottom:12px;
+  right:12px;
+  z-index:1000;
   display:flex;
   align-items:center;
   gap:12px;
   background:var(--overlay-bg);
+  backdrop-filter:blur(6px);
   border:1px solid var(--border-subtle);
   padding:6px 12px;
   border-radius:var(--radius-sm);
@@ -214,3 +219,135 @@
 .dot-medium{ background:#eab308; }
 .dot-low{ background:#10b981; }
 .dot-closed{ background:#64748b; }
+
+/* Tactical Map HUD & Fallback styling */
+.map-container{
+  position:relative;
+  border-radius:var(--radius-md);
+  overflow:hidden;
+  border:1px solid var(--border-subtle);
+  background:var(--map-tile-bg);
+}
+
+.map-container-tall{
+  height:100%;
+  min-height:550px;
+}
+
+.map-hud-bar{
+  position:absolute;
+  top:12px;
+  left:12px;
+  right:12px;
+  z-index:1000;
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:10px;
+  background:var(--overlay-bg);
+  backdrop-filter:blur(8px);
+  border:1px solid var(--border-subtle);
+  border-radius:var(--radius-sm);
+  padding:6px 12px;
+  box-shadow:var(--shadow-card);
+  pointer-events:auto;
+}
+
+.map-hud-left{
+  display:flex;
+  align-items:center;
+  gap:8px;
+}
+
+.map-hud-badge{
+  font:var(--text-status);
+  font-size:10px;
+  padding:2px 6px;
+  border-radius:3px;
+  background:var(--accent-dim);
+  color:var(--accent);
+  border:1px solid var(--accent);
+  letter-spacing:0.04em;
+}
+
+.map-hud-status{
+  font-size:11px;
+  color:var(--text-secondary);
+  font-weight:600;
+}
+
+.map-hud-actions{
+  display:flex;
+  align-items:center;
+  gap:6px;
+}
+
+.map-hud-btn{
+  background:var(--bg-surface-alt);
+  border:1px solid var(--border-subtle);
+  color:var(--text-secondary);
+  font-size:11px;
+  font-weight:600;
+  padding:4px 8px;
+  border-radius:var(--radius-xs);
+  cursor:pointer;
+  display:inline-flex;
+  align-items:center;
+  gap:4px;
+  transition:border-color var(--duration-fast), color var(--duration-fast);
+}
+
+.map-hud-btn:hover{
+  border-color:var(--accent);
+  color:var(--accent);
+}
+
+.map-offline-banner{
+  position:absolute;
+  top:52px;
+  left:12px;
+  right:12px;
+  z-index:1000;
+  display:flex;
+  align-items:center;
+  gap:8px;
+  background:var(--warning-dim);
+  border:1px solid var(--warning-border);
+  color:var(--warning-on-dim);
+  padding:6px 12px;
+  border-radius:var(--radius-sm);
+  font-size:11px;
+  font-weight:600;
+}
+
+/* Custom Leaflet Controls */
+.leaflet-control-zoom{
+  border:1px solid var(--border-subtle) !important;
+  border-radius:var(--radius-sm) !important;
+  overflow:hidden;
+  box-shadow:var(--shadow-card) !important;
+  margin-top:54px !important;
+}
+
+.leaflet-control-zoom a{
+  background:var(--bg-surface) !important;
+  color:var(--text-primary) !important;
+  border-bottom:1px solid var(--border-subtle) !important;
+  transition:background var(--duration-fast);
+}
+
+.leaflet-control-zoom a:hover{
+  background:var(--bg-surface-hover) !important;
+  color:var(--accent) !important;
+}
+
+.leaflet-control-attribution{
+  background:var(--overlay-bg) !important;
+  color:var(--text-dim) !important;
+  font-size:9px !important;
+  border-top-left-radius:var(--radius-xs);
+}
+
+.leaflet-control-attribution a{
+  color:var(--text-muted) !important;
+}

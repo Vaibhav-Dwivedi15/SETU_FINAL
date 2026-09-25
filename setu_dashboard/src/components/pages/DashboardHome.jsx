@@ -13,10 +13,12 @@ function DashboardHome({ allIncidents, filteredIncidents, onResolve, onSelectInc
   const active = allIncidents.filter((i) => i.status !== "closed");
   const activeCount = active.length;
   const criticalCount = active.filter((i) => i.priority === "Critical").length;
+  const closedCount = allIncidents.filter((i) => i.status === "closed").length;
   const medicalCount = active.filter((i) => i.type === "Medical").length;
   const fireCount = active.filter((i) => i.type === "Fire").length;
   const floodCount = active.filter((i) => i.type === "Flood").length;
   const meshRelayedCount = active.filter((i) => typeof i.hopCount === "number" && i.hopCount > 0).length;
+  const directIngestCount = activeCount - meshRelayedCount;
 
   const criticalFiltered = filteredIncidents.filter((i) => i.priority === "Critical");
 
@@ -24,9 +26,16 @@ function DashboardHome({ allIncidents, filteredIncidents, onResolve, onSelectInc
     <div className="ops-command-container">
       {/* Top Operational Mission Bar */}
       <div className="ops-mission-bar">
+        <div className={`ops-posture-badge ${criticalCount > 0 ? "critical" : "nominal"}`}>
+          <span className="ops-posture-dot" />
+          <span>{criticalCount > 0 ? "CRITICAL RESPONSE" : "NOMINAL WATCH"}</span>
+        </div>
+
+        <div className="ops-mission-divider" />
+
         <div className="ops-mission-item">
           <NavIcons.liveIncidents className="ds-icon-sm" aria-hidden="true" />
-          <span>ACTIVE INCIDENTS:</span>
+          <span>ACTIVE QUEUE:</span>
           <strong>{activeCount}</strong>
         </div>
 
@@ -41,8 +50,16 @@ function DashboardHome({ allIncidents, filteredIncidents, onResolve, onSelectInc
         <div className="ops-mission-divider" />
 
         <div className="ops-mission-item">
+          <ActionIcons.confirm className="ds-icon-sm" aria-hidden="true" style={{ color: "var(--success)" }} />
+          <span>RESOLVED:</span>
+          <strong>{closedCount}</strong>
+        </div>
+
+        <div className="ops-mission-divider" />
+
+        <div className="ops-mission-item">
           <CategoryIcons.medical className="ds-icon-sm" aria-hidden="true" />
-          <span>MEDICAL:</span>
+          <span>MED:</span>
           <strong>{medicalCount}</strong>
           {trends.Medical != null && trends.Medical !== 0 && (
             <span className="ds-mono" style={{ fontSize: 10, color: trends.Medical > 0 ? "var(--danger)" : "var(--success)" }}>
@@ -71,8 +88,10 @@ function DashboardHome({ allIncidents, filteredIncidents, onResolve, onSelectInc
 
         <div className="ops-mission-item" style={{ marginLeft: "auto" }}>
           <ActionIcons.refresh className="ds-icon-sm" aria-hidden="true" style={{ color: "var(--network)" }} />
-          <span>MESH PACKETS:</span>
-          <strong className="ds-mono" style={{ color: "var(--network)" }}>{meshRelayedCount} RELAYED</strong>
+          <span>MESH TRAFFIC:</span>
+          <strong className="ds-mono" style={{ color: "var(--network)" }}>
+            {meshRelayedCount} RELAYED / {directIngestCount >= 0 ? directIngestCount : 0} DIRECT
+          </strong>
         </div>
       </div>
 

@@ -97,15 +97,15 @@ function Sidebar({ activePage, onNavigate, backendConnected, openIncidentCount, 
         />
         <div className="sidebar-telemetry-meta">
           <div className="sidebar-telemetry-row">
-            <span>GRID NODE</span>
-            <span className="sidebar-telemetry-val">PRY-OPS-01</span>
+            <span>STATION</span>
+            <span className="sidebar-telemetry-val">PRAYAGRAJ-OPS</span>
           </div>
           <div className="sidebar-telemetry-row">
-            <span>MESH LINK</span>
-            <span className="sidebar-telemetry-val">915MHz LoRa</span>
+            <span>MESH TRANSPORT</span>
+            <span className="sidebar-telemetry-val">BLE &amp; WI-FI DIRECT</span>
           </div>
           <div className="sidebar-telemetry-row">
-            <span>ACTIVE INCIDENTS</span>
+            <span>ACTIVE QUEUE</span>
             <span className="sidebar-telemetry-val">{openIncidentCount}</span>
           </div>
         </div>
