@@ -1,4 +1,4 @@
-﻿import { NavIcons } from "../icons";
+import { NavIcons } from "../icons";
 import { NetworkStatusPill } from "./ui/Primitives";
 import { timeAgo } from "../utils/timeAgo";
 import { useTick } from "../utils/useTick";
@@ -55,7 +55,7 @@ function Sidebar({ activePage, onNavigate, backendConnected, openIncidentCount, 
         <img src={setuLogo} alt="SETU" className="logo-mark-img" />
         <div>
           <h1 className="logo">SETU</h1>
-          <span className="sidebar-tagline">Emergency Operations Console</span>
+          <span className="sidebar-tagline">Emergency Operations Platform</span>
         </div>
       </div>
 
@@ -95,6 +95,20 @@ function Sidebar({ activePage, onNavigate, backendConnected, openIncidentCount, 
           lastSyncedAt={lastSyncedAt}
           formatTime={timeAgo}
         />
+        <div className="sidebar-telemetry-meta">
+          <div className="sidebar-telemetry-row">
+            <span>GRID NODE</span>
+            <span className="sidebar-telemetry-val">PRY-OPS-01</span>
+          </div>
+          <div className="sidebar-telemetry-row">
+            <span>MESH LINK</span>
+            <span className="sidebar-telemetry-val">915MHz LoRa</span>
+          </div>
+          <div className="sidebar-telemetry-row">
+            <span>ACTIVE INCIDENTS</span>
+            <span className="sidebar-telemetry-val">{openIncidentCount}</span>
+          </div>
+        </div>
       </div>
     </aside>
   );

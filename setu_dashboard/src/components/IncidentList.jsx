@@ -1,71 +1,103 @@
 import { timeAgo } from "../utils/timeAgo";
 import { useTick } from "../utils/useTick";
-import RelayTrace from "./RelayTrace";
-import { NavIcons, ActionIcons, MiscIcons } from "../icons";
+import { ActionIcons, MiscIcons, CategoryIcons } from "../icons";
 import { PriorityBadge, StatusBadge, EmptyState } from "./ui/Primitives";
+import { categorizeIncident } from "../utils/incidentCategories";
 
-function IncidentList({ incidents, onResolve, onSelect }) {
-  useTick(); // keeps "Xm ago" timestamps below advancing without a data refetch
+function IncidentList({ incidents, onResolve, onSelect, title = "Recent Incidents", hideHeader = false }) {
+  useTick(); // keeps "Xm ago" timestamps advancing live
 
   return (
-    <div className="incident-list">
-      <h2 className="ds-card-title" style={{ display: "flex", alignItems: "center", gap: 8 }}>
-        <NavIcons.liveIncidents className="ds-icon-md" aria-hidden="true" /> Recent Incidents
-      </h2>
+    <div className="incident-list-container">
+      {!hideHeader && (
+        <div className="incident-list-header">
+          <h3 className="ds-card-title">{title}</h3>
+          <span className="incident-count-pill ds-mono">{incidents.length}</span>
+        </div>
+      )}
 
       {incidents.length === 0 && (
         <EmptyState
           icon={MiscIcons.empty}
           title="NO MATCHING INCIDENTS"
-          description="No incidents match your current search and filters."
+          description="No incidents match the active operational criteria."
         />
       )}
 
-      {incidents.map((incident) => {
-        // Guard kept from v1 — priority can be missing/undefined once this
-        // connects to live backend data with a different field shape than
-        // the mock data.
-        const priority = incident.priority || "Medium";
-        const isClosed = incident.status === "closed";
+      <div className="incident-rows-stream">
+        {incidents.map((incident) => {
+          const priority = incident.priority || "Medium";
+          const isClosed = incident.status === "closed";
+          const catKey = categorizeIncident(incident);
+          const CatIcon = CategoryIcons[catKey] || CategoryIcons.other || MiscIcons.alert;
 
-        return (
-          <div
-            className={`incident ${priority.toLowerCase()} ${isClosed ? "resolved" : ""} ${onSelect ? "incident-clickable" : ""}`}
-            key={incident.id}
-            onClick={() => onSelect && onSelect(incident)}
-          >
-            <div className="incident-header">
-              <h4>{incident.type}</h4>
-              {incident.reportCount > 1 && (
-                <span className="report-count-badge" title="Number of independent reports merged into this incident">
-                  ×{incident.reportCount} reports
-                </span>
-              )}
-              <StatusBadge status={isClosed ? "closed" : "active"} label={isClosed ? "Closed" : "Active"} />
+          return (
+            <div
+              className={`ops-incident-row priority-${priority.toLowerCase()} ${isClosed ? "resolved" : ""} ${onSelect ? "clickable" : ""}`}
+              key={incident.id}
+              onClick={() => onSelect && onSelect(incident)}
+              tabIndex={0}
+              role="button"
+              onKeyDown={(e) => {
+                if (e.key === "Enter" || e.key === " ") {
+                  e.preventDefault();
+                  onSelect && onSelect(incident);
+                }
+              }}
+            >
+              {/* Row Line 1: Type, Report Count, Time */}
+              <div className="row-primary-line">
+                <div className="row-type-group">
+                  <CatIcon className="ds-icon-sm row-cat-icon" aria-hidden="true" />
+                  <strong className="row-type">{incident.type}</strong>
+                  {incident.reportCount > 1 && (
+                    <span className="row-merged-badge" title="Merged reports">
+                      ×{incident.reportCount}
+                    </span>
+                  )}
+                </div>
+                <span className="row-time ds-mono">{timeAgo(incident.reportedAt)}</span>
+              </div>
+
+              {/* Row Line 2: Location and Mesh Relay */}
+              <div className="row-secondary-line">
+                <span className="row-location">{incident.city}</span>
+                {typeof incident.hopCount === "number" && (
+                  <span className="row-mesh-tag ds-mono">
+                    <ActionIcons.refresh className="ds-icon-sm" aria-hidden="true" />
+                    {incident.hopCount > 0 ? `${incident.hopCount}H MESH` : "DIRECT"}
+                  </span>
+                )}
+              </div>
+
+              {/* Row Line 3: Priority & Status Badges */}
+              <div className="row-tertiary-line">
+                <div className="row-badges">
+                  <PriorityBadge priority={priority} size="sm" />
+                  <StatusBadge status={isClosed ? "closed" : "active"} label={isClosed ? "Closed" : "Active"} />
+                  {incident.aiIncidentType && (
+                    <span className="row-ai-badge">AI TRIAGED</span>
+                  )}
+                </div>
+
+                {!isClosed && onResolve && (
+                  <button
+                    className="row-quick-resolve"
+                    title="Mark Resolved"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onResolve(incident.id);
+                    }}
+                  >
+                    <ActionIcons.confirm className="ds-icon-sm" aria-hidden="true" />
+                    <span>Resolve</span>
+                  </button>
+                )}
+              </div>
             </div>
-
-            <PriorityBadge priority={priority} />
-
-            <p>{incident.city}</p>
-            <small className="mono">{timeAgo(incident.reportedAt)}</small>
-
-            <RelayTrace hopCount={incident.hopCount} />
-
-            {!isClosed && onResolve && (
-              <button
-                className="resolve-btn"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onResolve(incident.id);
-                }}
-                style={{ display: "inline-flex", alignItems: "center", gap: 6 }}
-              >
-                <ActionIcons.confirm className="ds-icon-sm" aria-hidden="true" /> Mark Resolved
-              </button>
-            )}
-          </div>
-        );
-      })}
+          );
+        })}
+      </div>
     </div>
   );
 }

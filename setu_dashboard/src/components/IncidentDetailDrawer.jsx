@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { MapContainer, TileLayer, Marker } from "react-leaflet";
-import { Icon } from "leaflet";
+import { divIcon } from "leaflet";
 import { timeAgo } from "../utils/timeAgo";
 import { useTick } from "../utils/useTick";
 import { useTheme } from "../context/ThemeContext";
@@ -15,12 +15,29 @@ import CommunityResponsePanel from "./CommunityResponsePanel";
 import IncidentTimeline from "./IncidentTimeline";
 import GovernmentNotificationPanel from "./GovernmentNotificationPanel";
 
-const priorityIcon = {
-  Critical: new Icon({ iconUrl: "https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-red.png", shadowUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png", iconSize: [25, 41], iconAnchor: [12, 41] }),
-  High: new Icon({ iconUrl: "https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-orange.png", shadowUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png", iconSize: [25, 41], iconAnchor: [12, 41] }),
-  Medium: new Icon({ iconUrl: "https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-gold.png", shadowUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png", iconSize: [25, 41], iconAnchor: [12, 41] }),
-  Low: new Icon({ iconUrl: "https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-green.png", shadowUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png", iconSize: [25, 41], iconAnchor: [12, 41] }),
-};
+function getDrawerMarker(priority) {
+  const colors = {
+    Critical: "#ef4444",
+    High: "#f59e0b",
+    Medium: "#eab308",
+    Low: "#10b981",
+  };
+  const color = colors[priority] || "#64748b";
+  const html = `
+    <div style="display:flex;align-items:center;justify-content:center;filter:drop-shadow(0 2px 4px rgba(0,0,0,0.4));">
+      <svg width="22" height="28" viewBox="0 0 24 30" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <path d="M12 0C5.37 0 0 5.37 0 12C0 21 12 30 12 30C12 30 24 21 24 12C24 5.37 18.63 0 12 0Z" fill="${color}" stroke="rgba(0,0,0,0.3)" stroke-width="1.2"/>
+        <circle cx="12" cy="11" r="3.5" fill="#ffffff" fill-opacity="0.95"/>
+      </svg>
+    </div>
+  `;
+  return divIcon({
+    html,
+    className: "drawer-mini-marker",
+    iconSize: [22, 28],
+    iconAnchor: [11, 28],
+  });
+}
 
 function IncidentDetailDrawer({ incident, onClose, onResolve }) {
   useTick();
@@ -70,7 +87,7 @@ function IncidentDetailDrawer({ incident, onClose, onResolve }) {
 
   const priority = incident.priority || "Medium";
   const isClosed = incident.status === "closed";
-  const icon = priorityIcon[priority] || priorityIcon.Medium;
+  const icon = getDrawerMarker(priority);
   const category = getCategory(categorizeIncident(incident));
   const CategoryIcon = CategoryIcons[category.key] || ActionIcons.location;
   const tileUrl = theme === "light"

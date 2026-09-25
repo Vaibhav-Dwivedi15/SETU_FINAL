@@ -1,4 +1,4 @@
-﻿import RecoveryPage from './components/pages/RecoveryPage';
+import RecoveryPage from './components/pages/RecoveryPage';
 import { useState, useEffect, useCallback, useRef } from "react";
 import incidentsData from "./data/incidents";
 import { startIncidentPolling, resolveIncidentOnBackend } from "./services/api";
@@ -264,6 +264,7 @@ function App() {
   const incidentTypes = ["All", ...new Set(incidents.map((i) => i.type))];
   const priorityLevels = ["All", "Critical", "High", "Medium", "Low"];
   const openIncidentCount = incidents.filter((i) => i.status !== "closed").length;
+  const criticalIncidentCount = incidents.filter((i) => i.status !== "closed" && i.priority === "Critical").length;
 
   function createIncident(newIncident) {
     const location = cityCoordinates[newIncident.city] || cityCoordinates.Prayagraj;
@@ -323,28 +324,42 @@ function App() {
 
       <main className="main">
         <header className="navbar">
-          <div>
+          <div className="command-context">
             <h2 className="ds-page-title">{pageInfo.title}</h2>
-            <p className="subtitle ds-supporting">{pageInfo.subtitle}</p>
+            <div className="command-meta">
+              <span>SECTOR: PRAYAGRAJ GRID • OPS CONSOLE</span>
+              <span>•</span>
+              <span className="ds-mono">915MHz LoRa MESH</span>
+            </div>
           </div>
 
-          <div className="nav-right">
-            {/* Live system state, given prominence in the header itself
-                rather than buried only in the sidebar footer â€” reuses
-                the already-verified NetworkStatusPill component
-                (Block 1), zero new CSS. */}
+          <div className="command-telemetry-strip">
+            <div className="telemetry-pill">
+              <span className="telemetry-dot success" />
+              <span>ACTIVE:</span>
+              <strong>{openIncidentCount}</strong>
+            </div>
+
+            <div className={`telemetry-pill ${criticalIncidentCount > 0 ? "critical-active" : ""}`}>
+              <span className={`telemetry-dot ${criticalIncidentCount > 0 ? "danger" : "success"}`} />
+              <span>CRITICAL:</span>
+              <strong>{criticalIncidentCount}</strong>
+            </div>
+
             <NetworkStatusPill
               connected={backendConnected}
               lastSyncedAt={lastSyncedAt}
               formatTime={timeAgo}
             />
+          </div>
 
+          <div className="nav-right">
             {showFilterBar && (
               <>
                 <input
                   ref={searchInputRef}
                   type="text"
-                  placeholder="Search incidents... (press /)"
+                  placeholder="Search incidents... (/)"
                   value={search}
                   onChange={(e) => setSearch(e.target.value)}
                 />
@@ -384,17 +399,17 @@ function App() {
                     checked={showResolved}
                     onChange={(e) => setShowResolved(e.target.checked)}
                   />
-                  Show Resolved
+                  Resolved
                 </label>
 
                 <button className="alert-btn" onClick={() => setShowModal(true)} style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
-                  <ActionIcons.add className="ds-icon-sm" aria-hidden="true" /> New Alert
+                  <ActionIcons.add className="ds-icon-sm" aria-hidden="true" /> + Report
                 </button>
               </>
             )}
 
-            <button className="cmdk-launcher" onClick={() => setCommandPaletteOpen(true)} title="Search everything (Ctrl/Cmd+K)" style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
-              <ActionIcons.search className="ds-icon-sm" aria-hidden="true" /> <kbd>âŒ˜K</kbd>
+            <button className="cmdk-launcher" onClick={() => setCommandPaletteOpen(true)} title="Search everything (Ctrl/Cmd+K)" style={{ display: "inline-flex", alignItems: "center", gap: 5 }}>
+              <ActionIcons.search className="ds-icon-sm" aria-hidden="true" /> <kbd>⌘K</kbd>
             </button>
 
             <NotificationCenter
@@ -407,6 +422,11 @@ function App() {
             <LanguageSelector />
 
             <ThemeToggle />
+
+            <div className="responder-pill" title="Active responder dispatcher session">
+              <span className="responder-pill-badge">OPERATOR</span>
+              <span className="ds-mono">#04 DISPATCH</span>
+            </div>
           </div>
         </header>
 
