@@ -1,47 +1,155 @@
 {
-  "version": 1,
+  "version": 2,
   "guides": [
     {
       "id": "flood",
       "title": "Flood",
       "summary": "Before, during and after a flood",
-      "steps": [
-        "Move important documents, medicines and phone chargers to a waterproof bag now, before water rises.",
-        "Know your building's highest safe floor and the fastest route to it.",
-        "If water is rising, move to higher ground immediately — do not wait for it to enter your home.",
-        "Never walk or drive through moving flood water. 15cm of fast water can knock an adult down.",
-        "Avoid contact with flood water where possible — it can be contaminated.",
-        "After the flood, do not return home until authorities say it is safe. Check for structural damage before entering.",
-        "Boil or treat drinking water until you know the local supply is safe again."
-      ]
-    },
-    {
-      "id": "fire",
-      "title": "Fire",
-      "summary": "Before, during and after a fire emergency",
-      "steps": [
-        "Know two exit routes from your home or building, not just one.",
-        "Keep a fire extinguisher and a torch somewhere you can reach in the dark.",
-        "If you smell smoke, stay low — cleaner air is near the floor.",
-        "Check doors for heat before opening them. If a door is hot, use your second exit.",
-        "Never use a lift during a fire — always take the stairs.",
-        "Once outside, stay outside. Do not go back in for belongings.",
-        "Call emergency services as soon as you are safe, and use SETU's SOS if the network is down."
-      ]
+      "sections": {
+        "before": [
+          "Move important documents, medicines and phone chargers to a waterproof bag now, before water rises.",
+          "Know your building's highest safe floor and the fastest route to higher ground.",
+          "Keep your emergency kit packed and easy to grab.",
+          "Charge phones and power banks when heavy rain or a flood warning is forecast."
+        ],
+        "during": [
+          "If water is rising, move to higher ground immediately. Do not wait for it to enter your home.",
+          "Switch off electricity at the main switch if you can do so safely and the area is dry.",
+          "Stay away from rivers, drains and low-lying areas.",
+          "Use SETU SOS if there is no mobile network."
+        ],
+        "after": [
+          "Do not return home until authorities say it is safe. Check for structural damage before entering.",
+          "Boil or treat drinking water until you know the local supply is safe again.",
+          "Photograph damage before cleaning up, then report it in SETU Recovery.",
+          "Wear boots and gloves when cleaning. Flood water can be contaminated."
+        ],
+        "avoid": [
+          "Never walk or drive through moving flood water. 15 cm of fast water can knock an adult down.",
+          "Do not touch electrical equipment while standing in water.",
+          "Do not eat food that touched flood water."
+        ]
+      }
     },
     {
       "id": "earthquake",
       "title": "Earthquake",
       "summary": "Before, during and after an earthquake",
-      "steps": [
-        "Identify solid furniture near you (a sturdy table, an interior wall corner) you could shelter under or against.",
-        "Secure heavy furniture and shelves that could fall.",
-        "When shaking starts: Drop, Cover, Hold On. Get under sturdy furniture and hold on until shaking stops.",
-        "Stay away from windows, mirrors and anything that could shatter.",
-        "If outdoors, move to an open area away from buildings, trees and power lines.",
-        "After shaking stops, expect aftershocks. Check yourself and others for injuries before moving around.",
-        "Exit the building calmly if it is damaged — do not use lifts."
-      ]
+      "sections": {
+        "before": [
+          "Identify solid furniture near you, such as a sturdy table or an interior wall corner, to shelter under or against.",
+          "Secure heavy furniture and shelves that could fall.",
+          "Agree on a family meeting point outside your building.",
+          "Keep shoes, a torch and a whistle within reach of your bed."
+        ],
+        "during": [
+          "Drop, Cover, Hold On. Get under sturdy furniture and hold on until shaking stops.",
+          "Stay away from windows, mirrors and anything that could shatter.",
+          "If outdoors, move to an open area away from buildings, trees and power lines.",
+          "If in a vehicle, stop in a clear area and stay inside until shaking stops."
+        ],
+        "after": [
+          "Expect aftershocks. Check yourself and others for injuries before moving around.",
+          "Exit the building calmly if it is damaged, using stairs.",
+          "If you smell gas, open windows and leave. Do not use flames or switches.",
+          "Listen for official updates and use SETU SOS if you are trapped or hurt."
+        ],
+        "avoid": [
+          "Do not use lifts.",
+          "Do not run outside during shaking; falling debris is the main danger.",
+          "Do not re-enter damaged buildings."
+        ]
+      }
+    },
+    {
+      "id": "cyclone",
+      "title": "Cyclone",
+      "summary": "Before, during and after a cyclone",
+      "sections": {
+        "before": [
+          "Follow official cyclone warnings and evacuation instructions for your area.",
+          "Pack an emergency kit with water, food, medicines, documents, a torch and a power bank.",
+          "Secure or bring in loose objects; shutter or tape windows if advised.",
+          "Know the location of your nearest cyclone shelter and how to reach it."
+        ],
+        "during": [
+          "Stay indoors in a strong room, away from windows and glass doors.",
+          "Keep your phone charged and conserve battery.",
+          "If told to evacuate, go immediately to the designated shelter.",
+          "Stay inside even if the wind drops suddenly; the eye of the storm can pass before the wind returns."
+        ],
+        "after": [
+          "Stay in shelter until authorities confirm it is safe.",
+          "Keep away from fallen power lines, damaged buildings and flooded roads.",
+          "Use only boiled or treated water until supply is confirmed safe.",
+          "Photograph damage and report it in SETU Recovery."
+        ],
+        "avoid": [
+          "Do not go outside to watch the storm.",
+          "Do not shelter under trees or near loose structures.",
+          "Do not use candles or open flames near gas leaks."
+        ]
+      }
+    },
+    {
+      "id": "fire",
+      "title": "Fire",
+      "summary": "Before, during and after a fire emergency",
+      "sections": {
+        "before": [
+          "Know two exit routes from your home or building, not just one.",
+          "Keep a fire extinguisher and a torch somewhere you can reach in the dark.",
+          "Do not block exits, stairwells or corridors.",
+          "Agree on a meeting point outside the building."
+        ],
+        "during": [
+          "If you smell smoke, stay low. Cleaner air is near the floor.",
+          "Check doors for heat before opening them. If a door is hot, use your second exit.",
+          "Once outside, stay outside and call for help.",
+          "Use SETU SOS if the mobile network is down."
+        ],
+        "after": [
+          "Do not re-enter until the fire service says it is safe.",
+          "Get medical attention for burns and smoke inhalation.",
+          "Do not touch damaged wiring or appliances.",
+          "Photograph damage and report it in SETU Recovery."
+        ],
+        "avoid": [
+          "Never use a lift during a fire; use the stairs.",
+          "Do not go back in for belongings.",
+          "Do not throw water on an oil or electrical fire."
+        ]
+      }
+    },
+    {
+      "id": "landslide",
+      "title": "Landslide",
+      "summary": "Before, during and after a landslide",
+      "sections": {
+        "before": [
+          "Learn whether your area is prone to landslides and follow local warnings.",
+          "Watch for warning signs: new cracks in the ground, tilting trees or poles, muddy or unusual spring water.",
+          "Know an evacuation route that moves away from slopes and drainage channels.",
+          "Keep your emergency kit ready during heavy or prolonged rain."
+        ],
+        "during": [
+          "If you notice rumbling or a sudden change in stream flow, move away from the path immediately.",
+          "Move to higher, stable ground, sideways out of the slide path rather than downhill.",
+          "If escape is not possible, curl into a tight ball and protect your head.",
+          "Use SETU SOS if you are trapped or injured."
+        ],
+        "after": [
+          "Stay away from the slide area; more slides can follow.",
+          "Check for injured or trapped people and tell responders, but do not enter the slide area yourself.",
+          "Report broken utilities and blocked roads.",
+          "Have the slope and buildings checked by authorities before returning."
+        ],
+        "avoid": [
+          "Do not cross or stay near a slide path.",
+          "Do not return to a damaged building until it is declared safe.",
+          "Do not travel on hill roads during heavy rain."
+        ]
+      }
     },
     {
       "id": "accident",

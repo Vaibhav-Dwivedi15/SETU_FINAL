@@ -1,0 +1,113 @@
+{
+  "version": 1,
+  "topics": [
+    {
+      "id": "unsafe_buildings",
+      "title": "Unsafe buildings",
+      "summary": "Check before you go back in",
+      "steps": [
+        "Do not enter a building with visible cracks, leaning walls, sagging floors or broken supports.",
+        "Wait for an official all-clear before re-entering.",
+        "If you must enter, go in daylight, wear sturdy shoes and tell someone where you are.",
+        "Leave immediately if you hear creaking or see new cracks."
+      ]
+    },
+    {
+      "id": "electrical_hazards",
+      "title": "Electrical hazards",
+      "summary": "Treat wet or damaged wiring as live",
+      "steps": [
+        "Keep away from fallen or sagging power lines and report them to the utility.",
+        "Do not switch on power in a flooded or damaged building until it has been checked.",
+        "Do not touch electrical equipment while standing in water.",
+        "Use a torch, not candles, when checking damaged areas."
+      ]
+    },
+    {
+      "id": "fire_hazards",
+      "title": "Fire hazards",
+      "summary": "Fires often start after a disaster",
+      "steps": [
+        "If you smell gas, open windows, leave and do not use switches or flames.",
+        "Keep flammable items away from heaters and stoves.",
+        "Do not use damaged gas cylinders or heaters.",
+        "Know where your fire extinguisher is."
+      ]
+    },
+    {
+      "id": "water_safety",
+      "title": "Water safety",
+      "summary": "Assume water is unsafe until confirmed",
+      "steps": [
+        "Use bottled water or boil water for at least one minute before drinking.",
+        "Do not use flood water for drinking, cooking or brushing teeth.",
+        "Discard food that touched flood water or has been without refrigeration for hours."
+      ]
+    },
+    {
+      "id": "hygiene",
+      "title": "Hygiene",
+      "summary": "Prevent illness while services are disrupted",
+      "steps": [
+        "Wash hands with safe water and soap, especially before eating and after cleaning.",
+        "Wear gloves and boots when cleaning up mud or debris.",
+        "Keep cuts covered and get medical help for deep wounds or fever.",
+        "Dispose of waste away from water sources."
+      ]
+    },
+    {
+      "id": "safe_return",
+      "title": "Safe return",
+      "summary": "Go back only when it is safe",
+      "steps": [
+        "Return only when authorities say the area is safe.",
+        "Check for gas, water and electricity damage before using them.",
+        "Travel in daylight and avoid flooded or damaged roads.",
+        "Keep your phone charged and tell a contact when you arrive."
+      ]
+    },
+    {
+      "id": "damage_documentation",
+      "title": "Damage documentation",
+      "summary": "Record damage before you clean up",
+      "steps": [
+        "Take clear photos and short videos of all damage from several angles.",
+        "Write down what was damaged, roughly when, and its approximate value.",
+        "Keep receipts and damaged items until they have been recorded.",
+        "File a damage report in SETU Recovery so it is saved with a time and location."
+      ]
+    },
+    {
+      "id": "protect_documents",
+      "title": "Protecting important documents",
+      "summary": "Keep identity and property papers safe",
+      "steps": [
+        "Store originals in a waterproof bag or container.",
+        "Keep photocopies or photos of ID, property and insurance papers separately.",
+        "Dry wet papers flat, away from direct heat, and do not separate stuck pages by force."
+      ]
+    },
+    {
+      "id": "contacting_authorities",
+      "title": "Contacting authorities",
+      "summary": "Use official channels for official help",
+      "steps": [
+        "Use your local official emergency channels for urgent help.",
+        "Use SETU SOS for a life-threatening emergency, including when the network is down.",
+        "Recovery reports in SETU are saved on this device and sent when a route is available. They are not a substitute for calling for urgent help.",
+        "Keep the report ID of anything you file."
+      ]
+    },
+    {
+      "id": "avoid_unsafe_structures",
+      "title": "Avoiding unsafe structures",
+      "summary": "Stay clear of what could fall",
+      "steps": [
+        "Stay away from damaged walls, chimneys, bridges, hoardings and leaning poles.",
+        "Do not shelter under damaged roofs or balconies.",
+        "Keep children and pets away from debris and damaged buildings.",
+        "Do not climb on or move debris that could shift."
+      ]
+    }
+  ]
+}

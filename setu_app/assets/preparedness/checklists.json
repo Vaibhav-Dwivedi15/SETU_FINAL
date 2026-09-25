@@ -1,0 +1,205 @@
+{
+  "version": 1,
+  "checklists": [
+    {
+      "id": "emergency_kit",
+      "title": "Emergency Kit",
+      "description": "Pack these items so you can leave or stay put for several days.",
+      "items": [
+        {
+          "id": "kit_01",
+          "text": "Drinking water (about 3 litres per person per day for 3 days)",
+          "category": "Water & food"
+        },
+        {
+          "id": "kit_02",
+          "text": "Ready-to-eat emergency food for 3 days",
+          "category": "Water & food"
+        },
+        {
+          "id": "kit_03",
+          "text": "First-aid kit",
+          "category": "Health"
+        },
+        {
+          "id": "kit_04",
+          "text": "Regular medicines and prescriptions (at least 7 days)",
+          "category": "Health"
+        },
+        {
+          "id": "kit_05",
+          "text": "Masks",
+          "category": "Health"
+        },
+        {
+          "id": "kit_06",
+          "text": "Sanitation and hygiene items",
+          "category": "Health"
+        },
+        {
+          "id": "kit_07",
+          "text": "Torch",
+          "category": "Power & light"
+        },
+        {
+          "id": "kit_08",
+          "text": "Spare batteries",
+          "category": "Power & light"
+        },
+        {
+          "id": "kit_09",
+          "text": "Charged power bank and charging cable",
+          "category": "Power & light"
+        },
+        {
+          "id": "kit_10",
+          "text": "Whistle",
+          "category": "Tools & signalling"
+        },
+        {
+          "id": "kit_11",
+          "text": "Basic tools (multi-tool, tape, rope)",
+          "category": "Tools & signalling"
+        },
+        {
+          "id": "kit_12",
+          "text": "Copies of important documents in a waterproof bag",
+          "category": "Documents"
+        },
+        {
+          "id": "kit_13",
+          "text": "Some cash in small notes",
+          "category": "Documents"
+        }
+      ]
+    },
+    {
+      "id": "home_preparedness",
+      "title": "Home preparedness",
+      "description": "Make your home safer before a disaster.",
+      "items": [
+        {
+          "id": "home_01",
+          "text": "Know two exit routes from every room and keep them clear."
+        },
+        {
+          "id": "home_02",
+          "text": "Learn how to switch off electricity, gas and water at the main."
+        },
+        {
+          "id": "home_03",
+          "text": "Secure heavy furniture, shelves and water heaters."
+        },
+        {
+          "id": "home_04",
+          "text": "Keep a fire extinguisher where you can reach it and check it is in date."
+        },
+        {
+          "id": "home_05",
+          "text": "Store your emergency kit where everyone can find it."
+        },
+        {
+          "id": "home_06",
+          "text": "Note which floor and room are safest for each type of disaster."
+        }
+      ]
+    },
+    {
+      "id": "before_evacuation",
+      "title": "Before evacuation",
+      "description": "Run through this when told to leave.",
+      "items": [
+        {
+          "id": "evac_01",
+          "text": "Charge phones and power banks."
+        },
+        {
+          "id": "evac_02",
+          "text": "Pack the emergency kit and essential medicines."
+        },
+        {
+          "id": "evac_03",
+          "text": "Take documents, cash and keys."
+        },
+        {
+          "id": "evac_04",
+          "text": "Switch off electricity, gas and water if it is safe to do so."
+        },
+        {
+          "id": "evac_05",
+          "text": "Lock the home and tell a neighbour or contact where you are going."
+        },
+        {
+          "id": "evac_06",
+          "text": "Follow the official route to the shelter. Do not take shortcuts through flood water."
+        },
+        {
+          "id": "evac_07",
+          "text": "Take pets and anyone who needs help with mobility."
+        }
+      ]
+    },
+    {
+      "id": "family_safety",
+      "title": "Family safety",
+      "description": "Make sure everyone knows what to do.",
+      "items": [
+        {
+          "id": "family_01",
+          "text": "Agree on a family meeting point near home and one outside your area."
+        },
+        {
+          "id": "family_02",
+          "text": "Make sure every adult knows the emergency plan."
+        },
+        {
+          "id": "family_03",
+          "text": "Teach children their full name and a parent's phone number."
+        },
+        {
+          "id": "family_04",
+          "text": "Note any medical conditions and medicines for each family member."
+        },
+        {
+          "id": "family_05",
+          "text": "Plan for elderly relatives and family members with disabilities."
+        },
+        {
+          "id": "family_06",
+          "text": "Practise your evacuation route together."
+        }
+      ]
+    },
+    {
+      "id": "emergency_communication",
+      "title": "Emergency communication",
+      "description": "Stay reachable when networks are down.",
+      "items": [
+        {
+          "id": "comm_01",
+          "text": "Save emergency contacts in SETU and on paper."
+        },
+        {
+          "id": "comm_02",
+          "text": "Agree on one out-of-area contact everyone will message."
+        },
+        {
+          "id": "comm_03",
+          "text": "Keep phones charged and a power bank ready."
+        },
+        {
+          "id": "comm_04",
+          "text": "Turn on Bluetooth and location permission so SETU can relay emergencies."
+        },
+        {
+          "id": "comm_05",
+          "text": "Know how to trigger SETU SOS quickly."
+        },
+        {
+          "id": "comm_06",
+          "text": "Keep a battery-powered radio for official updates."
+        }
+      ]
+    }
+  ]
+}

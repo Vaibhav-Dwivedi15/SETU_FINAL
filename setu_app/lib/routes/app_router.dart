@@ -1,4 +1,5 @@
 import 'package:go_router/go_router.dart';
+import 'package:setu_app/routes/prepare_recovery_routes.dart';
 import 'package:setu_app/features/relay/presentation/screens/relay_status_screen.dart';
 import 'package:setu_app/features/relay/presentation/screens/relay_log_screen.dart';
 import 'package:setu_app/features/home/presentation/screens/home_screen.dart';
@@ -24,12 +25,6 @@ import 'package:setu_app/features/onboarding/presentation/screens/permission_gat
 import 'package:setu_app/features/profile/presentation/screens/complete_profile_screen.dart';
 import 'package:setu_app/features/language/presentation/screens/language_selection_screen.dart';
 import 'package:setu_app/features/voice_sos/presentation/screens/voice_sos_screen.dart';
-import 'package:setu_app/features/preparedness/presentation/screens/preparedness_screen.dart';
-import 'package:setu_app/features/preparedness/presentation/screens/safety_guide_detail_screen.dart';
-import 'package:setu_app/features/preparedness/presentation/screens/readiness_check_screen.dart';
-import 'package:setu_app/features/recovery/data/models/recovery_report_type.dart';
-import 'package:setu_app/features/recovery/presentation/screens/recovery_screen.dart';
-import 'package:setu_app/features/recovery/presentation/screens/recovery_report_form_screen.dart';
 
 final GoRouter appRouter = GoRouter(
   initialLocation: '/',
@@ -203,43 +198,9 @@ final GoRouter appRouter = GoRouter(
       builder: (context, state) => const VoiceSosScreen(),
     ),
 
-    // PRIORITY 7 (BEFORE-disaster / preparedness) -- offline safety
-    // guides + on-demand device readiness check. See
-    // features/preparedness/ for the module.
-    GoRoute(
-      path: '/preparedness',
-      builder: (context, state) => const PreparednessScreen(),
-    ),
-    GoRoute(
-      path: '/preparedness/guide/:id',
-      builder: (context, state) =>
-          SafetyGuideDetailScreen(guideId: state.pathParameters['id']!),
-    ),
-    GoRoute(
-      path: '/preparedness/readiness',
-      builder: (context, state) => const ReadinessCheckScreen(),
-    ),
-
-    // PRIORITY 8 (AFTER-disaster / recovery) -- damage reporting,
-    // missing-person reporting, resource availability, recovery
-    // status, community updates. See features/recovery/ for the
-    // module. Every report travels as a normal signed EmergencyPacket
-    // (see RecoveryPacketBuilder) -- no new route param is needed for
-    // the form beyond which RecoveryReportType was tapped, passed as
-    // `extra` rather than encoded in the path since GoRoute path
-    // params are strings and RecoveryReportType.name round-trips fine
-    // that way if this route is ever deep-linked, but `extra` keeps
-    // the call site (recovery_screen.dart) simple for what is, for
-    // now, always an in-app push.
-    GoRoute(
-      path: '/recovery',
-      builder: (context, state) => const RecoveryScreen(),
-    ),
-    GoRoute(
-      path: '/recovery/report',
-      builder: (context, state) => RecoveryReportFormScreen(
-        type: state.extra as RecoveryReportType? ?? RecoveryReportType.communityUpdate,
-      ),
-    ),
+    // Prepare (before-disaster) and Recovery (after-disaster) modules --
+    // route tables live in prepare_recovery_routes.dart.
+    ...preparednessRoutes(),
+    ...recoveryRoutes(),
   ],
 );

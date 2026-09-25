@@ -1,5 +1,6 @@
 import 'dart:math';
 
+import 'package:setu_app/mesh/enums/emergency_priority.dart';
 import 'package:setu_app/mesh/models/emergency_packet.dart';
 import 'package:setu_app/mesh/services/identity_service.dart';
 import 'package:setu_app/mesh/services/signing_service.dart';
@@ -33,6 +34,7 @@ class RecoveryPacketBuilder {
     required double latitude,
     required double longitude,
     required String message,
+    required EmergencyPriority priority,
   }) async {
     final senderId = await _identity.getOrCreateSenderId();
     final packetId = _generatePacketId(senderId);
@@ -51,7 +53,7 @@ class RecoveryPacketBuilder {
       latitude: latitude,
       longitude: longitude,
       message: '${type.messagePrefix} $message'.trim(),
-      priority: type.priority,
+      priority: priority,
     );
 
     final signature = await _signing.sign(unsigned.signaturePayload);

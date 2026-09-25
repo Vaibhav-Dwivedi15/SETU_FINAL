@@ -1,75 +1,68 @@
-// =====================================================
-// SETU Project
-// Module : Recovery Screen (Redesign)
-// =====================================================
-
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
 import 'package:setu_app/core/design_system/app_colors.dart';
-import 'package:setu_app/core/design_system/app_radius.dart';
 import 'package:setu_app/core/design_system/app_spacing.dart';
 import 'package:setu_app/core/design_system/app_typography.dart';
 import 'package:setu_app/core/design_system/widgets/design_system_widgets.dart';
+import 'package:setu_app/core/widgets/hub_tile.dart';
+import 'package:setu_app/core/widgets/theme_colors.dart';
 
-import '../../data/models/recovery_report_model.dart';
-import '../../data/models/recovery_report_type.dart';
+import '../../data/models/recovery_record.dart';
+import '../../data/models/report_status.dart';
 import '../../data/repositories/recovery_repository.dart';
 
+/// Recovery Home: entry points for the report forms, guidance and the
+/// unified My Reports list.
 class RecoveryScreen extends StatefulWidget {
-  const RecoveryScreen({super.key});
+  const RecoveryScreen({super.key, this.repository});
+
+  final RecoveryRepository? repository;
 
   @override
   State<RecoveryScreen> createState() => _RecoveryScreenState();
 }
 
 class _RecoveryScreenState extends State<RecoveryScreen> {
-  final _repository = RecoveryRepository();
-  late Future<List<RecoveryReportModel>> _reports;
+  late final RecoveryRepository _repository = widget.repository ?? RecoveryRepository();
+  late Future<List<RecoveryRecord>> _reports = _repository.list();
 
-  @override
-  void initState() {
-    super.initState();
-    _reports = _repository.getReports();
-  }
-
-  void _reload() {
-    setState(() {
-      _reports = _repository.getReports();
+  void _reload() => setState(() {
+      _reports = _repository.list();
     });
+
+  Future<void> _open(String location) async {
+    await context.push<Object?>(location);
+    if (mounted) _reload();
   }
 
-  Future<void> _openForm(RecoveryReportType type) async {
-    final sent = await context.push<bool>('/recovery/report', extra: type);
-    if (sent == true) _reload();
+  String _reportsSubtitle(List<RecoveryRecord> reports) {
+    if (reports.isEmpty) return 'No recovery reports yet.';
+    int count(ReportStatus s) => reports.where((r) => r.status == s).length;
+    final parts = <String>['${reports.length} saved'];
+    if (count(ReportStatus.draft) > 0) parts.add('${count(ReportStatus.draft)} draft');
+    if (count(ReportStatus.pendingSync) > 0) parts.add('${count(ReportStatus.pendingSync)} pending sync');
+    if (count(ReportStatus.failed) > 0) parts.add('${count(ReportStatus.failed)} failed');
+    return parts.join(' · ');
   }
 
   @override
   Widget build(BuildContext context) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-
     return Scaffold(
-      backgroundColor: isDark ? AppColors.bgApp : AppColors.lightBackground,
-      appBar: AppBar(
-        title: const Text('Recovery & Reporting'),
-        centerTitle: true,
-      ),
+      backgroundColor: context.screenBackground,
+      appBar: AppBar(title: const Text('Recovery'), centerTitle: true),
       bottomNavigationBar: SetuBottomNavigation(
         currentIndex: 2,
         onTap: (index) {
           switch (index) {
             case 0:
               context.go('/');
-              break;
             case 1:
               context.push('/preparedness');
-              break;
             case 2:
-              // Already here
               break;
             case 3:
               context.push('/history');
-              break;
           }
         },
       ),
@@ -79,194 +72,62 @@ class _RecoveryScreenState extends State<RecoveryScreen> {
           child: ListView(
             padding: const EdgeInsets.all(AppSpacing.lg),
             children: [
-              // Header description
               SetuCard(
                 padding: const EdgeInsets.all(AppSpacing.md),
-                backgroundColor: isDark ? AppColors.bgSurfaceAlt : AppColors.lightSurface,
                 accentBorderLeft: AppColors.warning,
                 child: Row(
                   children: [
-                    Container(
-                      width: 42,
-                      height: 42,
-                      decoration: BoxDecoration(
-                        color: AppColors.warning.withValues(alpha: 0.14),
-                        borderRadius: AppRadius.smRadius,
-                      ),
-                      child: const Icon(Icons.restore_rounded, color: AppColors.warning, size: 24),
-                    ),
+                    const Icon(Icons.cloud_off_rounded, color: AppColors.warning),
                     const SizedBox(width: AppSpacing.md),
                     Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            'Post-Incident Coordination',
-                            style: AppTypography.cardTitle.copyWith(
-                              color: isDark ? AppColors.textPrimary : AppColors.lightTextPrimary,
-                            ),
-                          ),
-                          const SizedBox(height: 2),
-                          Text(
-                            'Broadcast damage assessments, missing person alerts, and resource availability over the mesh.',
-                            style: AppTypography.caption.copyWith(
-                              color: isDark ? AppColors.textSecondary : AppColors.lightTextSecondary,
-                            ),
-                          ),
-                        ],
+                      child: Text(
+                        'Reports are saved on this device first and sent when '
+                        'a route is available. Use SOS for an emergency.',
+                        style: AppTypography.caption.copyWith(color: context.textSecondaryColor),
                       ),
                     ),
                   ],
                 ),
               ),
-
-              const SizedBox(height: AppSpacing.lg),
-
-              const SetuSectionHeader(
-                title: 'File a Report',
-                subtitle: 'Dispatches signed emergency recovery packets',
-                padding: EdgeInsets.only(bottom: AppSpacing.sm),
+              const SetuSectionHeader(title: 'Report'),
+              HubTile(
+                icon: Icons.domain_disabled,
+                title: 'Damage report',
+                subtitle: 'Buildings, roads, electricity, water or fire damage',
+                onTap: () => _open('/recovery/damage'),
               ),
-
-              ...RecoveryReportType.values.map(
-                (type) => Padding(
-                  padding: const EdgeInsets.only(bottom: AppSpacing.xs),
-                  child: SetuCard(
-                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-                    onTap: () => _openForm(type),
-                    child: Row(
-                      children: [
-                        Container(
-                          width: 38,
-                          height: 38,
-                          decoration: BoxDecoration(
-                            color: isDark ? AppColors.bgInput : AppColors.lightBackground,
-                            borderRadius: AppRadius.smRadius,
-                            border: Border.all(
-                              color: isDark ? AppColors.borderSubtle : AppColors.lightBorder,
-                            ),
-                          ),
-                          child: Icon(type.icon, size: 20, color: AppColors.accent),
-                        ),
-                        const SizedBox(width: AppSpacing.md),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                type.title,
-                                style: AppTypography.cardTitle.copyWith(
-                                  color: isDark ? AppColors.textPrimary : AppColors.lightTextPrimary,
-                                  fontSize: 14,
-                                ),
-                              ),
-                              const SizedBox(height: 1),
-                              Text(
-                                type.subtitle,
-                                style: AppTypography.caption.copyWith(
-                                  color: isDark ? AppColors.textSecondary : AppColors.lightTextSecondary,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                        Icon(
-                          Icons.chevron_right_rounded,
-                          color: isDark ? AppColors.textDim : AppColors.lightTextDim,
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
+              HubTile(
+                icon: Icons.person_search,
+                title: 'Missing person',
+                subtitle: 'Report someone missing after a disaster',
+                onTap: () => _open('/recovery/missing'),
               ),
-
-              const SizedBox(height: AppSpacing.lg),
-
-              const SetuSectionHeader(
-                title: 'Recent Reports',
-                subtitle: 'Packets originated from this device',
-                padding: EdgeInsets.only(bottom: AppSpacing.sm),
+              HubTile(
+                icon: Icons.volunteer_activism,
+                title: 'Help / resource request',
+                subtitle: 'Food, water, medical help, shelter or rescue',
+                onTap: () => _open('/recovery/request'),
               ),
-
-              FutureBuilder<List<RecoveryReportModel>>(
+              const SetuSectionHeader(title: 'Guidance & history'),
+              HubTile(
+                icon: Icons.fact_check_outlined,
+                title: 'Recovery guidance',
+                subtitle: 'Safe return, hazards, water, hygiene, documents',
+                onTap: () => _open('/recovery/guidance'),
+              ),
+              FutureBuilder<List<RecoveryRecord>>(
                 future: _reports,
-                builder: (context, snapshot) {
-                  if (snapshot.connectionState != ConnectionState.done) {
-                    return const Padding(
-                      padding: EdgeInsets.symmetric(vertical: 32),
-                      child: Center(child: CircularProgressIndicator()),
-                    );
-                  }
-                  final reports = snapshot.data ?? const [];
-                  if (reports.isEmpty) {
-                    return const Padding(
-                      padding: EdgeInsets.symmetric(vertical: 24),
-                      child: SetuEmptyState(
-                        icon: Icons.assignment_outlined,
-                        title: 'No Reports Filed',
-                        description: 'You have not submitted any recovery reports yet.',
-                      ),
-                    );
-                  }
-                  return Column(
-                    children: reports.map(
-                      (report) => Padding(
-                        padding: const EdgeInsets.only(bottom: AppSpacing.xs),
-                        child: SetuCard(
-                          padding: const EdgeInsets.all(AppSpacing.md),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Row(
-                                children: [
-                                  Icon(report.type.icon, size: 16, color: AppColors.accent),
-                                  const SizedBox(width: 6),
-                                  Text(
-                                    report.type.title,
-                                    style: AppTypography.cardTitle.copyWith(
-                                      color: isDark ? AppColors.textPrimary : AppColors.lightTextPrimary,
-                                      fontSize: 13.5,
-                                    ),
-                                  ),
-                                  const Spacer(),
-                                  Text(
-                                    _formatTimestamp(report.timestamp),
-                                    style: AppTypography.metadata.copyWith(
-                                      color: isDark ? AppColors.textDim : AppColors.lightTextDim,
-                                      fontSize: 11,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                              const SizedBox(height: 6),
-                              Text(
-                                report.message,
-                                maxLines: 2,
-                                overflow: TextOverflow.ellipsis,
-                                style: AppTypography.body.copyWith(
-                                  color: isDark ? AppColors.textSecondary : AppColors.lightTextSecondary,
-                                  fontSize: 13.5,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
-                    ).toList(),
-                  );
-                },
+                builder: (context, snapshot) => HubTile(
+                  icon: Icons.assignment_outlined,
+                  title: 'My reports',
+                  subtitle: snapshot.hasData ? _reportsSubtitle(snapshot.data!) : 'Loading…',
+                  onTap: () => _open('/recovery/reports'),
+                ),
               ),
             ],
           ),
         ),
       ),
     );
-  }
-
-  String _formatTimestamp(DateTime timestamp) {
-    final local = timestamp.toLocal();
-    final hh = local.hour.toString().padLeft(2, '0');
-    final mm = local.minute.toString().padLeft(2, '0');
-    return '${local.day}/${local.month} $hh:$mm';
   }
 }

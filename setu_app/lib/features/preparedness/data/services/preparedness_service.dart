@@ -5,26 +5,26 @@ import 'package:flutter/services.dart' show rootBundle;
 
 import '../models/safety_guide_model.dart';
 
-/// PRIORITY 7 (BEFORE-disaster / preparedness).
-///
-/// Loads disaster safety guides bundled INSIDE the app (assets/preparedness/
-/// safety_guides.json — packaged into the APK at build time), so this
-/// screen works with zero connectivity, exactly like every other
-/// "must work offline" requirement in the mesh layer itself.
+/// Loads a JSON list of guides bundled INSIDE the app (packaged into the
+/// APK at build time), so guide screens work with zero connectivity,
+/// exactly like every other "must work offline" requirement in SETU.
 ///
 /// Deliberately NOT a network call, NOT a backend-fetched cache, and NOT
-/// wired to any government API — the session brief is explicit that
-/// external government integration must not be fabricated. If a real
-/// integration is added later, it should replace this service's data
-/// source, not this service's contract (loadGuides()/guideById()).
+/// wired to any government API. If a real integration is added later it
+/// should replace this data source, not the contract
+/// (loadGuides()/guideById()).
 ///
-/// Parsed once and cached in memory for the app's lifetime — this is a
-/// few KB of text, not something worth re-parsing on every screen visit.
-class PreparednessService {
-  PreparednessService._();
-  static final PreparednessService instance = PreparednessService._();
+/// Parsed once and cached in memory -- this is a few KB of text.
+class GuideLibrary {
+  GuideLibrary({
+    required this.assetPath,
+    required this.listKey,
+    Future<String> Function(String path)? loader,
+  }) : _loader = loader ?? rootBundle.loadString;
 
-  static const _assetPath = 'assets/preparedness/safety_guides.json';
+  final String assetPath;
+  final String listKey;
+  final Future<String> Function(String path) _loader;
 
   List<SafetyGuideModel>? _cached;
 
@@ -33,18 +33,18 @@ class PreparednessService {
     if (cached != null) return cached;
 
     try {
-      final raw = await rootBundle.loadString(_assetPath);
+      final raw = await _loader(assetPath);
       final json = jsonDecode(raw) as Map<String, dynamic>;
-      final guides = (json['guides'] as List)
+      final guides = (json[listKey] as List)
           .map((entry) => SafetyGuideModel.fromJson(entry as Map<String, dynamic>))
           .toList();
       _cached = guides;
       return guides;
     } catch (e) {
-      // A missing/corrupt bundled asset must not crash the preparedness
-      // screen -- it should show "unavailable", not throw during a
-      // moment someone may be checking evacuation steps.
-      developer.log('Failed to load preparedness guides: $e', name: 'PreparednessService');
+      // A missing/corrupt bundled asset must not crash the screen -- it
+      // should show "unavailable", not throw while someone is checking
+      // evacuation steps. Not cached, so a later call can retry.
+      developer.log('Failed to load guides from $assetPath: $e', name: 'GuideLibrary');
       return const [];
     }
   }
@@ -56,4 +56,13 @@ class PreparednessService {
     }
     return null;
   }
+}
+
+/// PRIORITY 7 (BEFORE-disaster / preparedness): the bundled disaster and
+/// safety guides.
+abstract final class PreparednessService {
+  static final GuideLibrary instance = GuideLibrary(
+    assetPath: 'assets/preparedness/safety_guides.json',
+    listKey: 'guides',
+  );
 }

@@ -1,180 +1,124 @@
-// =====================================================
-// SETU Project
-// Module : Safety Guide Detail Screen (Redesign)
-// =====================================================
-
 import 'package:flutter/material.dart';
 
 import 'package:setu_app/core/design_system/app_colors.dart';
-import 'package:setu_app/core/design_system/app_radius.dart';
 import 'package:setu_app/core/design_system/app_spacing.dart';
 import 'package:setu_app/core/design_system/app_typography.dart';
 import 'package:setu_app/core/design_system/widgets/design_system_widgets.dart';
+import 'package:setu_app/core/widgets/theme_colors.dart';
 
+import '../../data/models/guide_section.dart';
 import '../../data/models/safety_guide_model.dart';
 import '../../data/services/preparedness_service.dart';
 
+/// Renders one bundled guide: a summary plus its sections (Before /
+/// During / After / Avoid for disasters, or a single numbered list for
+/// flat guides). Content-driven, so new guides need no screen changes.
 class SafetyGuideDetailScreen extends StatelessWidget {
-  const SafetyGuideDetailScreen({super.key, required this.guideId});
+  const SafetyGuideDetailScreen({super.key, required this.guideId, this.library});
 
   final String guideId;
 
+  /// Defaults to the preparedness guides; the recovery guidance route
+  /// passes its own library.
+  final GuideLibrary? library;
+
   @override
   Widget build(BuildContext context) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final source = library ?? PreparednessService.instance;
+    return FutureBuilder<SafetyGuideModel?>(
+      future: source.guideById(guideId),
+      builder: (context, snapshot) {
+        if (snapshot.connectionState != ConnectionState.done) {
+          return Scaffold(
+            backgroundColor: context.screenBackground,
+            appBar: AppBar(),
+            body: const Center(child: CircularProgressIndicator()),
+          );
+        }
+        final guide = snapshot.data;
+        if (guide == null) {
+          return Scaffold(
+            backgroundColor: context.screenBackground,
+            appBar: AppBar(title: const Text('Not available')),
+            body: const SetuEmptyState(
+              icon: Icons.error_outline_rounded,
+              title: 'Guide not found',
+              description: 'This offline guide could not be loaded.',
+            ),
+          );
+        }
+        return Scaffold(
+          backgroundColor: context.screenBackground,
+          appBar: AppBar(title: Text(guide.title), centerTitle: true),
+          body: SafeArea(
+            child: ListView(
+              padding: const EdgeInsets.all(AppSpacing.lg),
+              children: [
+                Text(guide.summary,
+                    style: AppTypography.body.copyWith(color: context.textSecondaryColor)),
+                for (final section in guide.sections) _SectionCard(section: section),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+}
 
-    return Scaffold(
-      backgroundColor: isDark ? AppColors.bgApp : AppColors.lightBackground,
-      body: FutureBuilder<SafetyGuideModel?>(
-        future: PreparednessService.instance.guideById(guideId),
-        builder: (context, snapshot) {
-          if (snapshot.connectionState != ConnectionState.done) {
-            return const Center(child: CircularProgressIndicator());
-          }
-          final guide = snapshot.data;
-          if (guide == null) {
-            return Scaffold(
-              appBar: AppBar(title: const Text('Not available')),
-              body: const SetuEmptyState(
-                icon: Icons.error_outline_rounded,
-                title: 'Guide Not Found',
-                description: 'This offline guide could not be loaded.',
-              ),
-            );
-          }
+class _SectionCard extends StatelessWidget {
+  const _SectionCard({required this.section});
 
-          return CustomScrollView(
-            physics: const BouncingScrollPhysics(),
-            slivers: [
-              SliverAppBar(
-                title: Text(guide.title),
-                centerTitle: true,
-                floating: true,
-                pinned: true,
+  final GuideSection section;
+
+  @override
+  Widget build(BuildContext context) {
+    final isAvoid = section.kind == GuideSectionKind.avoid;
+    final numbered = section.kind == GuideSectionKind.steps;
+    final accent = isAvoid ? AppColors.emergencyBright : AppColors.accent;
+
+    return Padding(
+      padding: const EdgeInsets.only(top: AppSpacing.lg),
+      child: Semantics(
+        container: true,
+        label: '${section.kind.title} section',
+        child: SetuCard(
+          padding: const EdgeInsets.all(AppSpacing.md),
+          accentBorderLeft: accent,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Icon(section.kind.icon, size: 20, color: accent),
+                  const SizedBox(width: AppSpacing.sm),
+                  Text(section.kind.title.toUpperCase(),
+                      style: AppTypography.sectionTitle.copyWith(color: accent)),
+                ],
               ),
-              SliverToBoxAdapter(
-                child: Padding(
-                  padding: const EdgeInsets.all(AppSpacing.lg),
-                  child: Column(
+              const SizedBox(height: AppSpacing.sm),
+              for (var i = 0; i < section.items.length; i++)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: AppSpacing.sm),
+                  child: Row(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      // Guide Summary Card
-                      SetuCard(
-                        padding: const EdgeInsets.all(AppSpacing.md),
-                        backgroundColor: isDark
-                            ? AppColors.bgSurfaceAlt
-                            : AppColors.lightSurface,
-                        accentBorderLeft: AppColors.accent,
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Row(
-                              children: [
-                                const Icon(
-                                  Icons.shield_outlined,
-                                  color: AppColors.accent,
-                                  size: 18,
-                                ),
-                                const SizedBox(width: 8),
-                                Text(
-                                  'EMERGENCY PROTOCOL',
-                                  style: AppTypography.metadata.copyWith(
-                                    color: AppColors.accent,
-                                    fontWeight: FontWeight.bold,
-                                  ),
-                                ),
-                              ],
-                            ),
-                            const SizedBox(height: AppSpacing.xs),
-                            Text(
-                              guide.summary,
-                              style: AppTypography.body.copyWith(
-                                color: isDark
-                                    ? AppColors.textPrimary
-                                    : AppColors.lightTextPrimary,
-                              ),
-                            ),
-                          ],
-                        ),
+                      SizedBox(
+                        width: 24,
+                        child: Text(numbered ? '${i + 1}.' : (isAvoid ? '✕' : '•'),
+                            style: AppTypography.body.copyWith(color: accent)),
                       ),
-
-                      const SizedBox(height: AppSpacing.lg),
-
-                      const SetuSectionHeader(
-                        title: 'Action Steps',
-                        subtitle: 'Follow in order during an active event',
-                        padding: EdgeInsets.only(bottom: AppSpacing.sm),
+                      Expanded(
+                        child: Text(section.items[i],
+                            style: AppTypography.body
+                                .copyWith(color: context.textPrimaryColor, height: 1.4)),
                       ),
                     ],
                   ),
                 ),
-              ),
-              SliverPadding(
-                padding: const EdgeInsets.fromLTRB(
-                  AppSpacing.lg,
-                  0,
-                  AppSpacing.lg,
-                  AppSpacing.xl,
-                ),
-                sliver: SliverList(
-                  delegate: SliverChildBuilderDelegate(
-                    (context, index) {
-                      final stepNumber = index + 1;
-                      return Padding(
-                        padding: const EdgeInsets.only(bottom: AppSpacing.sm),
-                        child: SetuCard(
-                          padding: const EdgeInsets.all(AppSpacing.md),
-                          child: Row(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Container(
-                                width: 28,
-                                height: 28,
-                                decoration: BoxDecoration(
-                                  color: isDark
-                                      ? AppColors.bgInput
-                                      : AppColors.lightBackground,
-                                  borderRadius: AppRadius.smRadius,
-                                  border: Border.all(
-                                    color: isDark
-                                        ? AppColors.borderSubtle
-                                        : AppColors.lightBorder,
-                                  ),
-                                ),
-                                child: Center(
-                                  child: Text(
-                                    '$stepNumber',
-                                    style: AppTypography.metadata.copyWith(
-                                      color: AppColors.accent,
-                                      fontWeight: FontWeight.w800,
-                                    ),
-                                  ),
-                                ),
-                              ),
-                              const SizedBox(width: AppSpacing.md),
-                              Expanded(
-                                child: Text(
-                                  guide.steps[index],
-                                  style: AppTypography.body.copyWith(
-                                    color: isDark
-                                        ? AppColors.textPrimary
-                                        : AppColors.lightTextPrimary,
-                                    height: 1.45,
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      );
-                    },
-                    childCount: guide.steps.length,
-                  ),
-                ),
-              ),
             ],
-          );
-        },
+          ),
+        ),
       ),
     );
   }

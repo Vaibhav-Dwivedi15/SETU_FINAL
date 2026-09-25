@@ -1,126 +1,173 @@
-import 'dart:developer' as developer;
+import 'dart:math';
 
-import 'package:setu_app/core/services/mesh_locator.dart';
-
-import '../../../location/data/services/location_service.dart';
-import '../../../onboarding/data/services/mesh_permission_service.dart';
-import '../models/recovery_report_model.dart';
+import '../models/damage_report.dart';
+import '../models/missing_person_report.dart';
+import '../models/recovery_record.dart';
 import '../models/recovery_report_type.dart';
-import '../services/recovery_log_service.dart';
-import '../services/recovery_packet_builder.dart';
+import '../models/report_status.dart';
+import '../models/resource_request.dart';
+import '../services/recovery_dispatcher.dart';
+import '../services/recovery_report_store.dart';
 
-// =====================================================
-// SETU Project
-// Module : Recovery (AFTER-disaster) repository
-// Priority 8 (session brief)
-// =====================================================
-//
-// Reuses, does not duplicate: MeshLocator's single shared
-// MeshServiceImpl instance (same one SOS/nearby-alerts/readiness-check
-// all use), MeshPermissionService (onboarding's permission gate),
-// LocationService (SOS's own location lookup), and
-// MeshServiceImpl.originate() itself -- which already does signing-
-// independent bookkeeping (store-and-forward enqueue, backend upload
-// retry, RelayLogRepository entry, MeshMetrics) for ANY MeshPacket, not
-// just EmergencyPacket-as-SOS. A recovery report gets that entire
-// pipeline for free because it IS an EmergencyPacket (see
-// RecoveryPacketBuilder's own docstring for why).
-//
-// UPDATE (Vib, mesh/architecture): the "Sent" status is now upgraded to
-// "Delivered" the same way SOS history is -- MeshLocator's existing
-// acknowledgments listener now also calls
-// updateStatusByEmergencyId() below, matching on the emergencyId the
-// signed EmergencyPacket carried (see RecoveryPacketBuilder, which
-// sets emergencyId: packetId). Purely additive: no new PacketType, no
-// signature-payload change, no change to MeshServiceImpl's relay/ack
-// origination logic -- only the local bookkeeping this repository and
-// RecoveryLogService already owned. The mesh/packet layer was already
-// acking every EmergencyPacket indiscriminately
-// (MeshServiceImpl._originateAck); this change only makes the LOCAL
-// UI-visible status reflect that real ack instead of staying
-// optimistically at "Sent" forever.
-//
-// Known remaining gap: only two states are tracked end-to-end today,
-// "Sent" and "Delivered" -- the three-state target from the project
-// overview ("Sent -> Relayed -> Delivered") needs a per-hop relay
-// event that nothing in the mesh layer currently emits (SOS/History
-// doesn't have it either). Not attempted here; would need a new,
-// explicit relay-observed signal, not something to fake from existing
-// data.
+class RecoveryValidationException implements Exception {
+  const RecoveryValidationException(this.errors);
+  final Map<String, String> errors;
+
+  @override
+  String toString() => errors.values.join(' ');
+}
+
+/// Owns the recovery report lifecycle:
+///
+///   draft --submit--> pendingSync --ack--> submitted
+///                          \--dispatch error--> failed --retry--> ...
+///
+/// Every transition is persisted before anything is attempted over the
+/// network, so a report is never lost to a crash, a denied permission or
+/// having no connectivity. `submitted` is set only by a real
+/// acknowledgement (see [updateStatusByEmergencyId]); it never means an
+/// authority has reviewed the report.
 class RecoveryRepository {
   RecoveryRepository({
-    LocationService? locationService,
-    MeshPermissionService? permissionService,
-    RecoveryPacketBuilder? packetBuilder,
-    RecoveryLogService? logService,
-  })  : _location = locationService ?? LocationService(),
-        _permissions = permissionService ?? const MeshPermissionService(),
-        _packetBuilder = packetBuilder ?? RecoveryPacketBuilder(),
-        _log = logService ?? RecoveryLogService();
+    RecoveryReportStore? store,
+    RecoveryDispatcher? dispatcher,
+    DateTime Function()? clock,
+  })  : _store = store ?? RecoveryReportStore(),
+        _dispatcherOverride = dispatcher,
+        _clock = clock ?? DateTime.now;
 
-  final LocationService _location;
-  final MeshPermissionService _permissions;
-  final RecoveryPacketBuilder _packetBuilder;
-  final RecoveryLogService _log;
+  final RecoveryReportStore _store;
+  final RecoveryDispatcher? _dispatcherOverride;
+  final DateTime Function() _clock;
 
-  Future<List<RecoveryReportModel>> getReports() => _log.getLog();
+  /// Created lazily so constructing a repository (e.g. inside the mesh
+  /// ack listener at app start) never touches permissions or location.
+  late final RecoveryDispatcher _dispatcher =
+      _dispatcherOverride ?? MeshRecoveryDispatcher();
 
-  /// Sends one recovery report over the mesh and records it locally.
-  /// Throws if mesh permissions aren't granted or location can't be
-  /// resolved -- same failure contract as SosRepository.triggerSOS, so
-  /// the calling screen can show the same kind of error UI.
-  Future<RecoveryReportModel> submitReport({
-    required RecoveryReportType type,
-    required String message,
-  }) async {
-    if (!await _permissions.hasAll()) {
-      final stillMissing = await _permissions.requestAll();
-      if (stillMissing.isNotEmpty) {
-        throw Exception(
-          'SETU needs Bluetooth, Wi-Fi and location permissions to send '
-          'this report without internet. Please allow them and try again.',
-        );
-      }
-    }
+  static final Random _random = Random.secure();
 
-    final location = await _location.getCurrentLocation();
-
-    final packet = await _packetBuilder.buildRecoveryPacket(
-      type: type,
-      latitude: location.latitude,
-      longitude: location.longitude,
-      message: message,
-    );
-
-    try {
-      await MeshLocator.instance.meshService.originate(packet);
-    } catch (e) {
-      developer.log('Failed to originate recovery report: $e', name: 'RecoveryRepository');
-      rethrow;
-    }
-
-    final record = RecoveryReportModel(
-      id: packet.packetId,
-      type: type,
-      message: message,
-      latitude: location.latitude,
-      longitude: location.longitude,
-      timestamp: DateTime.now(),
-      // Explicit rather than relying on the model's id-fallback, since
-      // this is the one place that actually knows the packet's real
-      // emergencyId (== packetId, see RecoveryPacketBuilder) -- keeps
-      // the two in sync by construction instead of by coincidence.
-      emergencyId: packet.emergencyId,
-    );
-
-    await _log.addEntry(record);
-    return record;
+  String newId(RecoveryReportType type) {
+    const prefixes = {
+      RecoveryReportType.damage: 'DMG',
+      RecoveryReportType.missingPerson: 'MIS',
+      RecoveryReportType.resourceRequest: 'REQ',
+    };
+    const alphabet = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
+    final suffix = List.generate(6, (_) => alphabet[_random.nextInt(alphabet.length)]).join();
+    return '${prefixes[type]}-$suffix';
   }
 
-  /// Exposed so MeshLocator's ack listener can update a recovery
-  /// report's status without reaching past the repository layer --
-  /// mirrors HistoryRepository.updateStatusByEmergencyId exactly.
+  /// A blank, unsaved draft of [type].
+  RecoveryRecord newDraft(RecoveryReportType type) {
+    final now = _clock();
+    final id = newId(type);
+    switch (type) {
+      case RecoveryReportType.damage:
+        return DamageReport(id: id, status: ReportStatus.draft, createdAt: now, updatedAt: now);
+      case RecoveryReportType.missingPerson:
+        return MissingPersonReport(id: id, status: ReportStatus.draft, createdAt: now, updatedAt: now);
+      case RecoveryReportType.resourceRequest:
+        return ResourceRequest(id: id, status: ReportStatus.draft, createdAt: now, updatedAt: now);
+    }
+  }
+
+  Future<List<RecoveryRecord>> list({RecoveryReportType? type}) async =>
+      filter(await _store.all(), type);
+
+  /// Pure filter, exposed so history filtering is testable without storage.
+  static List<RecoveryRecord> filter(List<RecoveryRecord> records, RecoveryReportType? type) =>
+      type == null ? records : records.where((r) => r.type == type).toList();
+
+  Future<RecoveryRecord?> get(String id) => _store.byId(id);
+
+  /// Saves partial content as a draft. Drafts need no validation, but an
+  /// entirely blank form is not worth saving.
+  Future<RecoveryRecord> saveDraft(RecoveryRecord record) async {
+    if (record.isBlank) {
+      throw const RecoveryValidationException({'form': 'Nothing to save yet.'});
+    }
+    if (!record.status.isEditable) {
+      throw StateError('A ${record.status.label} report can no longer be edited.');
+    }
+    final saved = record.withMeta(status: ReportStatus.draft, updatedAt: _clock(), clearError: true);
+    await _store.upsert(saved);
+    return saved;
+  }
+
+  Future<void> deleteDraft(String id) async {
+    final existing = await _store.byId(id);
+    if (existing != null && existing.status == ReportStatus.draft) {
+      await _store.delete(id);
+    }
+  }
+
+  /// Validates, saves durably as pendingSync, then tries to dispatch.
+  /// Returns the stored record: pendingSync if the dispatch was accepted,
+  /// failed (still saved) if it was not. Throws
+  /// [RecoveryValidationException] without saving anything if invalid.
+  Future<RecoveryRecord> submit(RecoveryRecord record) async {
+    final errors = record.validate();
+    if (errors.isNotEmpty) throw RecoveryValidationException(errors);
+    if (!record.status.isEditable) {
+      throw StateError('A ${record.status.label} report cannot be submitted again.');
+    }
+
+    final pending = record.withMeta(
+      status: ReportStatus.pendingSync,
+      updatedAt: _clock(),
+      clearError: true,
+    );
+    await _store.upsert(pending);
+    return _dispatch(pending);
+  }
+
+  /// Re-attempts a failed report.
+  Future<RecoveryRecord> retry(String id) async {
+    final record = await _store.byId(id);
+    if (record == null) throw StateError('Report $id not found.');
+    if (!record.status.canRetry) {
+      throw StateError('Only a failed report can be retried.');
+    }
+    final pending = record.withMeta(
+      status: ReportStatus.pendingSync,
+      updatedAt: _clock(),
+      clearError: true,
+    );
+    await _store.upsert(pending);
+    return _dispatch(pending);
+  }
+
+  Future<RecoveryRecord> _dispatch(RecoveryRecord pending) async {
+    try {
+      final emergencyId = await _dispatcher.dispatch(pending);
+      final queued = pending.withMeta(emergencyId: emergencyId, updatedAt: _clock());
+      await _store.upsert(queued);
+      return queued;
+    } catch (e) {
+      final failed = pending.withMeta(
+        status: ReportStatus.failed,
+        updatedAt: _clock(),
+        lastError: e.toString().replaceFirst('Exception: ', ''),
+      );
+      await _store.upsert(failed);
+      return failed;
+    }
+  }
+
+  /// Acknowledgement hook. MeshLocator's existing ack listener calls this
+  /// with 'Delivered' for every acknowledgement it sees; only a report
+  /// that is pending sync and carries the matching emergencyId moves to
+  /// submitted. Unknown ids and other states are ignored.
   Future<void> updateStatusByEmergencyId(String emergencyId, String newStatus) async {
-    await _log.updateStatusByEmergencyId(emergencyId, newStatus);
+    if (emergencyId.isEmpty || newStatus != 'Delivered') return;
+    for (final record in await _store.all()) {
+      if (record.emergencyId == emergencyId && record.status == ReportStatus.pendingSync) {
+        await _store.upsert(
+          record.withMeta(status: ReportStatus.submitted, updatedAt: _clock()),
+        );
+        return;
+      }
+    }
   }
 }

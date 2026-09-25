@@ -1,300 +1,132 @@
-// =====================================================
-// SETU Project
-// Module : Preparedness Screen (Redesign)
-// =====================================================
-
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
-import 'package:setu_app/core/design_system/app_colors.dart';
-import 'package:setu_app/core/design_system/app_radius.dart';
 import 'package:setu_app/core/design_system/app_spacing.dart';
 import 'package:setu_app/core/design_system/app_typography.dart';
 import 'package:setu_app/core/design_system/widgets/design_system_widgets.dart';
+import 'package:setu_app/core/widgets/hub_tile.dart';
+import 'package:setu_app/core/widgets/theme_colors.dart';
 
-import '../../data/models/safety_guide_model.dart';
-import '../../data/services/preparedness_service.dart';
+import '../../data/models/checklist.dart';
+import '../../data/repositories/checklist_repository.dart';
 
+/// Prepare Home: entry points for everything a household does BEFORE a
+/// disaster. Every destination works offline.
 class PreparednessScreen extends StatefulWidget {
-  const PreparednessScreen({super.key});
+  const PreparednessScreen({super.key, this.checklists});
+
+  final ChecklistRepository? checklists;
 
   @override
   State<PreparednessScreen> createState() => _PreparednessScreenState();
 }
 
 class _PreparednessScreenState extends State<PreparednessScreen> {
-  late final Future<List<SafetyGuideModel>> _guides;
+  late final ChecklistRepository _checklists = widget.checklists ?? ChecklistRepository();
+  late Future<List<ChecklistProgress>> _progress = _checklists.allProgress();
 
-  @override
-  void initState() {
-    super.initState();
-    _guides = PreparednessService.instance.loadGuides();
+  Future<void> _open(String location) async {
+    await context.push<Object?>(location);
+    if (mounted) {
+      setState(() {
+        _progress = _checklists.allProgress();
+      });
+    }
+  }
+
+  String _kitSubtitle(List<ChecklistProgress> all) {
+    for (final p in all) {
+      if (p.checklist.id == ChecklistRepository.kitId) {
+        return '${p.completed} of ${p.total} packed';
+      }
+    }
+    return 'Water, food, medicines, torch and documents';
+  }
+
+  String _checklistsSubtitle(List<ChecklistProgress> all) {
+    final lists = all.where((p) => p.checklist.id != ChecklistRepository.kitId).toList();
+    if (lists.isEmpty) return 'Home, evacuation, family and communication';
+    final done = lists.fold<int>(0, (sum, p) => sum + p.completed);
+    final total = lists.fold<int>(0, (sum, p) => sum + p.total);
+    return '$done of $total tasks done';
   }
 
   @override
   Widget build(BuildContext context) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-
     return Scaffold(
-      backgroundColor: isDark ? AppColors.bgApp : AppColors.lightBackground,
-      appBar: AppBar(
-        title: const Text('Preparedness Hub'),
-        centerTitle: true,
-      ),
+      backgroundColor: context.screenBackground,
+      appBar: AppBar(title: const Text('Prepare'), centerTitle: true),
       bottomNavigationBar: SetuBottomNavigation(
         currentIndex: 1,
         onTap: (index) {
           switch (index) {
             case 0:
               context.go('/');
-              break;
             case 1:
-              // Already here
               break;
             case 2:
               context.push('/recovery');
-              break;
             case 3:
               context.push('/history');
-              break;
           }
         },
       ),
       body: SafeArea(
-        child: ListView(
-          padding: const EdgeInsets.all(AppSpacing.lg),
-          children: [
-            // Readiness Check hero card
-            SetuCard(
-              padding: const EdgeInsets.all(AppSpacing.md),
-              onTap: () => context.push('/preparedness/readiness'),
-              accentBorderLeft: AppColors.accent,
-              child: Row(
-                children: [
-                  Container(
-                    width: 44,
-                    height: 44,
-                    decoration: BoxDecoration(
-                      color: AppColors.accent.withValues(alpha: 0.14),
-                      borderRadius: AppRadius.smRadius,
-                    ),
-                    child: const Icon(
-                      Icons.checklist_rtl_rounded,
-                      color: AppColors.accent,
-                      size: 24,
-                    ),
-                  ),
-                  const SizedBox(width: AppSpacing.md),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Row(
-                          children: [
-                            Expanded(
-                              child: Text(
-                                'Device Readiness Check',
-                                style: AppTypography.cardTitle.copyWith(
-                                  color: isDark
-                                      ? AppColors.textPrimary
-                                      : AppColors.lightTextPrimary,
-                                ),
-                              ),
-                            ),
-                            Container(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 6,
-                                vertical: 2,
-                              ),
-                              decoration: BoxDecoration(
-                                color: AppColors.accent.withValues(alpha: 0.15),
-                                borderRadius: AppRadius.pillRadius,
-                              ),
-                              child: Text(
-                                'DIAGNOSTIC',
-                                style: AppTypography.metadata.copyWith(
-                                  color: AppColors.accent,
-                                  fontSize: 9.5,
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 2),
-                        Text(
-                          'Test Bluetooth, Location, Wi-Fi and Mesh permissions before emergencies occur.',
-                          style: AppTypography.caption.copyWith(
-                            color: isDark
-                                ? AppColors.textSecondary
-                                : AppColors.lightTextSecondary,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(width: AppSpacing.xs),
-                  Icon(
-                    Icons.chevron_right_rounded,
-                    color: isDark ? AppColors.textDim : AppColors.lightTextDim,
-                  ),
-                ],
-              ),
-            ),
-
-            const SizedBox(height: AppSpacing.lg),
-
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        child: FutureBuilder<List<ChecklistProgress>>(
+          future: _progress,
+          builder: (context, snapshot) {
+            final all = snapshot.data ?? const <ChecklistProgress>[];
+            return ListView(
+              padding: const EdgeInsets.all(AppSpacing.lg),
               children: [
-                const SetuSectionHeader(
-                  title: 'Emergency Guides',
-                  subtitle: 'Actionable protocols for offline use',
-                  padding: EdgeInsets.zero,
+                Padding(
+                  padding: const EdgeInsets.only(bottom: AppSpacing.md),
+                  child: Text(
+                    'Everything in Prepare works without internet.',
+                    style: AppTypography.caption.copyWith(color: context.textSecondaryColor),
+                  ),
                 ),
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                  decoration: BoxDecoration(
-                    color: AppColors.success.withValues(alpha: 0.12),
-                    borderRadius: AppRadius.pillRadius,
-                  ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      const Icon(Icons.download_done_rounded, size: 12, color: AppColors.success),
-                      const SizedBox(width: 4),
-                      Text(
-                        '100% OFFLINE',
-                        style: AppTypography.metadata.copyWith(
-                          color: AppColors.success,
-                          fontSize: 9.5,
-                          fontWeight: FontWeight.w700,
-                        ),
-                      ),
-                    ],
-                  ),
+                HubTile(
+                  icon: Icons.menu_book_rounded,
+                  title: 'Disaster guides',
+                  subtitle: 'Flood, earthquake, cyclone, fire and landslide',
+                  onTap: () => _open('/preparedness/guides'),
+                ),
+                HubTile(
+                  icon: Icons.backpack_rounded,
+                  title: 'Emergency kit',
+                  subtitle: _kitSubtitle(all),
+                  onTap: () => _open('/preparedness/kit'),
+                ),
+                HubTile(
+                  icon: Icons.checklist_rounded,
+                  title: 'Safety checklists',
+                  subtitle: _checklistsSubtitle(all),
+                  onTap: () => _open('/preparedness/checklists'),
+                ),
+                HubTile(
+                  icon: Icons.family_restroom_rounded,
+                  title: 'Emergency plan',
+                  subtitle: 'Contacts, meeting point and notes',
+                  onTap: () => _open('/preparedness/plan'),
+                ),
+                HubTile(
+                  icon: Icons.contact_phone_rounded,
+                  title: 'Emergency contacts',
+                  subtitle: 'People to call, with one-tap dialling',
+                  onTap: () => _open('/preparedness/contacts'),
+                ),
+                HubTile(
+                  icon: Icons.settings_input_antenna_rounded,
+                  title: 'Device readiness check',
+                  subtitle: 'Test Bluetooth, location and mesh permissions',
+                  onTap: () => _open('/preparedness/readiness'),
                 ),
               ],
-            ),
-
-            const SizedBox(height: AppSpacing.sm),
-
-            FutureBuilder<List<SafetyGuideModel>>(
-              future: _guides,
-              builder: (context, snapshot) {
-                if (snapshot.connectionState != ConnectionState.done) {
-                  return const Padding(
-                    padding: EdgeInsets.symmetric(vertical: 40),
-                    child: Center(
-                      child: CircularProgressIndicator(),
-                    ),
-                  );
-                }
-
-                final guides = snapshot.data ?? const [];
-                if (guides.isEmpty) {
-                  return const Padding(
-                    padding: EdgeInsets.symmetric(vertical: 40),
-                    child: SetuEmptyState(
-                      icon: Icons.menu_book_rounded,
-                      title: 'Guides Unavailable',
-                      description: 'No offline safety guides found on this installation.',
-                    ),
-                  );
-                }
-
-                return Column(
-                  children: guides.map((guide) {
-                    final icon = _iconFor(guide.id);
-                    return Padding(
-                      padding: const EdgeInsets.only(bottom: AppSpacing.sm),
-                      child: SetuCard(
-                        padding: const EdgeInsets.all(AppSpacing.md),
-                        onTap: () => context.push('/preparedness/guide/${guide.id}'),
-                        child: Row(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Container(
-                              width: 40,
-                              height: 40,
-                              decoration: BoxDecoration(
-                                color: isDark
-                                    ? AppColors.bgSurfaceAlt
-                                    : AppColors.lightBackground,
-                                borderRadius: AppRadius.smRadius,
-                                border: Border.all(
-                                  color: isDark
-                                      ? AppColors.borderSubtle
-                                      : AppColors.lightBorder,
-                                ),
-                              ),
-                              child: Icon(
-                                icon,
-                                size: 20,
-                                color: AppColors.accent,
-                              ),
-                            ),
-                            const SizedBox(width: AppSpacing.md),
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(
-                                    guide.title,
-                                    style: AppTypography.cardTitle.copyWith(
-                                      color: isDark
-                                          ? AppColors.textPrimary
-                                          : AppColors.lightTextPrimary,
-                                    ),
-                                  ),
-                                  const SizedBox(height: 2),
-                                  Text(
-                                    guide.summary,
-                                    style: AppTypography.caption.copyWith(
-                                      color: isDark
-                                          ? AppColors.textSecondary
-                                          : AppColors.lightTextSecondary,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                            const SizedBox(width: AppSpacing.xs),
-                            Icon(
-                              Icons.chevron_right_rounded,
-                              color: isDark ? AppColors.textDim : AppColors.lightTextDim,
-                            ),
-                          ],
-                        ),
-                      ),
-                    );
-                  }).toList(),
-                );
-              },
-            ),
-          ],
+            );
+          },
         ),
       ),
     );
-  }
-
-  IconData _iconFor(String id) {
-    switch (id) {
-      case 'flood':
-        return Icons.water_rounded;
-      case 'fire':
-        return Icons.local_fire_department_rounded;
-      case 'earthquake':
-        return Icons.vibration_rounded;
-      case 'accident':
-        return Icons.emergency_rounded;
-      case 'women_safety':
-        return Icons.shield_rounded;
-      case 'child_safety':
-        return Icons.child_care_rounded;
-      case 'senior_citizen':
-        return Icons.elderly_rounded;
-      default:
-        return Icons.info_outline_rounded;
-    }
   }
 }
