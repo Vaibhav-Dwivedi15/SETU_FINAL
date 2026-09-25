@@ -1,4 +1,4 @@
-﻿import React, { useState } from 'react';
+import React, { useState } from 'react';
 import { 
   LuPackage, LuUsers, LuCircleCheck, 
   LuSearch, LuMapPin, LuArrowRight, LuActivity, LuCheck
@@ -140,12 +140,12 @@ export default function RecoveryPage() {
 
       {/* Tab Switcher & Search Bar */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '16px', marginBottom: '20px' }}>
-        <div style={{ display: 'flex', gap: '8px', background: 'var(--bg-surface, #131f3d)', padding: '4px', borderRadius: '10px', border: '1px solid var(--border-color, #1e293b)' }}>
+        <div style={{ display: 'flex', gap: '4px', background: 'var(--bg-surface-alt)', padding: '3px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-subtle)' }}>
           <button 
             onClick={() => setActiveTab('damage')} 
             style={{ 
-              padding: '8px 16px', borderRadius: '8px', border: 'none', cursor: 'pointer', fontSize: '13px', fontWeight: 600,
-              background: activeTab === 'damage' ? '#ef4444' : 'transparent', color: activeTab === 'damage' ? '#fff' : '#94a3b8'
+              padding: '6px 14px', borderRadius: 'var(--radius-sm)', border: 'none', cursor: 'pointer', fontSize: '12px', fontWeight: 600,
+              background: activeTab === 'damage' ? 'var(--accent)' : 'transparent', color: activeTab === 'damage' ? '#fff' : 'var(--text-secondary)'
             }}
           >
             Damage & Infrastructure ({damageReports.length})
@@ -153,8 +153,8 @@ export default function RecoveryPage() {
           <button 
             onClick={() => setActiveTab('missing')} 
             style={{ 
-              padding: '8px 16px', borderRadius: '8px', border: 'none', cursor: 'pointer', fontSize: '13px', fontWeight: 600,
-              background: activeTab === 'missing' ? '#ef4444' : 'transparent', color: activeTab === 'missing' ? '#fff' : '#94a3b8'
+              padding: '6px 14px', borderRadius: 'var(--radius-sm)', border: 'none', cursor: 'pointer', fontSize: '12px', fontWeight: 600,
+              background: activeTab === 'missing' ? 'var(--accent)' : 'transparent', color: activeTab === 'missing' ? '#fff' : 'var(--text-secondary)'
             }}
           >
             Missing Persons Registry ({missingPersons.length})
