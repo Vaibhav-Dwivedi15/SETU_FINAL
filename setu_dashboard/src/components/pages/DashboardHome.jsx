@@ -6,7 +6,7 @@ import AIPanel from "../AIPanel";
 import ResourcePanel from "../ResourcePanel";
 import { NavIcons, ActionIcons, CategoryIcons, MiscIcons } from "../../icons";
 
-function DashboardHome({ allIncidents, filteredIncidents, onResolve, onSelectIncident, trends = {} }) {
+function DashboardHome({ allIncidents, filteredIncidents, onResolve, onSelectIncident, selectedIncident, trends = {} }) {
   const [tacticalTab, setTacticalTab] = useState("live"); // "live" | "critical" | "ai"
   const [showTray, setShowTray] = useState(false);
 
@@ -93,12 +93,13 @@ function DashboardHome({ allIncidents, filteredIncidents, onResolve, onSelectInc
           <MapView
             incidents={filteredIncidents}
             onSelectIncident={onSelectIncident}
+            selectedIncidentId={selectedIncident?.id}
             tall
           />
 
           <div className="ops-map-footer ds-mono">
-            <span>REFERENCE: WGS84 • GRID: SECTOR 4 DISPATCH</span>
-            <span>TELEMETRY: 915MHz LoRa RF MESH • CARTO TACTICAL BASEMAP</span>
+            <span>COORDINATES: WGS84 • PROJECTION: MERCATOR</span>
+            <span>TRANSPORT: BLE &amp; WI-FI DIRECT MESH • BASEMAP: CARTO TACTICAL</span>
           </div>
         </div>
 
@@ -132,6 +133,7 @@ function DashboardHome({ allIncidents, filteredIncidents, onResolve, onSelectInc
                 incidents={filteredIncidents}
                 onResolve={onResolve}
                 onSelect={onSelectIncident}
+                selectedId={selectedIncident?.id}
                 hideHeader
               />
             )}
@@ -141,6 +143,7 @@ function DashboardHome({ allIncidents, filteredIncidents, onResolve, onSelectInc
                 incidents={criticalFiltered}
                 onResolve={onResolve}
                 onSelect={onSelectIncident}
+                selectedId={selectedIncident?.id}
                 title="Critical Incidents"
                 hideHeader
               />

@@ -329,7 +329,7 @@ function App() {
             <div className="command-meta">
               <span>SECTOR: PRAYAGRAJ GRID • OPS CONSOLE</span>
               <span>•</span>
-              <span className="ds-mono">915MHz LoRa MESH</span>
+              <span className="ds-mono">BLE &amp; WI-FI DIRECT MESH</span>
             </div>
           </div>
 
@@ -443,17 +443,23 @@ function App() {
               filteredIncidents={filteredIncidents}
               onResolve={resolveIncident}
               onSelectIncident={setSelectedIncident}
+              selectedIncident={selectedIncident}
               trends={trends}
             />
           )}
           {activePage === "map" && (
-            <LiveMapPage incidents={filteredIncidents} onSelectIncident={setSelectedIncident} />
+            <LiveMapPage
+              incidents={filteredIncidents}
+              onSelectIncident={setSelectedIncident}
+              selectedIncidentId={selectedIncident?.id}
+            />
           )}
           {activePage === "incidents" && (
             <IncidentsPage
               incidents={filteredIncidents}
               onResolve={resolveIncident}
               onSelectIncident={setSelectedIncident}
+              selectedIncidentId={selectedIncident?.id}
             />
           )}
           {activePage === "categories" && (

@@ -20,9 +20,9 @@ function RelayTrace({ hopCount }) {
 
   if (hopCount === 0) {
     return (
-      <div className="relay-trace relay-trace-direct" title="Reported directly — no mesh relay needed">
+      <div className="relay-trace relay-trace-direct" title="Reported directly — origin device had internet connectivity">
         <span className="relay-node relay-node-lit" />
-        <span className="relay-trace-label mono">direct</span>
+        <span className="relay-trace-label mono">Direct (No relay)</span>
       </div>
     );
   }

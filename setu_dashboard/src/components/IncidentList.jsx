@@ -4,7 +4,7 @@ import { ActionIcons, MiscIcons, CategoryIcons } from "../icons";
 import { PriorityBadge, StatusBadge, EmptyState } from "./ui/Primitives";
 import { categorizeIncident } from "../utils/incidentCategories";
 
-function IncidentList({ incidents, onResolve, onSelect, title = "Recent Incidents", hideHeader = false }) {
+function IncidentList({ incidents, onResolve, onSelect, selectedId, title = "Recent Incidents", hideHeader = false }) {
   useTick(); // keeps "Xm ago" timestamps advancing live
 
   return (
@@ -28,16 +28,18 @@ function IncidentList({ incidents, onResolve, onSelect, title = "Recent Incident
         {incidents.map((incident) => {
           const priority = incident.priority || "Medium";
           const isClosed = incident.status === "closed";
+          const isSelected = selectedId === incident.id;
           const catKey = categorizeIncident(incident);
           const CatIcon = CategoryIcons[catKey] || CategoryIcons.other || MiscIcons.alert;
 
           return (
             <div
-              className={`ops-incident-row priority-${priority.toLowerCase()} ${isClosed ? "resolved" : ""} ${onSelect ? "clickable" : ""}`}
+              className={`ops-incident-row priority-${priority.toLowerCase()} ${isClosed ? "resolved" : ""} ${isSelected ? "selected" : ""} ${onSelect ? "clickable" : ""}`}
               key={incident.id}
               onClick={() => onSelect && onSelect(incident)}
               tabIndex={0}
               role="button"
+              aria-selected={isSelected}
               onKeyDown={(e) => {
                 if (e.key === "Enter" || e.key === " ") {
                   e.preventDefault();

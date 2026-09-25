@@ -4,7 +4,7 @@ import { useTick } from "../../utils/useTick";
 import { NavIcons, MiscIcons } from "../../icons";
 import { EmptyState } from "../ui/Primitives";
 
-function LiveMapPage({ incidents, onSelectIncident }) {
+function LiveMapPage({ incidents, onSelectIncident, selectedIncidentId }) {
   useTick();
   const sorted = [...incidents].sort((a, b) => {
     const order = { Critical: 4, High: 3, Medium: 2, Low: 1 };
@@ -14,7 +14,12 @@ function LiveMapPage({ incidents, onSelectIncident }) {
   return (
     <div className="live-map-page">
       <div className="live-map-primary">
-        <MapView incidents={incidents} onSelectIncident={onSelectIncident} tall />
+        <MapView
+          incidents={incidents}
+          onSelectIncident={onSelectIncident}
+          selectedIncidentId={selectedIncidentId}
+          tall
+        />
       </div>
 
       <div className="live-map-rail">
@@ -29,7 +34,7 @@ function LiveMapPage({ incidents, onSelectIncident }) {
         {sorted.map((incident) => (
           <button
             key={incident.id}
-            className="rail-item"
+            className={`rail-item ${selectedIncidentId === incident.id ? "selected" : ""}`}
             onClick={() => onSelectIncident(incident)}
           >
             <span className={`rail-dot dot-${(incident.priority || "medium").toLowerCase()}`} />

@@ -46,6 +46,16 @@
   filter:grayscale(0.6);
 }
 
+.setu-map-marker-selected{
+  filter:drop-shadow(0 0 10px rgba(2, 132, 199, 0.8)) !important;
+  z-index:9999 !important;
+}
+
+.setu-map-marker-selected .setu-map-marker-pulse{
+  background:#0284c7 !important;
+  opacity:0.75;
+}
+
 @media (prefers-reduced-motion:reduce){
   .setu-map-marker-pulse{ animation:none; opacity:.35; }
 }

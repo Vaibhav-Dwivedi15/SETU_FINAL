@@ -153,18 +153,21 @@ function IncidentDetailDrawer({ incident, onClose, onResolve }) {
                 {typeof incident.hopCount === "number" && (
                   <div>
                     <dt>Mesh Path</dt>
-                    <dd style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                      <ActionIcons.refresh className="ds-icon-sm" aria-hidden="true" />
-                      {incident.hopCount} hop{incident.hopCount === 1 ? "" : "s"} — no internet needed
+                    <dd style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                        <ActionIcons.refresh className="ds-icon-sm" aria-hidden="true" />
+                        <span>
+                          {incident.hopCount === 0
+                            ? "Direct connection (0 hops — origin device had internet)"
+                            : `${incident.hopCount} hop${incident.hopCount === 1 ? "" : "s"} (BLE & Wi-Fi Direct mesh)`}
+                        </span>
+                      </div>
+                      <RelayTrace hopCount={incident.hopCount} />
                     </dd>
                   </div>
                 )}
                 {hasCoords && (<div><dt>Coordinates</dt><dd className="mono">{incident.lat.toFixed(4)}, {incident.lng.toFixed(4)}</dd></div>)}
               </dl>
-
-              {typeof incident.hopCount === "number" && (
-                <div className="drawer-relay-row"><RelayTrace hopCount={incident.hopCount} /></div>
-              )}
 
               <div className="priority-comparison">
                 <h3 className="ds-section-title">Priority Assessment</h3>

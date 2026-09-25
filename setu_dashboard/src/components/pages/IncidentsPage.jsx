@@ -7,7 +7,7 @@ import { StatusBadge, EmptyState } from "../ui/Primitives";
 
 const PRIORITY_ORDER = { Critical: 4, High: 3, Medium: 2, Low: 1 };
 
-function IncidentsPage({ incidents, onResolve, onSelectIncident }) {
+function IncidentsPage({ incidents, onResolve, onSelectIncident, selectedIncidentId }) {
   const [sortBy, setSortBy] = useState("priority"); // "priority" | "time"
   useTick();
 
@@ -50,10 +50,11 @@ function IncidentsPage({ incidents, onResolve, onSelectIncident }) {
         {sorted.map((incident) => {
           const priority = incident.priority || "Medium";
           const isClosed = incident.status === "closed";
+          const isSelected = selectedIncidentId === incident.id;
           return (
             <div
               key={incident.id}
-              className={`incident-row priority-${priority.toLowerCase()} ${isClosed ? "resolved" : ""}`}
+              className={`incident-row priority-${priority.toLowerCase()} ${isClosed ? "resolved" : ""} ${isSelected ? "selected" : ""}`}
               onClick={() => onSelectIncident(incident)}
             >
               <span className={`rail-dot dot-${priority.toLowerCase()}`} />

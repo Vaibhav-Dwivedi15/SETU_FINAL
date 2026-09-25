@@ -23,3 +23,8 @@ dist-ssr
 *.sln
 *.sw?
 .vercel
+
+# Presentation deliverables (kept local, excluded from dashboard commit)
+*.pptx
+SETU_PRESENTATION_*.md
+SETU_JUDGE_QA_GUIDE.md

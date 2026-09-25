@@ -1,3 +1,4 @@
+import { Fragment } from "react";
 import { MapContainer, TileLayer, Marker, Popup, Circle } from "react-leaflet";
 import "leaflet/dist/leaflet.css";
 import { divIcon } from "leaflet";
@@ -7,33 +8,6 @@ import { ActionIcons } from "../icons";
 // =====================================================
 // SETU Dashboard — Live Map (v2)
 // =====================================================
-//
-// Redesign brief section 10 asked for: incident clusters, individual
-// incidents, approximate affected areas, responder presence, mesh
-// activity, internet exit nodes, professional (non-emoji) markers,
-// priority+category communication, and a critical pulse.
-//
-// HONEST SCOPE for this pass:
-//   - Professional markers: DONE. Replaced the old external hotlinked
-//     PNG pin images with self-contained inline SVG (no external asset
-//     dependency at all now, and no emoji).
-//   - Priority communication: DONE — color-coded exactly as before.
-//   - Critical pulse: DONE — a CSS keyframe ring, only on Critical
-//     markers, restrained (not flashing/bouncing).
-//   - Approximate affected area: DONE — a soft translucent Circle
-//     overlay around each active incident (radius is a fixed visual
-//     approximation, not derived from any real blast/flood-radius
-//     model — that data doesn't exist yet).
-//   - Incident clustering (grouping many nearby markers into one
-//     cluster bubble at low zoom): NOT done this pass — would need a
-//     new dependency (e.g. react-leaflet-cluster), not currently
-//     installed. Flagged, not guessed at.
-//   - Responder presence / internet exit-node markers: NOT done —
-//     there is no data model for responder location or per-incident
-//     exit-node identity anywhere in this app yet. Fabricating markers
-//     for data that doesn't exist would be exactly the kind of
-//     overclaim this project's own documentation explicitly rejects.
-//     Flagged as a real gap, not silently faked.
 
 const PRIORITY_COLOR = {
   Critical: "#ef4444",
@@ -50,13 +24,14 @@ function priorityColor(priority) {
 /**
  * Builds a self-contained SVG marker as a Leaflet divIcon.
  * Strict visual hierarchy per command-center specifications:
- * - CRITICAL: immediately visible, 26x32, distinct pulse wave
- * - HIGH: visible, 22x28
+ * - SELECTED: enlarged 26x34 with distinct accent pulse
+ * - CRITICAL: immediately visible, 24x30, distinct pulse wave
+ * - HIGH: visible, 20x26
  * - MEDIUM: quieter, 18x24
  * - LOW: subtle, 15x20
  * - CLOSED: dimmed slate, 14x18
  */
-function buildMarkerIcon(priority, isClosed = false) {
+function buildMarkerIcon(priority, isClosed = false, isSelected = false) {
   const color = isClosed ? "#475569" : priorityColor(priority);
   const isCritical = priority === "Critical" && !isClosed;
   const isHigh = priority === "High" && !isClosed;
@@ -65,7 +40,11 @@ function buildMarkerIcon(priority, isClosed = false) {
   let height = 24;
   let dotRadius = 3;
 
-  if (isCritical) {
+  if (isSelected) {
+    width = 26;
+    height = 34;
+    dotRadius = 4.5;
+  } else if (isCritical) {
     width = 24;
     height = 30;
     dotRadius = 4.5;
@@ -80,10 +59,10 @@ function buildMarkerIcon(priority, isClosed = false) {
   }
 
   const html = `
-    <div class="setu-map-marker ${isCritical ? "setu-map-marker-critical" : ""} ${isClosed ? "setu-map-marker-closed" : ""}" style="width:${width}px;height:${height}px;">
-      ${isCritical ? '<span class="setu-map-marker-pulse"></span>' : ""}
+    <div class="setu-map-marker ${isCritical ? "setu-map-marker-critical" : ""} ${isClosed ? "setu-map-marker-closed" : ""} ${isSelected ? "setu-map-marker-selected" : ""}" style="width:${width}px;height:${height}px;">
+      ${isCritical || isSelected ? '<span class="setu-map-marker-pulse"></span>' : ""}
       <svg width="${width}" height="${height}" viewBox="0 0 24 30" fill="none" xmlns="http://www.w3.org/2000/svg">
-        <path d="M12 0C5.37 0 0 5.37 0 12C0 21 12 30 12 30C12 30 24 21 24 12C24 5.37 18.63 0 12 0Z" fill="${color}" fill-opacity="${isClosed ? "0.6" : "0.95"}" stroke="rgba(0,0,0,0.4)" stroke-width="1.2"/>
+        <path d="M12 0C5.37 0 0 5.37 0 12C0 21 12 30 12 30C12 30 24 21 24 12C24 5.37 18.63 0 12 0Z" fill="${isSelected ? "#0284c7" : color}" fill-opacity="${isClosed ? "0.6" : "0.95"}" stroke="${isSelected ? "#ffffff" : "rgba(0,0,0,0.4)"}" stroke-width="${isSelected ? "2" : "1.2"}"/>
         <circle cx="12" cy="11" r="${dotRadius}" fill="#ffffff" fill-opacity="${isClosed ? "0.5" : "0.95"}"/>
       </svg>
     </div>
@@ -99,25 +78,23 @@ function buildMarkerIcon(priority, isClosed = false) {
 }
 
 const MARKER_ICON_CACHE = {};
-function getMarkerIcon(priority, isClosed = false) {
-  const key = `${priority}-${isClosed ? "closed" : "active"}`;
+function getMarkerIcon(priority, isClosed = false, isSelected = false) {
+  const key = `${priority}-${isClosed ? "closed" : "active"}-${isSelected ? "sel" : "norm"}`;
   if (!MARKER_ICON_CACHE[key]) {
-    MARKER_ICON_CACHE[key] = buildMarkerIcon(priority, isClosed);
+    MARKER_ICON_CACHE[key] = buildMarkerIcon(priority, isClosed, isSelected);
   }
   return MARKER_ICON_CACHE[key];
 }
 
-// Fixed visual radius for the "approximate affected area" circle --
-// deliberately NOT derived from any real hazard-radius model (no such
-// data exists), purely a soft visual cue that something happened
-// roughly here, not a precise boundary claim.
-const AFFECTED_AREA_RADIUS_M = 350;
-
-function MapView({ incidents, onSelectIncident, tall = false }) {
+function MapView({ incidents, onSelectIncident, selectedIncidentId, tall = false }) {
   const { theme } = useTheme();
   const tileUrl = theme === "light"
     ? "https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png"
     : "https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png";
+
+  const validIncidents = incidents.filter(
+    (i) => typeof i?.lat === "number" && typeof i?.lng === "number" && !isNaN(i.lat) && !isNaN(i.lng)
+  );
 
   return (
     <div className={`map-container ${tall ? "map-container-tall" : ""}`}>
@@ -132,30 +109,31 @@ function MapView({ incidents, onSelectIncident, tall = false }) {
           url={tileUrl}
         />
 
-        {incidents.map((incident) => {
+        {validIncidents.map((incident) => {
           const color = priorityColor(incident.priority);
           const isClosed = incident.status === "closed";
-          const isHighOrCritical = !isClosed && (incident.priority === "Critical" || incident.priority === "High");
+          const isSelected = selectedIncidentId === incident.id;
+          const isHighOrCritical = !isClosed && (incident.priority === "Critical" || incident.priority === "High" || isSelected);
 
           return (
-            <div key={incident.id}>
+            <Fragment key={incident.id}>
               {isHighOrCritical && (
                 <Circle
                   center={[incident.lat, incident.lng]}
-                  radius={incident.priority === "Critical" ? 400 : 250}
+                  radius={isSelected ? 500 : incident.priority === "Critical" ? 400 : 250}
                   pathOptions={{
-                    color,
-                    fillColor: color,
-                    fillOpacity: 0.05,
-                    weight: 1,
-                    opacity: 0.25,
-                    dashArray: incident.priority === "Critical" ? undefined : "3, 3",
+                    color: isSelected ? "#0284c7" : color,
+                    fillColor: isSelected ? "#0284c7" : color,
+                    fillOpacity: isSelected ? 0.12 : 0.05,
+                    weight: isSelected ? 1.5 : 1,
+                    opacity: isSelected ? 0.5 : 0.25,
+                    dashArray: incident.priority === "Critical" && !isSelected ? undefined : "3, 3",
                   }}
                 />
               )}
               <Marker
                 position={[incident.lat, incident.lng]}
-                icon={getMarkerIcon(incident.priority, isClosed)}
+                icon={getMarkerIcon(incident.priority, isClosed, isSelected)}
                 eventHandlers={
                   onSelectIncident ? { click: () => onSelectIncident(incident) } : undefined
                 }
@@ -199,7 +177,7 @@ function MapView({ incidents, onSelectIncident, tall = false }) {
                   </div>
                 </Popup>
               </Marker>
-            </div>
+            </Fragment>
           );
         })}
       </MapContainer>
