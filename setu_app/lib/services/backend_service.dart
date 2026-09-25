@@ -253,7 +253,7 @@ class BackendService {
           .timeout(const Duration(seconds: 10));
       final ok = response.statusCode >= 200 && response.statusCode < 300;
       developer.log(
-        ok ? 'Profile registered/updated for $senderId' : 'Registration rejected: ${response.statusCode} ${response.body}',
+        ok ? 'Profile registered/updated' : 'Registration rejected: HTTP ${response.statusCode}',
         name: 'BackendService',
       );
       return ok;

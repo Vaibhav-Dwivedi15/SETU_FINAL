@@ -1,37 +1,15 @@
-# SETU CI — Sep 21 2026 (Vib, Bulk Sprint 4, §32).
+# SETU CI (Block 3 security review).
 #
-# This workflow has NOT been run anywhere (no GitHub Actions runner is
-# reachable from the sandbox this was authored in — see
-# docs/BUILD_AND_VALIDATION.md for the exact, confirmed network/toolchain
-# blockers this engagement hit). It is written from the same real
-# commands documented there (flutter analyze/test, gradlew
-# testDebugUnitTest/assembleDebug), using only well-known, stable
-# third-party actions and no hardcoded secrets, so it should be safe to
-# merge and let a real GitHub-hosted runner execute for the first time --
-# but "should be safe" is a review-based claim, not a claim that this
-# exact YAML has ever actually run and gone green. The Flutter/Dart
-# version pins below are placeholders (see the TODO) since this sandbox
-# has no working Flutter install to read the real pinned version from.
+# STATUS, stated plainly: this workflow has been reviewed and its individual commands were run
+# locally (see docs/security/BLOCK3_FINAL_SECURITY_VALIDATION.md), but it has NEVER been executed on a
+# GitHub runner from this environment. Nothing here is claimed as CI-verified.
 #
-# Scope, deliberately narrow: lint/analyze + unit tests only. No release
-# signing, no Play Store upload, no device farm / instrumented tests (all
-# of which need real secrets or real hardware this sandbox has no way to
-# validate a safe configuration for) -- adding those without real secrets
-# management in place would be a bigger, riskier change than this sprint's
-# scope, not a smaller one.
-#
-# Sep 21 2026 (Vib, Bulk Sprint 5, Phase 10): reviewed this workflow again.
-# One real, project-derived fact was found and is noted below
-# (setu_app/pubspec.yaml's `environment: sdk: ^3.12.2` constraint) --
-# still not enough to safely pin an exact Flutter version here (that needs
-# knowing which Flutter release ships that Dart SDK version, which this
-# sandbox has no way to look up without network access to confirm), so the
-# `channel: stable` placeholder and its TODO remain, per the explicit
-# instruction not to invent a Flutter version. The Android SDK setup TODO
-# also remains unresolved -- nothing in this project's own files
-# determines that action's exact configuration, and this sandbox has no
-# way to test-run it.
-
+# Security posture:
+#  * least privilege: read-only GITHUB_TOKEN for every job; no job needs secrets;
+#  * every third-party action is pinned to a full commit SHA (tag in the trailing comment);
+#    Dependabot (.github/dependabot.yml) proposes updates;
+#  * checkout never persists the token; nothing is uploaded as an artifact, nothing prints env;
+#  * a release build with no signing material is asserted to FAIL (no debug-key fallback).
 name: SETU CI
 
 on:
@@ -40,134 +18,181 @@ on:
   push:
     branches: [main]
 
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
+  repo-security-guard:
+    name: Repository security guard (secrets, signing, manifest, dashboard bundle rules)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: "3.14"
+      - name: Run guard
+        run: python3 tools/security/repo_guard.py
+
   flutter-analyze-and-test:
     name: Flutter analyze + test (setu_app)
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v4
-
-      # TODO: pin this to the project's actual Flutter version once one
-      # is confirmed on a real developer machine (see
-      # docs/BUILD_AND_VALIDATION.md §1) -- 'stable' is a reasonable
-      # placeholder, not a verified-correct pin. Known constraint from the
-      # project itself (setu_app/pubspec.yaml): `sdk: ^3.12.2` -- whichever
-      # Flutter version is pinned here must bundle a Dart SDK satisfying
-      # that, but this sandbox cannot look up that Flutter<->Dart mapping
-      # without network access, so 'stable' stays as the placeholder.
-      - name: Set up Flutter
-        uses: subosito/flutter-action@v2
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          persist-credentials: false
+      # TODO(release owner): pin `flutter-version` to the project's verified version (local runs used
+      # Flutter 3.44.8 stable); 'stable' is a moving target.
+      - uses: subosito/flutter-action@1508160852fb97248640997f7cfb38da241df0ba # v2.9.1
         with:
           channel: stable
           cache: true
-
       - name: flutter pub get
         working-directory: setu_app
         run: flutter pub get
-
-      - name: flutter analyze
+      # 13 pre-existing `info` lints (style only) would make a plain `flutter analyze` exit 1;
+      # warnings and errors remain fatal.
+      - name: flutter analyze (warnings and errors fatal)
         working-directory: setu_app
-        run: flutter analyze
-
+        run: flutter analyze --no-fatal-infos
       - name: flutter test
         working-directory: setu_app
         run: flutter test
 
   backend-and-dashboard-tests:
-    # Block 2. NOT yet run on a GitHub runner -- the same commands were run locally
-    # (see docs/backend/BLOCK2_FINAL_VALIDATION.md). Python 3.14 is the version they
-    # were verified on. openai-whisper / sentence-transformers are excluded: they pull
-    # multi-GB torch, and the suite is written to run without them (embedding dedup
-    # falls back to lexical; voice transcription is stubbed in tests).
-    name: Backend pytest + dashboard contract/build
+    name: Backend pytest + pip-audit, dashboard tests/build/audit
     runs-on: ubuntu-latest
+    timeout-minutes: 25
     steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
         with:
           python-version: "3.14"
-
-      - name: Install backend dependencies (test subset)
+      - name: Install backend dependencies (test subset; whisper/sentence-transformers excluded)
         working-directory: Backend
         run: |
-          grep -v -e '^#' -e '^$' -e 'openai-whisper' -e 'sentence-transformers' requirements.txt > /tmp/req.txt
-          pip install -r /tmp/req.txt numpy
-
+          grep -v -e '^#' -e '^$' -e 'openai-whisper' -e 'sentence-transformers' requirements.txt > "$RUNNER_TEMP/req.txt"
+          pip install -r "$RUNNER_TEMP/req.txt" numpy pip-audit
       - name: Backend tests
         working-directory: Backend
         run: python -m pytest -q
-
       - name: AI service tests
         working-directory: Backend/setu_ai_service
         run: python -m pytest -q
-
-      - uses: actions/setup-node@v4
+      - name: Python dependency audit (pinned requirements)
+        working-directory: Backend
+        run: |
+          grep -v -e '^#' -e '^$' -e 'openai-whisper' -e 'sentence-transformers' -e '^numpy' -e 'email-validator' -e 'python-multipart' requirements.txt > "$RUNNER_TEMP/pinned.txt"
+          pip-audit -r "$RUNNER_TEMP/pinned.txt" --no-deps --disable-pip --progress-spinner off
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: "24"
-
-      - name: Dashboard install, contract test, build
+      - name: Dashboard install
         working-directory: setu_dashboard
-        run: |
-          npm ci
-          npm test
-          npm run build
+        run: npm ci
+      - name: Dashboard tests (secret-in-bundle canary, demo elimination, session, headers, contract)
+        working-directory: setu_dashboard
+        run: npm test
+      - name: Dashboard build
+        working-directory: setu_dashboard
+        env:
+          VITE_BACKEND_URL: https://setu-backend-cy78.onrender.com
+        run: npm run build
+      - name: Dashboard dependency audit (production dependencies, fail on high+)
+        working-directory: setu_dashboard
+        run: npm audit --omit=dev --audit-level=high
+
+  cross-language-signature-gate:
+    name: Cross-language signature gate (Dart -> Python -> Kotlin)
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          persist-credentials: false
+      - uses: subosito/flutter-action@1508160852fb97248640997f7cfb38da241df0ba # v2.9.1
+        with:
+          channel: stable
+          cache: true
+      - uses: actions/setup-java@cf277c60eb25467037889841efdb72551f06f6c3 # v4.9.1
+        with:
+          distribution: temurin
+          java-version: "17"
+      - uses: android-actions/setup-android@9fc6c4e9069bf8d3d10b2204b1fb8f6ef7065407 # v3.2.2
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: "3.14"
+      - name: Install backend dependencies (signature service needs cryptography)
+        working-directory: Backend
+        run: pip install cryptography
+      - name: flutter pub get
+        working-directory: setu_app
+        run: flutter pub get
+      - name: Run the gate
+        run: tools/cross_lang/run_gate.sh
 
   native-unit-tests:
     name: Native Kotlin unit tests (setu_app/android)
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v4
-
-      - name: Set up JDK 17
-        uses: actions/setup-java@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@cf277c60eb25467037889841efdb72551f06f6c3 # v4.9.1
         with:
           distribution: temurin
           java-version: "17"
-
-      # TODO: this step needs the Android SDK on the runner (the
-      # android-actions/setup-android action, or Flutter's own bundled
-      # SDK setup) for anything beyond a plain JVM unit-test run -- left
-      # as a follow-up rather than guessed here, since getting this
-      # exactly right needs a real run to confirm, which this sandbox
-      # cannot do (see docs/BUILD_AND_VALIDATION.md).
-      - name: Set up Android SDK
-        uses: android-actions/setup-android@v3
-
-      - name: Run native unit tests
-        working-directory: setu_app/android
-        # Block 1: scoped to :app. The bare `testDebugUnitTest` also runs the
-        # third-party geolocator_android plugin's own unit tests, which fail
-        # here (Mockito/JDK issue in the plugin, unrelated to SETU code).
-        run: ./gradlew :app:testDebugUnitTest --no-daemon
-
-  build-debug-apk:
-    name: Build debug APK (compile validation only)
-    runs-on: ubuntu-latest
-    needs: [flutter-analyze-and-test]
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: subosito/flutter-action@v2
+      - uses: android-actions/setup-android@9fc6c4e9069bf8d3d10b2204b1fb8f6ef7065407 # v3.2.2
+      - uses: subosito/flutter-action@1508160852fb97248640997f7cfb38da241df0ba # v2.9.1
         with:
           channel: stable
           cache: true
-
-      - name: Set up JDK 17
-        uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: "17"
-
       - name: flutter pub get
         working-directory: setu_app
         run: flutter pub get
+      - name: Run native unit tests
+        working-directory: setu_app/android
+        # Scoped to :app: the third-party geolocator_android plugin's own tests fail here (Mockito/JDK).
+        run: ./gradlew :app:testDebugUnitTest --no-daemon
 
-      # Debug build only -- no signing config needed/used, so this job
-      # deliberately does not touch android/key.properties or any secret.
-      # This is the step that would, for the first time in this
-      # engagement, actually confirm PacketRelayEngine.kt /
-      # SignatureVerifier.kt / MeshForegroundService.kt compile for real.
+  build-debug-apk:
+    name: Build debug APK + assert release signing has no debug fallback
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    needs: [flutter-analyze-and-test]
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          persist-credentials: false
+      - uses: subosito/flutter-action@1508160852fb97248640997f7cfb38da241df0ba # v2.9.1
+        with:
+          channel: stable
+          cache: true
+      - uses: actions/setup-java@cf277c60eb25467037889841efdb72551f06f6c3 # v4.9.1
+        with:
+          distribution: temurin
+          java-version: "17"
+      - uses: android-actions/setup-android@9fc6c4e9069bf8d3d10b2204b1fb8f6ef7065407 # v3.2.2
+      - name: flutter pub get
+        working-directory: setu_app
+        run: flutter pub get
       - name: flutter build apk --debug
         working-directory: setu_app
         run: flutter build apk --debug
+      - name: Release build WITHOUT signing material must be refused
+        working-directory: setu_app
+        run: |
+          if flutter build apk --release > "$RUNNER_TEMP/release.log" 2>&1; then
+            echo "::error::release build succeeded without signing material (debug-key fallback?)"; exit 1
+          fi
+          grep -q "SETU RELEASE BUILD REFUSED" "$RUNNER_TEMP/release.log"

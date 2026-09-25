@@ -109,7 +109,7 @@ class EmailOtpService {
       );
       if (response.statusCode < 200 || response.statusCode >= 300) {
         developer.log(
-          'OTP request rejected: ${response.statusCode} ${response.body}',
+          'OTP request rejected: HTTP ${response.statusCode}',
           name: 'EmailOtpService',
         );
         final detail = _extractDetail(response.body) ??

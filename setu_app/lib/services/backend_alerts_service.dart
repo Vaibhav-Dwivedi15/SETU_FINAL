@@ -141,7 +141,7 @@ class BackendAlertsService {
 
       if (response.statusCode < 200 || response.statusCode >= 300) {
         developer.log(
-          'Nearby alerts fetch rejected: ${response.statusCode} ${response.body}',
+          'Nearby alerts fetch rejected: HTTP ${response.statusCode}',
           name: 'BackendAlertsService',
         );
         return [];
@@ -187,7 +187,7 @@ class BackendAlertsService {
       developer.log(
         ok
             ? 'Responded to incident $incidentId with ${responseType.apiValue}'
-            : 'Response rejected: ${response.statusCode} ${response.body}',
+            : 'Response rejected: HTTP ${response.statusCode}',
         name: 'BackendAlertsService',
       );
       return ok;

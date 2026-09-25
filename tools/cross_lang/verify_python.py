@@ -43,9 +43,24 @@ def as_packet(d: dict) -> SimpleNamespace:
     )
 
 
+# Block 3 gate: the vector set must contain every genuine case and every tamper the gate promises.
+# A vector directory missing any of these is a FAILURE (a weakened gate must not pass silently).
+REQUIRED = {
+    "emergency": True, "emergency_wholedeg": True, "termination": True, "relay_rewrites_ttl_hop": True,
+    "tamper_message": False, "tamper_timestamp": False, "tamper_latitude": False, "tamper_longitude": False,
+    "tamper_sender_id": False, "tamper_signature": False, "tamper_nonce": False, "tamper_packet_id": False,
+    "tamper_emergency_id": False, "tamper_priority": False,
+}
+
+
 def main(directory: str) -> int:
     root = pathlib.Path(directory)
     failures = 0
+    manifest = dict(line.split("\t") for line in (root / "manifest.tsv").read_text().splitlines())
+    for name, expected in REQUIRED.items():
+        if manifest.get(name) != ("true" if expected else "false"):
+            print(f"FAIL  required vector {name!r} missing or has the wrong expectation ({manifest.get(name)!r})")
+            failures += 1
     for line in (root / "manifest.tsv").read_text().splitlines():
         name, expected = line.split("\t")
         expected_ok = expected == "true"

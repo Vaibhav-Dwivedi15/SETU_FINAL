@@ -7,51 +7,50 @@ plugins {
     id("dev.flutter.flutter-gradle-plugin")
 }
 
-// SEP 2026 SECURITY HARDENING: real release signing, wired but not
-// hardcoded.
+// BLOCK 3 -- RELEASE SIGNING (supersedes the Sep 2026 note that used to be here):
 //
-// FOUND (not fixed silently -- documented here and in
-// docs/SECURITY_SCORECARD.md): the release buildType previously did
-// `signingConfig = signingConfigs.getByName("debug")` unconditionally
-// -- every release build was signed with the shared, well-known Flutter
-// debug key, not a real release key. That is a genuine problem for
-// anything beyond local testing (Google Play itself rejects a
-// debug-signed release AAB/APK; app signing is also what proves updates
-// come from the same publisher).
-//
-// NOT FIXED BY INVENTING A KEYSTORE: this sandbox has no real signing
-// key, and creating a throwaway one to "close" this finding would be a
-// fake control (`android/key.properties.example` documents the exact
-// shape a real one needs, but never a working keystore). Instead:
-// - android/.gitignore and the repo root .gitignore already excluded
-//   key.properties and *.keystore/*.jks (confirmed unchanged, not
-//   newly added this pass) -- the mechanism to keep a real key out of
-//   git was already in place, just never wired into this file.
-// - If android/key.properties exists (gitignored, developer-provided,
-//   see key.properties.example), it's now actually used to sign
-//   release builds.
-// - If it does NOT exist, release still falls back to the debug key
-//   (so `flutter build apk` keeps working for local/demo builds without
-//   extra setup) but now prints a loud, impossible-to-miss warning at
-//   build time instead of silently shipping a debug-signed release.
-// android/key.properties -- matches the location .gitignore already
-// excludes (both android/.gitignore's `key.properties` and the repo
-// root .gitignore's `android/key.properties` point here).
+// A release build can NEVER silently use the debug key. Signing material comes from either
+//   1. android/key.properties (gitignored; see key.properties.example), or
+//   2. environment variables (for CI secrets): SETU_RELEASE_STORE_FILE, SETU_RELEASE_STORE_PASSWORD,
+//      SETU_RELEASE_KEY_ALIAS, SETU_RELEASE_KEY_PASSWORD.
+// If neither is complete, any task that produces a signed release artifact (assembleRelease,
+// packageRelease, bundleRelease, signReleaseBundle -- i.e. `flutter build apk|appbundle --release`)
+// FAILS with an explicit message. Debug builds, unit tests and `assembleDebug` are unaffected.
+// No keystore or password is committed; the real production keystore must be generated and
+// held by the release owner (keytool command in key.properties.example).
 val keystorePropertiesFile = rootProject.file("key.properties")
-val keystoreProperties = Properties()
-val hasReleaseKeystore = keystorePropertiesFile.exists()
-if (hasReleaseKeystore) {
-    keystoreProperties.load(FileInputStream(keystorePropertiesFile))
-} else {
-    logger.warn(
-        "\n" +
-        "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!\n" +
-        "  WARNING: android/key.properties not found.\n" +
-        "  Release build will be signed with the DEBUG key -- this is NOT a\n" +
-        "  real release signature and must not be distributed/uploaded to\n" +
-        "  Google Play. See android/key.properties.example.\n" +
-        "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!\n"
-    )
+val fileProps = Properties()
+if (keystorePropertiesFile.exists()) {
+    FileInputStream(keystorePropertiesFile).use { fileProps.load(it) }
+}
+
+fun signingValue(propKey: String, envKey: String): String? =
+    (fileProps.getProperty(propKey) ?: System.getenv(envKey))?.trim()?.takeIf { it.isNotEmpty() && it != "REPLACE_ME" }
+
+val releaseStoreFile = signingValue("storeFile", "SETU_RELEASE_STORE_FILE")
+val releaseStorePassword = signingValue("storePassword", "SETU_RELEASE_STORE_PASSWORD")
+val releaseKeyAlias = signingValue("keyAlias", "SETU_RELEASE_KEY_ALIAS")
+val releaseKeyPassword = signingValue("keyPassword", "SETU_RELEASE_KEY_PASSWORD")
+
+val releaseSigningProblem: String? = when {
+    releaseStoreFile == null || releaseStorePassword == null || releaseKeyAlias == null || releaseKeyPassword == null ->
+        "Release signing is not configured (android/key.properties or SETU_RELEASE_* environment variables are missing or incomplete)."
+    !file(releaseStoreFile).isFile ->
+        "Release keystore file not found: the configured storeFile does not exist."
+    else -> null
+}
+
+gradle.taskGraph.whenReady {
+    val signedReleaseTasks = setOf("assembleRelease", "packageRelease", "bundleRelease", "signReleaseBundle", "packageReleaseBundle")
+    val requested = allTasks.filter { it.project == project && it.name in signedReleaseTasks }
+    if (requested.isNotEmpty() && releaseSigningProblem != null) {
+        throw GradleException(
+            "\n\nSETU RELEASE BUILD REFUSED: " + releaseSigningProblem + "\n" +
+            "A release build is never signed with the debug key. Create a production keystore and\n" +
+            "android/key.properties (see android/key.properties.example), or export the SETU_RELEASE_*\n" +
+            "variables, then re-run. Debug builds are unaffected.\n"
+        )
+    }
 }
 
 android {
@@ -73,23 +72,21 @@ android {
     }
 
     signingConfigs {
-        if (hasReleaseKeystore) {
+        if (releaseSigningProblem == null) {
             create("release") {
-                keyAlias = keystoreProperties["keyAlias"] as String
-                keyPassword = keystoreProperties["keyPassword"] as String
-                storeFile = keystoreProperties["storeFile"]?.let { file(it as String) }
-                storePassword = keystoreProperties["storePassword"] as String
+                keyAlias = releaseKeyAlias
+                keyPassword = releaseKeyPassword
+                storeFile = file(releaseStoreFile!!)
+                storePassword = releaseStorePassword
             }
         }
     }
 
     buildTypes {
         release {
-            signingConfig = if (hasReleaseKeystore) {
-                signingConfigs.getByName("release")
-            } else {
-                signingConfigs.getByName("debug")
-            }
+            // null when signing is not configured -- and the task-graph check above then refuses
+            // to build. There is deliberately NO fallback to signingConfigs["debug"].
+            signingConfig = signingConfigs.findByName("release")
 
             // Not enabled before this pass. Shrinking + obfuscation on
             // release is real, low-risk hardening (harder to
