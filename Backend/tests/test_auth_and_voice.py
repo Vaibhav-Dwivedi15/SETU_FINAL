@@ -2,17 +2,9 @@
 Integration tests for Phase 5: email OTP auth (app/routers/auth.py) and
 voice SOS ingest (app/routers/voice.py).
 
-SMTP is never configured in this test environment (no SMTP_HOST/etc in
-the test settings) -- by design. That means request-otp naturally
-exercises the honest "delivered: false, here's why" path for free.
-
-To test the actual VERIFY success path we still need the real plaintext
-code, which the API deliberately never returns (see otp_service.py --
-only the hash is stored). Tests that need a real code monkeypatch
-app.services.otp_service.send_otp_email to capture the code as it's
-generated and pretend delivery succeeded, which lets the test drive the
-full request -> verify flow through the real HTTP endpoints rather than
-reaching into internals.
+Email OTP is DEMO-ONLY: this server has no email provider. request-otp
+returns the generated code as demo_code (with demo_mode=True,
+delivered=False) and verify-otp checks it against the stored hash.
 
 Voice tests confirm the HONEST-FAILURE path: with openai-whisper not
 installed in this test environment (it is a heavy optional dependency,
@@ -34,10 +26,7 @@ import app.services.otp_service as otp_service
 
 
 @pytest.fixture()
-def client(monkeypatch):
-    # Pin production posture so a developer's local DEBUG=true can't
-    # flip these tests into the demo-OTP path; demo tests opt in via _set_mode.
-    monkeypatch.setattr(otp_service.settings, "debug", False)
+def client():
     engine = create_engine(
         "sqlite:///:memory:",
         connect_args={"check_same_thread": False},
@@ -60,201 +49,109 @@ def client(monkeypatch):
     Base.metadata.drop_all(bind=engine)
 
 
-def _set_mode(monkeypatch, *, debug, smtp):
-    """Pins debug + SMTP availability regardless of the developer's local .env."""
-    monkeypatch.setattr(otp_service.settings, "debug", debug)
-    monkeypatch.setattr(otp_service, "smtp_is_configured", lambda: smtp)
+def _request(client, email):
+    return client.post("/auth/request-otp", json={"email": email})
 
 
-def _capture_sent_code(monkeypatch):
-    """
-    Patches otp_service.send_otp_email (the name as imported into
-    otp_service's own namespace -- patching the call site, not the
-    definition site, matters for monkeypatch to take effect) to record
-    the real plaintext code and report delivery success, without
-    touching any actual SMTP server.
-    """
-    captured = {}
-
-    def fake_send_otp_email(to_email, code, expiry_minutes):
-        captured["code"] = code
-        captured["email"] = to_email
-        return True
-
-    monkeypatch.setattr(otp_service, "send_otp_email", fake_send_otp_email)
-    return captured
+def _verify(client, email, code):
+    return client.post("/auth/verify-otp", json={"email": email, "code": code})
 
 
 # ============================================================
-# Email OTP auth
+# Email OTP auth -- DEMO mode (no email is ever sent)
 # ============================================================
 
-class TestDemoOtpFallback:
-    def test_smtp_configured_uses_real_email_even_in_debug(self, client, monkeypatch):
-        _set_mode(monkeypatch, debug=True, smtp=True)
-        captured = _capture_sent_code(monkeypatch)
-        body = client.post("/auth/request-otp", json={"email": "real@example.com"}).json()
-        assert body["delivered"] is True
-        assert body["demo_code"] is None
-        assert captured["email"] == "real@example.com"
-
-    def test_smtp_unavailable_in_debug_returns_demo_code(self, client, monkeypatch):
-        _set_mode(monkeypatch, debug=True, smtp=False)
-        body = client.post("/auth/request-otp", json={"email": "demo@example.com"}).json()
-        assert body["delivered"] is False  # never pretend an email went out
-        assert len(body["demo_code"]) == 6 and body["demo_code"].isdigit()
-        assert "smtp" not in body["detail"].lower()
-
-    def test_correct_demo_code_verifies_and_is_single_use(self, client, monkeypatch):
-        _set_mode(monkeypatch, debug=True, smtp=False)
-        code = client.post("/auth/request-otp", json={"email": "demo@example.com"}).json()["demo_code"]
-        ok = client.post("/auth/verify-otp", json={"email": "demo@example.com", "code": code})
-        assert ok.status_code == 200 and ok.json()["verified"] is True
-        again = client.post("/auth/verify-otp", json={"email": "demo@example.com", "code": code})
-        assert again.status_code == 400
-
-    def test_incorrect_code_fails_in_demo_mode(self, client, monkeypatch):
-        _set_mode(monkeypatch, debug=True, smtp=False)
-        code = client.post("/auth/request-otp", json={"email": "demo@example.com"}).json()["demo_code"]
-        wrong = "000000" if code != "000000" else "111111"
-        resp = client.post("/auth/verify-otp", json={"email": "demo@example.com", "code": wrong})
-        assert resp.status_code == 400
-        assert "incorrect" in resp.json()["detail"].lower()
-
-    def test_resend_in_demo_mode_issues_fresh_working_code(self, client, monkeypatch):
-        _set_mode(monkeypatch, debug=True, smtp=False)
-        client.post("/auth/request-otp", json={"email": "demo@example.com"})
-        second = client.post("/auth/request-otp", json={"email": "demo@example.com"}).json()["demo_code"]
-        ok = client.post("/auth/verify-otp", json={"email": "demo@example.com", "code": second})
-        assert ok.status_code == 200
-
-    def test_production_never_returns_or_accepts_demo_code(self, client, monkeypatch):
-        _set_mode(monkeypatch, debug=False, smtp=False)
-        body = client.post("/auth/request-otp", json={"email": "prod@example.com"}).json()
-        assert body["delivered"] is False
-        assert body["demo_code"] is None
-        assert "smtp" not in body["detail"].lower()
-        # No arbitrary/guessable code is accepted.
-        for guess in ("123456", "000000"):
-            resp = client.post("/auth/verify-otp", json={"email": "prod@example.com", "code": guess})
-            assert resp.status_code == 400
-
-
-class TestEmailOtp:
-    def test_request_otp_honest_when_smtp_unconfigured(self, client):
-        """
-        Default test environment has no SMTP configured. The endpoint
-        must return 200 with delivered=False and a clear explanation --
-        never claim success over an email that didn't go out.
-        """
-        resp = client.post("/auth/request-otp", json={"email": "user@example.com"})
+class TestDemoEmailOtp:
+    def test_request_returns_marked_demo_code_and_never_claims_delivery(self, client):
+        resp = _request(client, "user@example.com")
         assert resp.status_code == 200, resp.text
         body = resp.json()
+        assert body["demo_mode"] is True
         assert body["delivered"] is False
-        assert body["demo_code"] is None
-        # Production posture: generic failure, no SMTP config internals leaked.
+        assert len(body["demo_code"]) == 6 and body["demo_code"].isdigit()
+        assert "demo" in body["detail"].lower()
         assert "smtp" not in body["detail"].lower()
-        assert "could not send" in body["detail"].lower()
+        assert "not configured" not in body["detail"].lower()
 
-    def test_full_request_and_verify_happy_path(self, client, monkeypatch):
-        captured = _capture_sent_code(monkeypatch)
+    def test_codes_are_random_not_a_fixed_value(self, client):
+        codes = {_request(client, f"u{i}@example.com").json()["demo_code"] for i in range(8)}
+        assert len(codes) > 1
 
-        req = client.post("/auth/request-otp", json={"email": "verify-me@example.com"})
-        assert req.status_code == 200, req.text
-        assert req.json()["delivered"] is True
-        assert captured["email"] == "verify-me@example.com"
+    def test_only_a_hash_is_stored(self, client):
+        code = _request(client, "hash@example.com").json()["demo_code"]
+        from app.models.email_otp import EmailOtp
+        db = next(app.dependency_overrides[get_db]())
+        try:
+            row = db.query(EmailOtp).filter_by(email="hash@example.com").one()
+            assert row.code_hash != code and code not in row.code_hash
+            assert row.delivered is False
+        finally:
+            db.close()
 
-        verify = client.post(
-            "/auth/verify-otp",
-            json={"email": "verify-me@example.com", "code": captured["code"]},
-        )
-        assert verify.status_code == 200, verify.text
-        body = verify.json()
-        assert body["verified"] is True
-        assert body["email"] == "verify-me@example.com"
+    def test_correct_code_verifies_and_is_single_use(self, client):
+        code = _request(client, "ok@example.com").json()["demo_code"]
+        ok = _verify(client, "ok@example.com", code)
+        assert ok.status_code == 200, ok.text
+        assert ok.json()["verified"] is True
+        assert ok.json()["email"] == "ok@example.com"
+        again = _verify(client, "ok@example.com", code)
+        assert again.status_code == 400
+        assert "no active" in again.json()["detail"].lower()
 
-    def test_code_is_single_use(self, client, monkeypatch):
-        captured = _capture_sent_code(monkeypatch)
-        client.post("/auth/request-otp", json={"email": "reuse@example.com"})
-
-        first = client.post(
-            "/auth/verify-otp", json={"email": "reuse@example.com", "code": captured["code"]}
-        )
-        assert first.status_code == 200
-
-        second = client.post(
-            "/auth/verify-otp", json={"email": "reuse@example.com", "code": captured["code"]}
-        )
-        assert second.status_code == 400
-        assert "no active" in second.json()["detail"].lower()
-
-    def test_incorrect_code_rejected_with_specific_reason(self, client, monkeypatch):
-        _capture_sent_code(monkeypatch)
-        client.post("/auth/request-otp", json={"email": "wrongcode@example.com"})
-
-        resp = client.post(
-            "/auth/verify-otp", json={"email": "wrongcode@example.com", "code": "000000"}
-        )
+    def test_wrong_code_rejected(self, client):
+        code = _request(client, "wrong@example.com").json()["demo_code"]
+        wrong = "000000" if code != "000000" else "111111"
+        resp = _verify(client, "wrong@example.com", wrong)
         assert resp.status_code == 400
         assert "incorrect" in resp.json()["detail"].lower()
 
     def test_verify_with_no_prior_request_fails(self, client):
-        resp = client.post(
-            "/auth/verify-otp", json={"email": "never-requested@example.com", "code": "123456"}
-        )
+        resp = _verify(client, "never-requested@example.com", "123456")
         assert resp.status_code == 400
         assert "no active" in resp.json()["detail"].lower()
 
-    def test_too_many_attempts_locks_out_even_the_correct_code(self, client, monkeypatch):
-        """
-        MAX_OTP_ATTEMPTS is 5. After 5 wrong guesses, even the genuinely
-        correct code must be rejected -- the attempt cap exists so a
-        6-digit code (1 million combinations) can't be brute-forced.
-        """
-        captured = _capture_sent_code(monkeypatch)
-        client.post("/auth/request-otp", json={"email": "bruteforce@example.com"})
-
-        for _ in range(otp_service.MAX_OTP_ATTEMPTS):
-            resp = client.post(
-                "/auth/verify-otp",
-                json={"email": "bruteforce@example.com", "code": "000000"},
-            )
-            assert resp.status_code == 400
-
-        final = client.post(
-            "/auth/verify-otp",
-            json={"email": "bruteforce@example.com", "code": captured["code"]},
-        )
-        assert final.status_code == 400
-        assert "too many" in final.json()["detail"].lower()
-
     def test_expired_code_rejected(self, client, monkeypatch):
         monkeypatch.setattr(otp_service, "OTP_EXPIRY_MINUTES", -1)
-        captured = _capture_sent_code(monkeypatch)
-        client.post("/auth/request-otp", json={"email": "expired@example.com"})
-
-        resp = client.post(
-            "/auth/verify-otp",
-            json={"email": "expired@example.com", "code": captured["code"]},
-        )
+        code = _request(client, "expired@example.com").json()["demo_code"]
+        resp = _verify(client, "expired@example.com", code)
         assert resp.status_code == 400
         assert "expired" in resp.json()["detail"].lower()
 
-    def test_resend_within_cooldown_reuses_existing_code(self, client, monkeypatch):
-        captured = _capture_sent_code(monkeypatch)
-        first = client.post("/auth/request-otp", json={"email": "cooldown@example.com"})
-        assert first.status_code == 200
-        first_code = captured["code"]
+    def test_too_many_attempts_locks_out_even_the_correct_code(self, client):
+        code = _request(client, "brute@example.com").json()["demo_code"]
+        wrong = "000000" if code != "000000" else "111111"
+        for _ in range(otp_service.MAX_OTP_ATTEMPTS):
+            assert _verify(client, "brute@example.com", wrong).status_code == 400
+        final = _verify(client, "brute@example.com", code)
+        assert final.status_code == 400
+        assert "too many" in final.json()["detail"].lower()
 
-        second = client.post("/auth/request-otp", json={"email": "cooldown@example.com"})
+    def test_resend_within_cooldown_is_rejected(self, client):
+        assert _request(client, "cool@example.com").status_code == 200
+        second = _request(client, "cool@example.com")
+        assert second.status_code == 429
+        assert "retry-after" in {k.lower() for k in second.headers}
+        assert second.json().get("demo_code") is None
+
+    def test_resend_after_cooldown_issues_fresh_code_and_voids_old(self, client, monkeypatch):
+        first = _request(client, "again@example.com").json()["demo_code"]
+        monkeypatch.setattr(otp_service, "RESEND_COOLDOWN_SECONDS", 0)
+        second = _request(client, "again@example.com")
         assert second.status_code == 200
-        # Suppressed resend reuses the same code -- send_otp_email is not
-        # called again, so captured["code"] still holds the FIRST code.
-        assert captured["code"] == first_code
+        new_code = second.json()["demo_code"]
+        if new_code != first:
+            assert _verify(client, "again@example.com", first).status_code == 400
+        assert _verify(client, "again@example.com", new_code).status_code == 200
 
-    def test_request_otp_rejects_malformed_email(self, client):
-        resp = client.post("/auth/request-otp", json={"email": "not-an-email"})
-        assert resp.status_code == 422
+    def test_request_rejects_malformed_email(self, client):
+        assert _request(client, "not-an-email").status_code == 422
+
+    def test_no_smtp_or_email_provider_dependency(self):
+        import importlib.util
+        import app.core.config as cfg
+        assert importlib.util.find_spec("app.services.email_service") is None
+        assert not [f for f in cfg.Settings.model_fields if f.startswith("smtp")]
+        assert not hasattr(otp_service, "send_otp_email")
 
 
 # ============================================================

@@ -53,10 +53,7 @@ class EmailOtp(Base):
 
     attempts = Column(Integer, default=0, nullable=False)
 
-    # True only when the email was genuinely handed to an SMTP server.
-    # False means the code exists but delivery failed or SMTP wasn't
-    # configured -- see email_service.py, which never pretends a send
-    # succeeded when it didn't.
+    # Always False: DEMO mode, no email is sent by this server.
     delivered = Column(Boolean, default=False, nullable=False)
 
     created_at = Column(DateTime(timezone=True), server_default=func.now())

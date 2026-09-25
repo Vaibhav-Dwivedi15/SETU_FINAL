@@ -5,9 +5,8 @@ Replaces the mobile app's demo-only client-side OTP (setu_app's
 login_screen.dart generated the code locally and displayed it on screen
 -- honest about being a demo, but not usable as real verification).
 
-WHY EMAIL, NOT SMS: see app/services/email_service.py's module docstring.
-Short version: SMS OTP in India needs a paid gateway plus TRAI DLT
-registration; email is free and has no telecom regulatory dependency.
+DEMO MODE: no email or SMS is sent. request-otp returns the code as
+demo_code (see the endpoint docstring).
 
 SCOPE -- READ BEFORE BUILDING ON THIS: verifying an OTP does NOT issue a
 session token or JWT, and these endpoints do not gate anything else in
@@ -23,8 +22,6 @@ These routes are intentionally PUBLIC (no X-API-Key): they're called by
 ordinary users' mobile apps at first-run, before any responder identity
 exists. They expose no incident, profile, or responder data.
 """
-import logging
-
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
@@ -33,12 +30,10 @@ from app.schemas.auth import OtpRequestIn, OtpRequestOut, OtpVerifyIn, OtpVerify
 from app.services.otp_service import (
     OTP_EXPIRY_MINUTES,
     MAX_OTP_ATTEMPTS,
+    OtpCooldownError,
     request_otp,
     verify_otp,
-    otp_delivery_available,
 )
-
-logger = logging.getLogger("setu.auth")
 
 router = APIRouter()
 
@@ -56,36 +51,29 @@ VERIFY_FAILURE_DETAIL = {
 @router.post("/auth/request-otp", response_model=OtpRequestOut)
 def request_email_otp(payload: OtpRequestIn, db: Session = Depends(get_db)):
     """
-    Generates a 6-digit code, stores it hashed, and emails it.
+    DEMO MODE: generates a 6-digit code, stores only its hash, and returns
+    the code in the response as demo_code. No email is sent -- this server
+    has no email provider. The response is explicitly marked demo_mode=True
+    and delivered=False so no client can mistake it for real delivery.
 
-    Returns 200 with delivered=False rather than an error when SMTP
-    isn't configured or the send fails -- the client needs to be able to
-    tell the difference between "we couldn't email you" and "your
-    request was malformed", and must show the former honestly instead of
-    a misleading "code sent" message.
-
-    Repeated requests for the same address inside the resend cooldown
-    reuse the existing live code instead of emailing a new one, so this
-    endpoint can't be used to mail-bomb an address.
+    Requests inside the resend cooldown get 429 (the earlier code's
+    plaintext is not recoverable), which also stops rapid re-issuing.
     """
-    otp, was_new, delivered, demo_code = request_otp(db, email=payload.email, sender_id=payload.sender_id)
-
-    if delivered:
-        detail = f"Verification code sent to {otp.email}."
-    elif demo_code is not None:
-        detail = "Demo mode: email delivery is unavailable, so no email was sent. Use the code shown below."
-    elif not otp_delivery_available():
-        # Config specifics (which SMTP vars) stay in the server log only.
-        logger.error("request-otp failed: SMTP is not configured on this server")
-        detail = "Could not send the verification email. Please try again later."
-    else:
-        detail = "Could not send the verification email. Check the address and try again."
+    try:
+        otp, demo_code = request_otp(db, email=payload.email, sender_id=payload.sender_id)
+    except OtpCooldownError as exc:
+        raise HTTPException(
+            status_code=429,
+            detail=f"A code was just issued. Try again in {exc.retry_after_seconds}s.",
+            headers={"Retry-After": str(exc.retry_after_seconds)},
+        )
 
     return OtpRequestOut(
         email=otp.email,
-        delivered=delivered,
+        delivered=False,
+        demo_mode=True,
         expires_in_minutes=OTP_EXPIRY_MINUTES,
-        detail=detail,
+        detail="DEMO MODE: no email was sent. Use the demo OTP shown on screen.",
         demo_code=demo_code,
     )
 

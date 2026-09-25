@@ -1,5 +1,5 @@
 """
-Email OTP generation and verification.
+Email OTP generation and verification (DEMO mode: nothing is emailed).
 
 See app/models/email_otp.py for the security reasoning behind hashing,
 attempt caps, and single-use consumption. This module holds the actual
@@ -25,9 +25,7 @@ from typing import Optional, Tuple
 
 from sqlalchemy.orm import Session
 
-from app.core.config import settings
 from app.models.email_otp import EmailOtp
-from app.services.email_service import send_otp_email, smtp_is_configured
 
 logger = logging.getLogger("setu.otp")
 
@@ -68,42 +66,30 @@ def _as_aware(value: Optional[datetime]) -> Optional[datetime]:
     return value
 
 
-def demo_otp_active() -> bool:
+class OtpCooldownError(Exception):
+    """A live code was issued less than RESEND_COOLDOWN_SECONDS ago."""
+
+    def __init__(self, retry_after_seconds: int):
+        super().__init__(f"retry after {retry_after_seconds}s")
+        self.retry_after_seconds = retry_after_seconds
+
+
+def request_otp(db: Session, email: str, sender_id: Optional[str] = None) -> Tuple[EmailOtp, str]:
     """
-    True only when SMTP is unavailable AND the project's existing
-    development switch (settings.debug -- the same gate security.py uses
-    for the dev responder key) is on. Never true in production (DEBUG
-    unset/false) and never true when real email delivery is possible, so
-    a working SMTP setup always takes the real path.
-    """
-    return bool(settings.debug) and not smtp_is_configured()
+    Creates an OTP for this email and returns (otp_row, demo_code).
 
+    DEMO-ONLY: no email is sent and no email provider exists in this
+    project. The code is returned to the caller so the app can display
+    it. Only the hash is stored; expiry, single use and the attempt cap
+    are enforced exactly as before in verify_otp.
 
-def request_otp(
-    db: Session, email: str, sender_id: Optional[str] = None
-) -> Tuple[EmailOtp, bool, bool, Optional[str]]:
-    """
-    Creates (or reuses, within the cooldown) an OTP for this email and
-    attempts delivery.
-
-    Returns (otp_row, was_newly_created, delivered, demo_code).
-
-    demo_code is non-None ONLY in development/demo mode (see
-    demo_otp_active). It is the same random one-time code that was
-    hashed and stored -- verification stays real (hashed, expiring,
-    single-use, attempt-capped); the code is just handed back instead of
-    emailed, mirroring the original demo where the code was shown
-    on-screen. delivered stays False: no email was sent, and we never
-    claim otherwise.
-
-    delivered is the honest result of the SMTP attempt -- False means the
-    code exists in the database but no email actually went out. The
-    caller must surface that rather than reporting success.
+    Raises OtpCooldownError if a live, unconsumed code for this address
+    was issued within RESEND_COOLDOWN_SECONDS. The plaintext of that code
+    is not recoverable (hash only), so the caller must wait it out.
     """
     email = email.strip().lower()
     now = _now()
 
-    # Reuse a still-valid recent code instead of spamming the address.
     existing = (
         db.query(EmailOtp)
         .filter(
@@ -114,23 +100,16 @@ def request_otp(
         .first()
     )
 
-    demo = demo_otp_active()
-
-    # Demo mode skips the resend-reuse shortcut: a reused row only holds
-    # a hash, so its plaintext couldn't be shown again. There is no
-    # mail-bombing risk since nothing is emailed.
-    if existing and not demo:
+    if existing:
         created_at = _as_aware(existing.created_at) or now
         expires_at = _as_aware(existing.expires_at)
-        within_cooldown = (now - created_at).total_seconds() < RESEND_COOLDOWN_SECONDS
-        still_valid = expires_at is not None and expires_at > now
+        elapsed = (now - created_at).total_seconds()
+        if elapsed < RESEND_COOLDOWN_SECONDS and expires_at is not None and expires_at > now:
+            wait = max(1, int(RESEND_COOLDOWN_SECONDS - elapsed))
+            logger.info("OTP resend blocked for %s (cooldown, %ss left)", email, wait)
+            raise OtpCooldownError(wait)
 
-        if within_cooldown and still_valid:
-            logger.info("OTP resend suppressed for %s (within %ss cooldown)", email, RESEND_COOLDOWN_SECONDS)
-            return existing, False, existing.delivered, None
-
-    if demo and existing:
-        # Supersede older live codes so only the freshly shown one works.
+        # Supersede older live codes so only the freshly issued one works.
         db.query(EmailOtp).filter(
             EmailOtp.email == email, EmailOtp.consumed_at.is_(None)
         ).update({EmailOtp.consumed_at: now}, synchronize_session=False)
@@ -148,20 +127,8 @@ def request_otp(
     db.commit()
     db.refresh(otp)
 
-    if demo:
-        logger.warning(
-            "DEMO OTP mode: SMTP unavailable and DEBUG is on -- returning the code "
-            "in the API response for %s instead of emailing it", email
-        )
-        return otp, True, False, code
-
-    delivered = send_otp_email(email, code, OTP_EXPIRY_MINUTES)
-    if delivered:
-        otp.delivered = True
-        db.commit()
-        db.refresh(otp)
-
-    return otp, True, delivered, None
+    logger.warning("DEMO OTP issued for %s (no email is sent by this server)", email)
+    return otp, code
 
 
 def verify_otp(db: Session, email: str, code: str) -> Tuple[bool, str, Optional[EmailOtp]]:
@@ -207,8 +174,3 @@ def verify_otp(db: Session, email: str, code: str) -> Tuple[bool, str, Optional[
     db.commit()
     db.refresh(otp)
     return True, "verified", otp
-
-
-def otp_delivery_available() -> bool:
-    """Exposed so the router can tell a client up front that SMTP isn't set up."""
-    return smtp_is_configured()

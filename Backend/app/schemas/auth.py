@@ -3,8 +3,8 @@ Email OTP auth schemas.
 
 EmailStr requires the `email-validator` package (pulled in via
 pydantic[email] -- see requirements.txt). Using a plain str here instead
-would let obviously-invalid addresses through to the SMTP layer and turn
-a clear 422 into a confusing delivery failure.
+would let obviously-invalid addresses through and turn a clear 422
+into a confusing failure later.
 """
 from typing import Optional
 
@@ -21,15 +21,14 @@ class OtpRequestIn(BaseModel):
 
 class OtpRequestOut(BaseModel):
     email: EmailStr
-    # Honest delivery reporting -- False means the code exists but no
-    # email actually went out (SMTP unconfigured or send failed). The
-    # client MUST NOT show "code sent" when this is False.
-    delivered: bool
+    # Always False: this server sends no email. Kept so clients can never
+    # mistake a demo code for real delivery.
+    delivered: bool = False
+    # Always True: explicit demo/production distinction for clients.
+    demo_mode: bool = True
     expires_in_minutes: int
     detail: str
-    # DEVELOPMENT/DEMO ONLY: the one-time code, present only when SMTP is
-    # unavailable and the server runs with DEBUG=true. Always None in
-    # production. delivered stays False in that case -- no email was sent.
+    # The DEMO one-time code, to be displayed by the app.
     demo_code: Optional[str] = None
 
 
