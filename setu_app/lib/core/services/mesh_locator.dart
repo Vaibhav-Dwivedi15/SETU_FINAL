@@ -1,7 +1,6 @@
 import 'package:setu_app/features/history/data/repositories/history_repository.dart';
 import 'package:setu_app/features/nearby/data/models/nearby_alert_model.dart';
 import 'package:setu_app/features/nearby/data/repositories/nearby_repository.dart';
-import 'package:setu_app/features/recovery/data/repositories/recovery_repository.dart';
 import 'package:setu_app/features/sos/data/models/alert_mode.dart';
 import 'package:setu_app/mesh/models/alert_packet.dart';
 import 'package:setu_app/mesh/services/local_queue_service.dart';
@@ -35,16 +34,6 @@ import 'package:setu_app/services/backend_service.dart';
 //    originated arrives, update that history entry from "Sent" to
 //    "Delivered" via HistoryRepository, by emergencyId.
 //
-//    Sep 21 2026 (Vib): also updates RecoveryRepository the same way.
-//    A recovery report is signed and sent as an EmergencyPacket (see
-//    RecoveryPacketBuilder), so it already gets acked at the protocol
-//    level like any other emergency packet -- this just stops
-//    discarding that ack for recovery reports specifically. Both
-//    lookups are by emergencyId and both are no-ops when nothing
-//    matches, so calling both unconditionally on every ack is safe:
-//    an ack only ever matches whichever one (history or recovery)
-//    actually originated it, since packetIds are unique app-wide.
-//
 // 2. incomingPackets listener (filtered to AlertPacket) -- this is
 //    what makes Nearby Alerts show REAL incoming community alerts
 //    from other devices, not just this device's own local copy of its
@@ -66,7 +55,6 @@ class MeshLocator {
 
     meshService.acknowledgments.listen((ack) {
       _historyRepository.updateStatusByEmergencyId(ack.emergencyId, 'Delivered');
-      _recoveryRepository.updateStatusByEmergencyId(ack.emergencyId, 'Delivered');
     });
 
     meshService.incomingPackets.listen((packet) {
@@ -94,6 +82,5 @@ class MeshLocator {
   final LocalQueueService _queueService;
   final HistoryRepository _historyRepository = HistoryRepository();
   final NearbyRepository _nearbyRepository = NearbyRepository();
-  final RecoveryRepository _recoveryRepository = RecoveryRepository();
   late final MeshServiceImpl meshService;
 }

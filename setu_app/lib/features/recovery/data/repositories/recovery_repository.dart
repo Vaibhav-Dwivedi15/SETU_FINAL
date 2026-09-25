@@ -26,27 +26,17 @@ import '../services/recovery_packet_builder.dart';
 // pipeline for free because it IS an EmergencyPacket (see
 // RecoveryPacketBuilder's own docstring for why).
 //
-// UPDATE (Vib, mesh/architecture): the "Sent" status is now upgraded to
-// "Delivered" the same way SOS history is -- MeshLocator's existing
-// acknowledgments listener now also calls
-// updateStatusByEmergencyId() below, matching on the emergencyId the
-// signed EmergencyPacket carried (see RecoveryPacketBuilder, which
-// sets emergencyId: packetId). Purely additive: no new PacketType, no
-// signature-payload change, no change to MeshServiceImpl's relay/ack
-// origination logic -- only the local bookkeeping this repository and
-// RecoveryLogService already owned. The mesh/packet layer was already
-// acking every EmergencyPacket indiscriminately
-// (MeshServiceImpl._originateAck); this change only makes the LOCAL
-// UI-visible status reflect that real ack instead of staying
-// optimistically at "Sent" forever.
-//
-// Known remaining gap: only two states are tracked end-to-end today,
-// "Sent" and "Delivered" -- the three-state target from the project
-// overview ("Sent -> Relayed -> Delivered") needs a per-hop relay
-// event that nothing in the mesh layer currently emits (SOS/History
-// doesn't have it either). Not attempted here; would need a new,
-// explicit relay-observed signal, not something to fake from existing
-// data.
+// NOT DONE THIS PHASE (documented, not silently skipped): unlike SOS,
+// a recovery report's delivery status is never upgraded from "Sent" to
+// "Delivered" via an AckPacket -- MeshLocator's existing ack listener
+// only updates HistoryRepository entries by emergencyId
+// (see mesh_locator.dart), and RecoveryReportModel is a separate,
+// simpler local record deliberately not wired into that listener this
+// phase. A recovery report still gets acked at the protocol level
+// (MeshServiceImpl._originateAck acks any received EmergencyPacket
+// indiscriminately) -- only the LOCAL UI-visible status stays at
+// "Sent". Wiring that up is a small, safe follow-up, not attempted
+// here to keep this phase's diff additive and reviewable.
 class RecoveryRepository {
   RecoveryRepository({
     LocationService? locationService,
@@ -106,21 +96,9 @@ class RecoveryRepository {
       latitude: location.latitude,
       longitude: location.longitude,
       timestamp: DateTime.now(),
-      // Explicit rather than relying on the model's id-fallback, since
-      // this is the one place that actually knows the packet's real
-      // emergencyId (== packetId, see RecoveryPacketBuilder) -- keeps
-      // the two in sync by construction instead of by coincidence.
-      emergencyId: packet.emergencyId,
     );
 
     await _log.addEntry(record);
     return record;
-  }
-
-  /// Exposed so MeshLocator's ack listener can update a recovery
-  /// report's status without reaching past the repository layer --
-  /// mirrors HistoryRepository.updateStatusByEmergencyId exactly.
-  Future<void> updateStatusByEmergencyId(String emergencyId, String newStatus) async {
-    await _log.updateStatusByEmergencyId(emergencyId, newStatus);
   }
 }

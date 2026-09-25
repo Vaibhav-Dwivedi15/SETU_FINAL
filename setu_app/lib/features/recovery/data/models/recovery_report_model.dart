@@ -16,24 +16,10 @@ class RecoveryReportModel {
   final DateTime timestamp;
 
   /// Set once MeshServiceImpl.originate() returns without throwing --
-  /// mirrors the "Sent" status HistoryModel uses. Updated to
-  /// 'Delivered' when a real AckPacket for this report's emergencyId
-  /// arrives -- see emergencyId below and MeshLocator's acknowledgments
-  /// listener, which now updates recovery entries the same way it
-  /// already updated SOS history entries (previously this was a
-  /// documented Phase 8 cut; closed as an additive, backend-only
-  /// change that doesn't touch the mesh/packet layer).
+  /// mirrors the "Sent" status HistoryModel uses; this module does not
+  /// yet track delivery acks the way SOS does (see module docstring in
+  /// recovery_repository.dart for why that's a reasonable Phase 8 cut).
   final String status;
-
-  /// Same emergencyId the signed EmergencyPacket this report was sent
-  /// as carries (see RecoveryPacketBuilder -- it sets
-  /// `emergencyId: packetId`). This is what MeshLocator's ack listener
-  /// matches against to know "is this ack for a recovery report I
-  /// originated", mirroring HistoryModel.emergencyId exactly. Defaults
-  /// to `id` for backward compatibility with log entries written
-  /// before this field existed, since `id` was always set to the same
-  /// packetId anyway (see RecoveryRepository.submitReport).
-  final String emergencyId;
 
   const RecoveryReportModel({
     required this.id,
@@ -43,8 +29,7 @@ class RecoveryReportModel {
     required this.longitude,
     required this.timestamp,
     this.status = 'Sent',
-    String? emergencyId,
-  }) : emergencyId = emergencyId ?? id;
+  });
 
   Map<String, dynamic> toJson() => {
         'id': id,
@@ -54,7 +39,6 @@ class RecoveryReportModel {
         'longitude': longitude,
         'timestamp': timestamp.toIso8601String(),
         'status': status,
-        'emergencyId': emergencyId,
       };
 
   factory RecoveryReportModel.fromJson(Map<String, dynamic> json) {
@@ -72,32 +56,6 @@ class RecoveryReportModel {
       longitude: (json['longitude'] as num).toDouble(),
       timestamp: DateTime.parse(json['timestamp']),
       status: json['status'] ?? 'Sent',
-      // Falls back to id (not '') for entries written before this
-      // field existed -- unlike HistoryModel's '' fallback, we know
-      // the correct value here: id was always the packetId/emergencyId.
-      emergencyId: json['emergencyId'] ?? json['id'],
-    );
-  }
-
-  RecoveryReportModel copyWith({
-    String? id,
-    RecoveryReportType? type,
-    String? message,
-    double? latitude,
-    double? longitude,
-    DateTime? timestamp,
-    String? status,
-    String? emergencyId,
-  }) {
-    return RecoveryReportModel(
-      id: id ?? this.id,
-      type: type ?? this.type,
-      message: message ?? this.message,
-      latitude: latitude ?? this.latitude,
-      longitude: longitude ?? this.longitude,
-      timestamp: timestamp ?? this.timestamp,
-      status: status ?? this.status,
-      emergencyId: emergencyId ?? this.emergencyId,
     );
   }
 }
