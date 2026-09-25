@@ -37,31 +37,54 @@ import { ActionIcons } from "../icons";
 
 const PRIORITY_COLOR = {
   Critical: "#ef4444",
-  High: "#f97316",
+  High: "#f59e0b",
   Medium: "#eab308",
-  Low: "#22c55e",
+  Low: "#10b981",
 };
-const DEFAULT_COLOR = "#94a3b8";
+const DEFAULT_COLOR = "#64748b";
 
 function priorityColor(priority) {
   return PRIORITY_COLOR[priority] || DEFAULT_COLOR;
 }
 
 /**
- * Builds a self-contained SVG marker as a Leaflet divIcon -- no external
- * image URL, no emoji. Critical incidents get an extra pulse-ring div
- * (CSS-animated, see map-v2.css) layered behind the marker dot.
+ * Builds a self-contained SVG marker as a Leaflet divIcon.
+ * Strict visual hierarchy per command-center specifications:
+ * - CRITICAL: immediately visible, 26x32, distinct pulse wave
+ * - HIGH: visible, 22x28
+ * - MEDIUM: quieter, 18x24
+ * - LOW: subtle, 15x20
+ * - CLOSED: dimmed slate, 14x18
  */
-function buildMarkerIcon(priority) {
-  const color = priorityColor(priority);
-  const isCritical = priority === "Critical";
+function buildMarkerIcon(priority, isClosed = false) {
+  const color = isClosed ? "#475569" : priorityColor(priority);
+  const isCritical = priority === "Critical" && !isClosed;
+  const isHigh = priority === "High" && !isClosed;
+
+  let width = 18;
+  let height = 24;
+  let dotRadius = 3;
+
+  if (isCritical) {
+    width = 24;
+    height = 30;
+    dotRadius = 4.5;
+  } else if (isHigh) {
+    width = 20;
+    height = 26;
+    dotRadius = 3.5;
+  } else if (isClosed) {
+    width = 14;
+    height = 18;
+    dotRadius = 2.5;
+  }
 
   const html = `
-    <div class="setu-map-marker ${isCritical ? "setu-map-marker-critical" : ""}">
+    <div class="setu-map-marker ${isCritical ? "setu-map-marker-critical" : ""} ${isClosed ? "setu-map-marker-closed" : ""}" style="width:${width}px;height:${height}px;">
       ${isCritical ? '<span class="setu-map-marker-pulse"></span>' : ""}
-      <svg width="26" height="34" viewBox="0 0 26 34" xmlns="http://www.w3.org/2000/svg">
-        <path d="M13 0C5.8 0 0 5.8 0 13c0 9.75 13 21 13 21s13-11.25 13-21C26 5.8 20.2 0 13 0z" fill="${color}" stroke="rgba(0,0,0,.25)" stroke-width="1"/>
-        <circle cx="13" cy="13" r="5" fill="white" fill-opacity="0.9"/>
+      <svg width="${width}" height="${height}" viewBox="0 0 24 30" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <path d="M12 0C5.37 0 0 5.37 0 12C0 21 12 30 12 30C12 30 24 21 24 12C24 5.37 18.63 0 12 0Z" fill="${color}" fill-opacity="${isClosed ? "0.6" : "0.95"}" stroke="rgba(0,0,0,0.4)" stroke-width="1.2"/>
+        <circle cx="12" cy="11" r="${dotRadius}" fill="#ffffff" fill-opacity="${isClosed ? "0.5" : "0.95"}"/>
       </svg>
     </div>
   `;
@@ -69,18 +92,19 @@ function buildMarkerIcon(priority) {
   return divIcon({
     html,
     className: "setu-map-marker-wrapper",
-    iconSize: [26, 34],
-    iconAnchor: [13, 34],
-    popupAnchor: [0, -32],
+    iconSize: [width, height],
+    iconAnchor: [width / 2, height],
+    popupAnchor: [0, -height],
   });
 }
 
 const MARKER_ICON_CACHE = {};
-function getMarkerIcon(priority) {
-  if (!MARKER_ICON_CACHE[priority]) {
-    MARKER_ICON_CACHE[priority] = buildMarkerIcon(priority);
+function getMarkerIcon(priority, isClosed = false) {
+  const key = `${priority}-${isClosed ? "closed" : "active"}`;
+  if (!MARKER_ICON_CACHE[key]) {
+    MARKER_ICON_CACHE[key] = buildMarkerIcon(priority, isClosed);
   }
-  return MARKER_ICON_CACHE[priority];
+  return MARKER_ICON_CACHE[key];
 }
 
 // Fixed visual radius for the "approximate affected area" circle --
@@ -111,41 +135,68 @@ function MapView({ incidents, onSelectIncident, tall = false }) {
         {incidents.map((incident) => {
           const color = priorityColor(incident.priority);
           const isClosed = incident.status === "closed";
+          const isHighOrCritical = !isClosed && (incident.priority === "Critical" || incident.priority === "High");
+
           return (
             <div key={incident.id}>
-              {!isClosed && (
+              {isHighOrCritical && (
                 <Circle
                   center={[incident.lat, incident.lng]}
-                  radius={AFFECTED_AREA_RADIUS_M}
-                  pathOptions={{ color, fillColor: color, fillOpacity: 0.08, weight: 1, opacity: 0.3 }}
+                  radius={incident.priority === "Critical" ? 400 : 250}
+                  pathOptions={{
+                    color,
+                    fillColor: color,
+                    fillOpacity: 0.05,
+                    weight: 1,
+                    opacity: 0.25,
+                    dashArray: incident.priority === "Critical" ? undefined : "3, 3",
+                  }}
                 />
               )}
               <Marker
                 position={[incident.lat, incident.lng]}
-                icon={getMarkerIcon(incident.priority)}
+                icon={getMarkerIcon(incident.priority, isClosed)}
                 eventHandlers={
                   onSelectIncident ? { click: () => onSelectIncident(incident) } : undefined
                 }
               >
-                <Popup>
-                  <strong>{incident.type}</strong>
-                  <br />
-                  {incident.city}
-                  <br />
-                  {incident.priority}
-                  <br />
-                  {typeof incident.hopCount === "number" && (
-                    <>
-                      <span style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
-                        <ActionIcons.refresh className="ds-icon-sm" aria-hidden="true" />
-                        {incident.hopCount} hop{incident.hopCount === 1 ? "" : "s"} — no internet needed
+                <Popup className="setu-tactical-popup">
+                  <div className="popup-body">
+                    <div className="popup-header">
+                      <span className={`popup-tag priority-${(incident.priority || "medium").toLowerCase()}`}>
+                        {incident.priority || "Normal"}
                       </span>
-                      <br />
-                    </>
-                  )}
-                  <span style={{ color: isClosed ? "#2FA85C" : "#E14545" }}>
-                    {isClosed ? "● Resolved" : "● Active"}
-                  </span>
+                      <span className="popup-id ds-mono">#{String(incident.id).slice(-4)}</span>
+                    </div>
+
+                    <h4 className="popup-title">{incident.type}</h4>
+                    <p className="popup-location">{incident.city}</p>
+
+                    <div className="popup-coords ds-mono">
+                      LAT {Number(incident.lat).toFixed(4)} • LNG {Number(incident.lng).toFixed(4)}
+                    </div>
+
+                    {typeof incident.hopCount === "number" && incident.hopCount > 0 && (
+                      <div className="popup-mesh-tag">
+                        <ActionIcons.refresh className="ds-icon-sm" aria-hidden="true" />
+                        <span>Mesh Relayed ({incident.hopCount} hop{incident.hopCount > 1 ? "s" : ""})</span>
+                      </div>
+                    )}
+
+                    <div className="popup-footer">
+                      <span className={`status-pill ${isClosed ? "closed" : "active"}`}>
+                        {isClosed ? "RESOLVED" : "ACTIVE"}
+                      </span>
+                      {onSelectIncident && (
+                        <button
+                          className="popup-inspect-btn"
+                          onClick={() => onSelectIncident(incident)}
+                        >
+                          Inspect →
+                        </button>
+                      )}
+                    </div>
+                  </div>
                 </Popup>
               </Marker>
             </div>
@@ -154,10 +205,12 @@ function MapView({ incidents, onSelectIncident, tall = false }) {
       </MapContainer>
 
       <div className="map-legend">
-        <span><i className="dot dot-critical" /> Critical</span>
-        <span><i className="dot dot-high" /> High</span>
-        <span><i className="dot dot-medium" /> Medium</span>
-        <span><i className="dot dot-low" /> Low</span>
+        <span className="legend-title ds-metadata">INCIDENT SEVERITY</span>
+        <span className="legend-item"><i className="dot dot-critical" /> Critical</span>
+        <span className="legend-item"><i className="dot dot-high" /> High</span>
+        <span className="legend-item"><i className="dot dot-medium" /> Medium</span>
+        <span className="legend-item"><i className="dot dot-low" /> Low</span>
+        <span className="legend-item"><i className="dot dot-closed" /> Resolved</span>
       </div>
     </div>
   );

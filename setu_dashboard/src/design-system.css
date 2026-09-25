@@ -17,56 +17,54 @@
 
 :root{
   /* ---------- Domain colors (beyond priority severity) ---------- */
-  --network:#38bdf8;        /* mesh / connectivity signal */
-  --network-dim:rgba(56,189,248,.14);
-  --community:#a78bfa;      /* community responders */
-  --community-dim:rgba(167,139,250,.14);
-  --government:#fb923c;     /* government adapter (always paired with SIMULATED marker) */
-  --government-dim:rgba(251,146,60,.14);
-  --offline:#70829d;        /* offline / no-signal state — bumped for contrast, see audit */
-  --offline-dim:rgba(91,107,133,.14);
-  --unknown:#73839a;        /* explicitly unverifiable data — bumped for contrast, see audit */
-  --unknown-dim:rgba(100,116,139,.14);
+  --network:#0ea5e9;        /* mesh / connectivity signal */
+  --network-dim:rgba(14,165,233,.12);
+  --community:#8b5cf6;      /* community responders */
+  --community-dim:rgba(139,92,246,.12);
+  --government:#f97316;     /* government adapter (paired with SIMULATED marker) */
+  --government-dim:rgba(249,115,22,.12);
+  --offline:#64748b;        /* offline / no-signal state */
+  --offline-dim:rgba(100,116,139,.12);
+  --unknown:#64748b;        /* explicitly unverifiable data */
+  --unknown-dim:rgba(100,116,139,.12);
 
   /* ---------- Typography scale ---------- */
-  --text-display:700 2.25rem/1.15 var(--font-ui);      /* rare: landing/hero moments only */
-  --text-page-title:700 1.5rem/1.25 var(--font-ui);
-  --text-section-title:600 .8rem/1.3 var(--font-ui);   /* uppercase, tracked -- section labels */
-  --text-card-title:600 .95rem/1.35 var(--font-ui);
-  --text-metadata:500 .72rem/1.4 var(--font-ui);       /* uppercase, tracked -- field labels */
-  --text-status:700 .68rem/1 var(--font-ui);           /* badges */
-  --text-body:400 .875rem/1.55 var(--font-ui);
-  --text-supporting:400 .78rem/1.5 var(--font-ui);
-  --tracking-label:.07em;
-  --tracking-eyebrow:.1em;
+  --text-display:700 1.85rem/1.2 var(--font-ui);      /* rare: key headline only */
+  --text-page-title:600 1.25rem/1.25 var(--font-ui);
+  --text-section-title:600 .75rem/1.3 var(--font-ui); /* uppercase, tracked -- section labels */
+  --text-card-title:600 .9rem/1.35 var(--font-ui);
+  --text-metadata:500 .70rem/1.4 var(--font-ui);      /* uppercase, tracked -- field labels */
+  --text-status:600 .68rem/1 var(--font-mono);        /* badges */
+  --text-body:400 .85rem/1.5 var(--font-ui);
+  --text-supporting:400 .78rem/1.45 var(--font-ui);
+  --tracking-label:.05em;
+  --tracking-eyebrow:.08em;
 
   /* ---------- Motion ---------- */
   --ease-standard:cubic-bezier(.4,0,.2,1);
   --ease-emphasized:cubic-bezier(.16,1,.3,1);
-  --duration-fast:120ms;
-  --duration-base:180ms;
-  --duration-slow:280ms;
+  --duration-fast:100ms;
+  --duration-base:160ms;
+  --duration-slow:240ms;
 
-  /* ---------- Depth ---------- */
-  --surface-gradient:linear-gradient(180deg,rgba(255,255,255,.03),rgba(255,255,255,0));
-  --atmosphere:radial-gradient(circle at 20% -10%,rgba(56,189,248,.06),transparent 45%),
-               radial-gradient(circle at 90% 0%,rgba(167,139,250,.05),transparent 40%);
+  /* ---------- Depth: clean architectural border, minimal gradient ---------- */
+  --surface-gradient:none;
+  --atmosphere:none;
 }
 
 :root[data-theme="light"]{
-  --network:#027ab8;
+  --network:#0284c7;
   --network-dim:#e0f2fe;
-  --community:#7c3aed;
+  --community:#6d28d9;
   --community-dim:#ede9fe;
-  --government:#cd4d0b;
+  --government:#c2410c;
   --government-dim:#ffedd5;
-  --offline:#5c6f8c;
+  --offline:#475569;
   --offline-dim:#f1f5f9;
-  --unknown:#5c6f8c;
+  --unknown:#475569;
   --unknown-dim:#f1f5f9;
-  --surface-gradient:linear-gradient(180deg,rgba(15,23,42,.02),rgba(15,23,42,0));
-  --atmosphere:radial-gradient(circle at 20% -10%,rgba(37,99,235,.04),transparent 45%),
-               radial-gradient(circle at 90% 0%,rgba(124,58,237,.03),transparent 40%);
+  --surface-gradient:none;
+  --atmosphere:none;
 }
 
 /* ---------- Reduced motion ---------- */
@@ -103,23 +101,9 @@
   border-radius:var(--radius-md);
   overflow:hidden;
 }
-.ds-surface::before{
-  content:"";
-  position:absolute; inset:0;
-  background:var(--surface-gradient);
-  pointer-events:none;
-}
 
-/* ---------- Atmospheric backdrop for full-page shells ---------- */
 .ds-atmosphere{
   position:relative;
-}
-.ds-atmosphere::before{
-  content:"";
-  position:fixed; inset:0;
-  background:var(--atmosphere);
-  pointer-events:none;
-  z-index:0;
 }
 
 /* ============================================================
