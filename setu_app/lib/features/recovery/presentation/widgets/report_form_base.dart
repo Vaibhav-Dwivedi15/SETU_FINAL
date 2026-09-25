@@ -111,6 +111,7 @@ abstract class ReportFormState<W extends ReportFormScreen> extends State<W> {
   }
 
   Future<void> _saveDraft() async {
+    if (_busy) return;
     setState(() {
       _busy = true;
     });
@@ -124,6 +125,8 @@ abstract class ReportFormState<W extends ReportFormScreen> extends State<W> {
       Navigator.of(context).pop(true);
     } on RecoveryValidationException catch (e) {
       if (mounted) _snack(e.toString(), error: true);
+    } on StateError catch (e) {
+      if (mounted) _snack(e.message, error: true);
     } finally {
       if (mounted) {
         setState(() {
@@ -134,6 +137,8 @@ abstract class ReportFormState<W extends ReportFormScreen> extends State<W> {
   }
 
   Future<void> _submit() async {
+    // Two taps can land before the button is rebuilt as disabled.
+    if (_busy) return;
     final built = _read();
     final found = built.validate();
     setState(() => errors = found);
@@ -153,9 +158,19 @@ abstract class ReportFormState<W extends ReportFormScreen> extends State<W> {
       } else {
         _snack('Report saved. It will sync when connectivity is available.');
       }
-      context.pushReplacement('/recovery/reports/${result.id}');
+      if (widget.draftId == null) {
+        context.pushReplacement('/recovery/reports/${result.id}');
+      } else {
+        // Opened from that report's detail screen, which is still on the
+        // stack beneath this form and reloads when it comes back into
+        // view. Replacing would stack a second, stale copy of it.
+        Navigator.of(context).pop(true);
+      }
     } on RecoveryValidationException catch (e) {
       if (mounted) setState(() => errors = e.errors);
+    } on StateError catch (e) {
+      // Already queued or acknowledged (e.g. by an earlier tap).
+      if (mounted) _snack(e.message, error: true);
     } finally {
       if (mounted) {
         setState(() {

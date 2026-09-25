@@ -1,3 +1,6 @@
+import 'dart:developer' as developer;
+
+import 'package:setu_app/features/contacts/data/models/contact_model.dart';
 import 'package:setu_app/features/contacts/data/services/contact_service.dart';
 
 import '../models/emergency_contact.dart';
@@ -34,7 +37,7 @@ class EmergencyContactsRepository {
     addPlanContact(plan.primaryName, plan.primaryPhone, 'Primary emergency contact');
     addPlanContact(plan.secondaryName, plan.secondaryPhone, 'Secondary emergency contact');
 
-    for (final saved in await _contacts.getContacts()) {
+    for (final saved in await _savedContacts()) {
       final alreadyListed = result.any((c) => _sameNumber(c.phone, saved.phone));
       if (alreadyListed) continue;
       result.add(EmergencyContact(
@@ -45,6 +48,17 @@ class EmergencyContactsRepository {
       ));
     }
     return result;
+  }
+
+  /// The saved SOS contacts, or none if their stored list is unreadable --
+  /// that must not also hide the emergency plan's contacts.
+  Future<List<ContactModel>> _savedContacts() async {
+    try {
+      return await _contacts.getContacts();
+    } catch (e) {
+      developer.log('Saved contacts unreadable, skipping: $e', name: 'EmergencyContactsRepository');
+      return const [];
+    }
   }
 
   static bool _sameNumber(String a, String b) {

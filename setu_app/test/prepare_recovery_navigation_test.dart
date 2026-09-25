@@ -9,6 +9,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:setu_app/features/recovery/data/models/damage_report.dart';
 import 'package:setu_app/features/recovery/data/models/recovery_enums.dart';
 import 'package:setu_app/features/recovery/data/models/recovery_report_type.dart';
 import 'package:setu_app/features/recovery/data/models/resource_request.dart';
@@ -26,13 +27,17 @@ import 'package:setu_app/routes/prepare_recovery_routes.dart';
 import 'support/fake_assets.dart';
 
 class _Dispatcher implements RecoveryDispatcher {
-  _Dispatcher({this.fail = false});
+  _Dispatcher({this.fail = false, this.gate});
   bool fail;
+
+  /// When set, dispatch waits for it, holding a submit in flight.
+  final Completer<void>? gate;
   int calls = 0;
 
   @override
-  Future<String> dispatch(RecoveryRecord record) async {
+  Future<String> dispatch(RecoveryRecord record, {PacketBuiltCallback? onPacketBuilt}) async {
     calls++;
+    if (gate != null) await gate!.future;
     if (fail) throw const RecoveryDispatchException('No route available');
     return 'e-$calls';
   }
@@ -110,6 +115,7 @@ void main() {
       ]));
 
   setUp(() {
+    RecoveryRepository.resetForTesting();
     SharedPreferences.setMockInitialValues({});
     serveBundledAssets();
   });
@@ -423,6 +429,77 @@ void main() {
       expect(saved.type, RecoveryReportType.resourceRequest);
       expect(saved.priorityLabel, 'Critical');
       expect(saved.status, ReportStatus.pendingSync);
+    });
+
+    testWidgets('a double tap on Submit sends the report once', (tester) async {
+      final gate = Completer<void>();
+      final dispatcher = _Dispatcher(gate: gate);
+      final repo = RecoveryRepository(dispatcher: dispatcher);
+      await _pumpForm(tester, repo, () => DamageReportScreen(repository: repo));
+
+      await tester.tap(find.text('Road'));
+      await tester.tap(find.text('High'));
+      await _type(tester, 'Location of damage', 'NH-44 near the bridge');
+      await _type(tester, 'Description', 'Road washed away, vehicles cannot pass.');
+      await tester.pump();
+
+      // Two taps land before the button is rebuilt as disabled.
+      await tester.tap(find.text('Submit report'));
+      await tester.tap(find.text('Submit report'), warnIfMissed: false);
+      await tester.pump();
+      gate.complete();
+      await tester.pumpAndSettle();
+
+      expect(dispatcher.calls, 1);
+      expect(await repo.list(), hasLength(1));
+      expect((await repo.list()).single.status, ReportStatus.pendingSync);
+    });
+
+    testWidgets('editing a draft from its detail, then submitting, leaves one detail screen',
+        (tester) async {
+      final repo = RecoveryRepository(dispatcher: _Dispatcher());
+      final draft = await repo.saveDraft(
+        (repo.newDraft(RecoveryReportType.damage) as DamageReport).copyWith(
+          category: DamageCategory.road,
+          severity: DamageSeverity.high,
+          location: 'NH-44 near the bridge',
+          description: 'Road washed away, vehicles cannot pass.',
+        ),
+      );
+
+      _bigScreen(tester);
+      final router = GoRouter(routes: [
+        GoRoute(path: '/', builder: (_, _) => const Scaffold(body: Text('BASE'))),
+        GoRoute(
+          path: '/recovery/reports/:id',
+          builder: (_, s) =>
+              ReportDetailScreen(reportId: s.pathParameters['id']!, repository: repo),
+        ),
+        GoRoute(
+          path: '/recovery/damage',
+          builder: (_, s) => DamageReportScreen(
+              repository: repo, draftId: s.uri.queryParameters['draft']),
+        ),
+      ]);
+      await tester.pumpWidget(MaterialApp.router(routerConfig: router));
+      await tester.pumpAndSettle();
+      unawaited(router.push<Object?>('/recovery/reports/${draft.id}'));
+      await tester.pumpAndSettle();
+      expect(find.text('DRAFT'), findsOneWidget);
+
+      await tester.tap(find.text('Edit draft'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Submit report'));
+      await tester.pumpAndSettle();
+
+      // Back on the original detail screen, refreshed, and only one of them.
+      expect(find.text('Report details'), findsOneWidget);
+      expect(find.text('PENDING SYNC'), findsOneWidget);
+      expect(find.text('DRAFT'), findsNothing);
+
+      await tester.pageBack();
+      await tester.pumpAndSettle();
+      expect(find.text('BASE'), findsOneWidget);
     });
 
     testWidgets('a failed report can be retried from its detail once a route exists',

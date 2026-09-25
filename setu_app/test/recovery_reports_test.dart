@@ -24,7 +24,7 @@ class FakeDispatcher implements RecoveryDispatcher {
   final dispatched = <RecoveryRecord>[];
 
   @override
-  Future<String> dispatch(RecoveryRecord record) async {
+  Future<String> dispatch(RecoveryRecord record, {PacketBuiltCallback? onPacketBuilt}) async {
     dispatched.add(record);
     if (error != null) throw error!;
     return 'emergency-${dispatched.length}';
@@ -65,6 +65,7 @@ void main() {
   late RecoveryRepository repo;
 
   setUp(() {
+    RecoveryRepository.resetForTesting();
     SharedPreferences.setMockInitialValues({});
     dispatcher = FakeDispatcher();
     repo = RecoveryRepository(dispatcher: dispatcher);
@@ -375,5 +376,5 @@ class _ProbingDispatcher implements RecoveryDispatcher {
   final Future<String> Function(RecoveryRecord) _fn;
 
   @override
-  Future<String> dispatch(RecoveryRecord record) => _fn(record);
+  Future<String> dispatch(RecoveryRecord record, {PacketBuiltCallback? onPacketBuilt}) => _fn(record);
 }
