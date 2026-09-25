@@ -27,6 +27,10 @@ class OtpRequestOut(BaseModel):
     delivered: bool
     expires_in_minutes: int
     detail: str
+    # DEVELOPMENT/DEMO ONLY: the one-time code, present only when SMTP is
+    # unavailable and the server runs with DEBUG=true. Always None in
+    # production. delivered stays False in that case -- no email was sent.
+    demo_code: Optional[str] = None
 
 
 class OtpVerifyIn(BaseModel):

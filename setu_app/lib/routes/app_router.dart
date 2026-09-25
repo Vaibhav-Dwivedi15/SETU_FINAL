@@ -83,6 +83,7 @@ final GoRouter appRouter = GoRouter(
           email: extra['email'] as String,
           phone: extra['phone'] as String,
           expiresInMinutes: extra['expiresInMinutes'] as int? ?? 10,
+          demoCode: extra['demoCode'] as String?,
         );
       },
     ),

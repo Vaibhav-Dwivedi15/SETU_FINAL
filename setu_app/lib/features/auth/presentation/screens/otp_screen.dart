@@ -36,12 +36,16 @@ class OtpScreen extends StatefulWidget {
   final String phone;
   final int expiresInMinutes;
 
+  /// Development/demo only (backend DEBUG mode without SMTP); null otherwise.
+  final String? demoCode;
+
   const OtpScreen({
     super.key,
     required this.name,
     required this.email,
     required this.phone,
     this.expiresInMinutes = 10,
+    this.demoCode,
   });
 
   @override
@@ -57,6 +61,7 @@ class _OtpScreenState extends State<OtpScreen> {
   bool _isVerifying = false;
   bool _isResending = false;
   String? _resendMessage;
+  String? _demoCode;
 
   int _resendCooldown = 30;
   Timer? _cooldownTimer;
@@ -64,6 +69,7 @@ class _OtpScreenState extends State<OtpScreen> {
   @override
   void initState() {
     super.initState();
+    _demoCode = widget.demoCode;
     _startCooldown();
   }
 
@@ -138,12 +144,13 @@ class _OtpScreenState extends State<OtpScreen> {
     if (!mounted) return;
     setState(() {
       _isResending = false;
+      _demoCode = result.demoCode;
       _resendMessage = result.delivered
           ? 'A new code was sent to ${widget.email}.'
           : result.detail;
     });
 
-    if (result.delivered) {
+    if (result.canProceed) {
       _startCooldown();
     }
   }
@@ -179,6 +186,21 @@ class _OtpScreenState extends State<OtpScreen> {
               ),
 
               const SizedBox(height: AppSpacing.md),
+
+              if (_demoCode != null)
+                Container(
+                  width: double.infinity,
+                  margin: const EdgeInsets.only(bottom: AppSpacing.sm),
+                  padding: const EdgeInsets.all(AppSpacing.sm),
+                  decoration: BoxDecoration(
+                    color: AppColors.primaryContainer,
+                    borderRadius: AppRadius.mdRadius,
+                  ),
+                  child: Text(
+                    'Demo mode — no email was sent. Your code: $_demoCode',
+                    style: AppTypography.caption.copyWith(color: AppColors.neutral900),
+                  ),
+                ),
 
               if (_resendMessage != null)
                 Container(

@@ -34,7 +34,10 @@ import app.services.otp_service as otp_service
 
 
 @pytest.fixture()
-def client():
+def client(monkeypatch):
+    # Pin production posture so a developer's local DEBUG=true can't
+    # flip these tests into the demo-OTP path; demo tests opt in via _set_mode.
+    monkeypatch.setattr(otp_service.settings, "debug", False)
     engine = create_engine(
         "sqlite:///:memory:",
         connect_args={"check_same_thread": False},
@@ -55,6 +58,12 @@ def client():
     yield test_client
     app.dependency_overrides.clear()
     Base.metadata.drop_all(bind=engine)
+
+
+def _set_mode(monkeypatch, *, debug, smtp):
+    """Pins debug + SMTP availability regardless of the developer's local .env."""
+    monkeypatch.setattr(otp_service.settings, "debug", debug)
+    monkeypatch.setattr(otp_service, "smtp_is_configured", lambda: smtp)
 
 
 def _capture_sent_code(monkeypatch):
@@ -80,6 +89,57 @@ def _capture_sent_code(monkeypatch):
 # Email OTP auth
 # ============================================================
 
+class TestDemoOtpFallback:
+    def test_smtp_configured_uses_real_email_even_in_debug(self, client, monkeypatch):
+        _set_mode(monkeypatch, debug=True, smtp=True)
+        captured = _capture_sent_code(monkeypatch)
+        body = client.post("/auth/request-otp", json={"email": "real@example.com"}).json()
+        assert body["delivered"] is True
+        assert body["demo_code"] is None
+        assert captured["email"] == "real@example.com"
+
+    def test_smtp_unavailable_in_debug_returns_demo_code(self, client, monkeypatch):
+        _set_mode(monkeypatch, debug=True, smtp=False)
+        body = client.post("/auth/request-otp", json={"email": "demo@example.com"}).json()
+        assert body["delivered"] is False  # never pretend an email went out
+        assert len(body["demo_code"]) == 6 and body["demo_code"].isdigit()
+        assert "smtp" not in body["detail"].lower()
+
+    def test_correct_demo_code_verifies_and_is_single_use(self, client, monkeypatch):
+        _set_mode(monkeypatch, debug=True, smtp=False)
+        code = client.post("/auth/request-otp", json={"email": "demo@example.com"}).json()["demo_code"]
+        ok = client.post("/auth/verify-otp", json={"email": "demo@example.com", "code": code})
+        assert ok.status_code == 200 and ok.json()["verified"] is True
+        again = client.post("/auth/verify-otp", json={"email": "demo@example.com", "code": code})
+        assert again.status_code == 400
+
+    def test_incorrect_code_fails_in_demo_mode(self, client, monkeypatch):
+        _set_mode(monkeypatch, debug=True, smtp=False)
+        code = client.post("/auth/request-otp", json={"email": "demo@example.com"}).json()["demo_code"]
+        wrong = "000000" if code != "000000" else "111111"
+        resp = client.post("/auth/verify-otp", json={"email": "demo@example.com", "code": wrong})
+        assert resp.status_code == 400
+        assert "incorrect" in resp.json()["detail"].lower()
+
+    def test_resend_in_demo_mode_issues_fresh_working_code(self, client, monkeypatch):
+        _set_mode(monkeypatch, debug=True, smtp=False)
+        client.post("/auth/request-otp", json={"email": "demo@example.com"})
+        second = client.post("/auth/request-otp", json={"email": "demo@example.com"}).json()["demo_code"]
+        ok = client.post("/auth/verify-otp", json={"email": "demo@example.com", "code": second})
+        assert ok.status_code == 200
+
+    def test_production_never_returns_or_accepts_demo_code(self, client, monkeypatch):
+        _set_mode(monkeypatch, debug=False, smtp=False)
+        body = client.post("/auth/request-otp", json={"email": "prod@example.com"}).json()
+        assert body["delivered"] is False
+        assert body["demo_code"] is None
+        assert "smtp" not in body["detail"].lower()
+        # No arbitrary/guessable code is accepted.
+        for guess in ("123456", "000000"):
+            resp = client.post("/auth/verify-otp", json={"email": "prod@example.com", "code": guess})
+            assert resp.status_code == 400
+
+
 class TestEmailOtp:
     def test_request_otp_honest_when_smtp_unconfigured(self, client):
         """
@@ -91,7 +151,10 @@ class TestEmailOtp:
         assert resp.status_code == 200, resp.text
         body = resp.json()
         assert body["delivered"] is False
-        assert "not configured" in body["detail"].lower() or "smtp" in body["detail"].lower()
+        assert body["demo_code"] is None
+        # Production posture: generic failure, no SMTP config internals leaked.
+        assert "smtp" not in body["detail"].lower()
+        assert "could not send" in body["detail"].lower()
 
     def test_full_request_and_verify_happy_path(self, client, monkeypatch):
         captured = _capture_sent_code(monkeypatch)

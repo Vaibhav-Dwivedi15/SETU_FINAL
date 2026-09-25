@@ -96,7 +96,7 @@ class _LoginScreenState extends State<LoginScreen> {
       _isSending = false;
       _wakingUp = false;
     });
-    if (!result.delivered) {
+    if (!result.canProceed) {
       // Honest failure: the backend accepted the request but no email
       // actually went out (SMTP not configured server-side, or the send
       // failed). Show exactly why, never a generic "code sent".
@@ -110,6 +110,7 @@ class _LoginScreenState extends State<LoginScreen> {
         'email': email,
         'phone': _phoneController.text.trim(),
         'expiresInMinutes': result.expiresInMinutes,
+        'demoCode': result.demoCode,
       },
     );
   }

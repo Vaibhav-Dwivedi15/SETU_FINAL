@@ -23,6 +23,8 @@ These routes are intentionally PUBLIC (no X-API-Key): they're called by
 ordinary users' mobile apps at first-run, before any responder identity
 exists. They expose no incident, profile, or responder data.
 """
+import logging
+
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
@@ -35,6 +37,8 @@ from app.services.otp_service import (
     verify_otp,
     otp_delivery_available,
 )
+
+logger = logging.getLogger("setu.auth")
 
 router = APIRouter()
 
@@ -64,15 +68,16 @@ def request_email_otp(payload: OtpRequestIn, db: Session = Depends(get_db)):
     reuse the existing live code instead of emailing a new one, so this
     endpoint can't be used to mail-bomb an address.
     """
-    otp, was_new, delivered = request_otp(db, email=payload.email, sender_id=payload.sender_id)
+    otp, was_new, delivered, demo_code = request_otp(db, email=payload.email, sender_id=payload.sender_id)
 
     if delivered:
         detail = f"Verification code sent to {otp.email}."
+    elif demo_code is not None:
+        detail = "Demo mode: email delivery is unavailable, so no email was sent. Use the code shown below."
     elif not otp_delivery_available():
-        detail = (
-            "Email delivery is not configured on this server "
-            "(SMTP_HOST/SMTP_USERNAME/SMTP_PASSWORD are unset), so no code was sent."
-        )
+        # Config specifics (which SMTP vars) stay in the server log only.
+        logger.error("request-otp failed: SMTP is not configured on this server")
+        detail = "Could not send the verification email. Please try again later."
     else:
         detail = "Could not send the verification email. Check the address and try again."
 
@@ -81,6 +86,7 @@ def request_email_otp(payload: OtpRequestIn, db: Session = Depends(get_db)):
         delivered=delivered,
         expires_in_minutes=OTP_EXPIRY_MINUTES,
         detail=detail,
+        demo_code=demo_code,
     )
 
 

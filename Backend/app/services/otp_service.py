@@ -25,6 +25,7 @@ from typing import Optional, Tuple
 
 from sqlalchemy.orm import Session
 
+from app.core.config import settings
 from app.models.email_otp import EmailOtp
 from app.services.email_service import send_otp_email, smtp_is_configured
 
@@ -67,12 +68,33 @@ def _as_aware(value: Optional[datetime]) -> Optional[datetime]:
     return value
 
 
-def request_otp(db: Session, email: str, sender_id: Optional[str] = None) -> Tuple[EmailOtp, bool, bool]:
+def demo_otp_active() -> bool:
+    """
+    True only when SMTP is unavailable AND the project's existing
+    development switch (settings.debug -- the same gate security.py uses
+    for the dev responder key) is on. Never true in production (DEBUG
+    unset/false) and never true when real email delivery is possible, so
+    a working SMTP setup always takes the real path.
+    """
+    return bool(settings.debug) and not smtp_is_configured()
+
+
+def request_otp(
+    db: Session, email: str, sender_id: Optional[str] = None
+) -> Tuple[EmailOtp, bool, bool, Optional[str]]:
     """
     Creates (or reuses, within the cooldown) an OTP for this email and
     attempts delivery.
 
-    Returns (otp_row, was_newly_created, delivered).
+    Returns (otp_row, was_newly_created, delivered, demo_code).
+
+    demo_code is non-None ONLY in development/demo mode (see
+    demo_otp_active). It is the same random one-time code that was
+    hashed and stored -- verification stays real (hashed, expiring,
+    single-use, attempt-capped); the code is just handed back instead of
+    emailed, mirroring the original demo where the code was shown
+    on-screen. delivered stays False: no email was sent, and we never
+    claim otherwise.
 
     delivered is the honest result of the SMTP attempt -- False means the
     code exists in the database but no email actually went out. The
@@ -92,7 +114,12 @@ def request_otp(db: Session, email: str, sender_id: Optional[str] = None) -> Tup
         .first()
     )
 
-    if existing:
+    demo = demo_otp_active()
+
+    # Demo mode skips the resend-reuse shortcut: a reused row only holds
+    # a hash, so its plaintext couldn't be shown again. There is no
+    # mail-bombing risk since nothing is emailed.
+    if existing and not demo:
         created_at = _as_aware(existing.created_at) or now
         expires_at = _as_aware(existing.expires_at)
         within_cooldown = (now - created_at).total_seconds() < RESEND_COOLDOWN_SECONDS
@@ -100,7 +127,13 @@ def request_otp(db: Session, email: str, sender_id: Optional[str] = None) -> Tup
 
         if within_cooldown and still_valid:
             logger.info("OTP resend suppressed for %s (within %ss cooldown)", email, RESEND_COOLDOWN_SECONDS)
-            return existing, False, existing.delivered
+            return existing, False, existing.delivered, None
+
+    if demo and existing:
+        # Supersede older live codes so only the freshly shown one works.
+        db.query(EmailOtp).filter(
+            EmailOtp.email == email, EmailOtp.consumed_at.is_(None)
+        ).update({EmailOtp.consumed_at: now}, synchronize_session=False)
 
     code = _generate_code()
     otp = EmailOtp(
@@ -115,13 +148,20 @@ def request_otp(db: Session, email: str, sender_id: Optional[str] = None) -> Tup
     db.commit()
     db.refresh(otp)
 
+    if demo:
+        logger.warning(
+            "DEMO OTP mode: SMTP unavailable and DEBUG is on -- returning the code "
+            "in the API response for %s instead of emailing it", email
+        )
+        return otp, True, False, code
+
     delivered = send_otp_email(email, code, OTP_EXPIRY_MINUTES)
     if delivered:
         otp.delivered = True
         db.commit()
         db.refresh(otp)
 
-    return otp, True, delivered
+    return otp, True, delivered, None
 
 
 def verify_otp(db: Session, email: str, code: str) -> Tuple[bool, str, Optional[EmailOtp]]:

@@ -37,11 +37,21 @@ class OtpRequestResult {
   final bool delivered;
   final String detail;
   final int expiresInMinutes;
+
+  /// DEVELOPMENT/DEMO ONLY: set when the backend runs in debug mode with
+  /// SMTP unavailable. No email was sent (`delivered` is false); the code
+  /// is returned so the normal OTP screen can still be exercised.
+  /// Always null against a production backend.
+  final String? demoCode;
   const OtpRequestResult({
     required this.delivered,
     required this.detail,
     required this.expiresInMinutes,
+    this.demoCode,
   });
+
+  /// True when the app should proceed to the OTP screen.
+  bool get canProceed => delivered || demoCode != null;
 }
 
 class OtpVerifyResult {
@@ -121,6 +131,7 @@ class EmailOtpService {
         delivered: decoded['delivered'] as bool? ?? false,
         detail: decoded['detail'] as String? ?? '',
         expiresInMinutes: decoded['expires_in_minutes'] as int? ?? 10,
+        demoCode: decoded['demo_code'] as String?,
       );
     } catch (e) {
       developer.log('OTP request failed: $e', name: 'EmailOtpService');
