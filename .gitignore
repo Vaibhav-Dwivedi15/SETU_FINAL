@@ -9,3 +9,5 @@ dist/
 .idea/
 
 .venv/
+.neon
+.env.local
