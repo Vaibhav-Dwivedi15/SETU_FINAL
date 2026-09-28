@@ -61,6 +61,7 @@ class Settings(BaseSettings):
     # anything beyond the default.
     cors_allowed_origins_raw: str = (
         "https://setu-sih-dashboard.vercel.app,"
+        "https://setu-rose.vercel.app,"
         "http://localhost:5173,"
         "http://localhost:3000"
     )

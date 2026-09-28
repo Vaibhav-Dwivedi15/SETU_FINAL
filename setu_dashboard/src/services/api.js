@@ -334,12 +334,22 @@ export function startIncidentPolling(onUpdate, onFallback, intervalMs = POLL_INT
     if (cancelled) return;
     try {
       const incidents = await fetchIncidents();
+      // Backend (re)connected — clear fallback state so reconnect is visible.
+      fallbackTriggered = false;
       onUpdate(incidents);
     } catch (err) {
       if (!fallbackTriggered) {
         fallbackTriggered = true;
-        console.warn("SETU dashboard: backend unreachable, using mock data. Reason:", err.message);
+        console.warn(
+          "SETU dashboard: backend unreachable, falling back to demo data. Reason:",
+          err.message,
+          `\nBackend URL: ${BACKEND_URL}`,
+          `\nCheck: (1) VITE_BACKEND_URL is set correctly, (2) VITE_API_KEY matches RESPONDER_API_KEY on the server, (3) ${BACKEND_URL} is reachable (Render free tier sleeps after 15 min idle).`
+        );
         onFallback();
+      } else {
+        // Keep logging quietly so devs can see retries in the console.
+        console.debug("SETU dashboard: backend still unreachable, retrying in", intervalMs, "ms. Reason:", err.message);
       }
     }
     if (!cancelled) timeoutId = setTimeout(poll, intervalMs);
