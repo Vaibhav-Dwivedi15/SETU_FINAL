@@ -22,8 +22,10 @@ def get_red_zones(
     total = query.count()
     items = query.offset((page - 1) * page_size).limit(page_size).all()
     
+    data = [RedZoneAssessmentOut.model_validate(item).model_dump() if hasattr(RedZoneAssessmentOut, 'model_validate') else RedZoneAssessmentOut.from_orm(item).dict() for item in items]
+    
     return {
-        "data": items,
+        "data": data,
         "pagination": {
             "page": page,
             "page_size": page_size,

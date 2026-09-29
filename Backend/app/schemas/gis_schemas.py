@@ -190,3 +190,31 @@ class RelocationAllocationOut(BaseModel):
 class PaginatedResponse(BaseModel):
     data: List[Any]
     pagination: Dict[str, int]
+
+class FieldObservationBase(BaseModel):
+    target_type: str
+    target_id: int
+    observation_type: str
+    details: Dict[str, Any]
+    source: str
+    
+class FieldObservationOut(FieldObservationBase):
+    id: int
+    dataset_id: Optional[int]
+    created_at: datetime
+    class Config:
+        from_attributes = True
+
+class AuthorityDecisionBase(BaseModel):
+    habitation_id: int
+    recommended_site_id: Optional[int]
+    status: str
+    actor: str
+    rationale: str
+    
+class AuthorityDecisionOut(AuthorityDecisionBase):
+    id: int
+    dataset_id: Optional[int]
+    created_at: datetime
+    class Config:
+        from_attributes = True

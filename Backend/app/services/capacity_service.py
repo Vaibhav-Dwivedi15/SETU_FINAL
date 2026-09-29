@@ -1,4 +1,5 @@
 from typing import Dict, Any, Tuple
+from app.core import methodology_config as mconf
 
 def calculate_capacity(usable_area_sqm: float, occupancy: int, infrastructure: Dict[str, Any] = None, services: Dict[str, Any] = None, assumptions: Dict[str, Any] = None):
     """
@@ -10,10 +11,10 @@ def calculate_capacity(usable_area_sqm: float, occupancy: int, infrastructure: D
     
     if assumptions is None:
         assumptions = {
-            "usable_area_ratio": 0.8,
-            "area_per_person_sqm": 4.0,
-            "water_lpd_per_person": 15.0, # liters per day
-            "sanitation_persons_per_toilet": 20,
+            "usable_area_ratio": mconf.CAPACITY_USABLE_AREA_RATIO,
+            "area_per_person_sqm": mconf.CAPACITY_AREA_PER_PERSON_SQM,
+            "water_lpd_per_person": mconf.CAPACITY_WATER_LITERS_PER_PERSON, # liters per day
+            "sanitation_persons_per_toilet": mconf.CAPACITY_PERSONS_PER_TOILET,
             "formula": "min(physical, water, sanitation, healthcare)"
         }
     

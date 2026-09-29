@@ -12,12 +12,12 @@ from app.services.risk_service import recalculate_all_risks
 from app.services.vulnerability_service import recalculate_all_vulnerabilities
 from app.services.relocation_service import recalculate_all_recommendations
 
-def seed_data():
-    db = SessionLocal()
-    
-    # 1. Create Demo Dataset
-    from app.db.init_db import init_db
-    init_db()
+def seed_data(db=None):
+    if db is None:
+        db = SessionLocal()
+        # Only init_db if we're hitting the real DB directly via script
+        from app.db.init_db import init_db
+        init_db()
     existing_dataset = db.query(Dataset).filter(Dataset.name == "SETU Demo Dataset").first()
     if existing_dataset:
         print("Demo dataset already exists, deleting old data...")
@@ -204,6 +204,7 @@ def seed_data():
     trigger_full_recalculation(db, dataset_id)
 
     print("Demo dataset seeded successfully!")
+    return dataset_id
 
 if __name__ == "__main__":
     seed_data()

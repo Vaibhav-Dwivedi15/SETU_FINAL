@@ -191,3 +191,27 @@ class RelocationAllocation(Base):
     habitation = relationship("Habitation")
     site = relationship("RelocationSite")
     dataset = relationship("Dataset")
+
+class FieldObservation(Base):
+    __tablename__ = "field_observations"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    target_type = Column(String, index=True) # HABITATION, SITE, HAZARD
+    target_id = Column(Integer, index=True)
+    observation_type = Column(String) # ROAD_BLOCKED, POPULATION_CHANGED, CAPACITY_CHANGED
+    details = Column(JSON)
+    source = Column(String)
+    dataset_id = Column(Integer, ForeignKey("datasets.id"), nullable=True)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+
+class AuthorityDecision(Base):
+    __tablename__ = "authority_decisions"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    habitation_id = Column(Integer, ForeignKey("habitations.id"), index=True)
+    recommended_site_id = Column(Integer, ForeignKey("relocation_sites.id"), nullable=True)
+    status = Column(String, index=True) # PROPOSED, ACCEPTED, MODIFIED, REJECTED, EXECUTED
+    actor = Column(String)
+    rationale = Column(String)
+    dataset_id = Column(Integer, ForeignKey("datasets.id"), nullable=True)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))

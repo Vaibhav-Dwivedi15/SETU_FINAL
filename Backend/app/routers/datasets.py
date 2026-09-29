@@ -117,13 +117,18 @@ def add_relocation_site(id: int, site: RelocationSiteCreate, db: Session = Depen
     return db_site
 
 @router.post("/seed-demo")
-def trigger_seed_demo():
+def trigger_seed_demo(db: Session = Depends(get_db)):
     """
-    Triggers the demo dataset seeder script.
+    Triggers the demo dataset seeder script using the current DB session.
     """
-    script_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "scripts", "seed_demo_data.py")
+    import sys
+    import os
+    script_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "scripts")
+    if script_path not in sys.path:
+        sys.path.append(script_path)
     try:
-        result = subprocess.run(["python", script_path], capture_output=True, text=True, check=True)
-        return {"status": "success", "message": "Demo data seeded successfully.", "logs": result.stdout}
-    except subprocess.CalledProcessError as e:
-        raise HTTPException(status_code=500, detail=f"Seeding failed: {e.stderr}")
+        from seed_demo_data import seed_data
+        dataset_id = seed_data(db)
+        return {"status": "success", "message": "Demo data seeded successfully.", "dataset_id": dataset_id}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Seeding failed: {str(e)}")

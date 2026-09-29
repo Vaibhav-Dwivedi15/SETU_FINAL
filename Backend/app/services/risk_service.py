@@ -3,6 +3,7 @@ from sqlalchemy.orm import Session
 from app.models.gis_models import Habitation, HazardLayer, RiskAssessment
 from app.services.gis_service import is_point_in_geojson_polygon
 from app.services.data_quality_service import evaluate_habitation_quality
+from app.core import methodology_config as mconf
 
 def calculate_habitation_risk(db: Session, habitation: Habitation, hazard_layers: List[HazardLayer]) -> RiskAssessment:
     """
@@ -16,12 +17,7 @@ def calculate_habitation_risk(db: Session, habitation: Habitation, hazard_layers
     hazard_breakdown = {}
     
     # Severity weighting
-    severity_weights = {
-        "critical": 10.0,
-        "high": 7.0,
-        "medium": 4.0,
-        "low": 1.0
-    }
+    severity_weights = mconf.HAZARD_WEIGHTS
     
     # 1. Multi-hazard exposure
     for layer in hazard_layers:
@@ -67,11 +63,11 @@ def calculate_habitation_risk(db: Session, habitation: Habitation, hazard_layers
     
 
     # Determine risk level
-    if total_score >= 15.0:
+    if total_score >= mconf.RISK_CRITICAL_THRESHOLD:
         risk_level = "Critical"
-    elif total_score >= 8.0:
+    elif total_score >= mconf.RISK_HIGH_THRESHOLD:
         risk_level = "High"
-    elif total_score >= 4.0:
+    elif total_score >= mconf.RISK_MEDIUM_THRESHOLD:
         risk_level = "Medium"
     else:
         risk_level = "Low"
@@ -83,7 +79,8 @@ def calculate_habitation_risk(db: Session, habitation: Habitation, hazard_layers
         contributing_factors={
             "exposures": factors,
             "hazard_breakdown": hazard_breakdown,
-            "methodology_version": "2.0",
+            "methodology_name": mconf.METHODOLOGY_NAME,
+            "methodology_version": mconf.METHODOLOGY_VERSION,
             "formula": "Sum(active hazard weights) + Sum(history weights * 0.5) * Vulnerability multiplier"
         },
         data_quality=dq_status,

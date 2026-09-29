@@ -132,3 +132,10 @@ Returns the highest priority suitable relocation recommendations across the syst
 ### 4.6 Relocation Summary
 `GET /api/relocation/summary`
 Returns aggregate statistics of sites, capacity, and generated recommendations.
+
+## Field Operations & Traceability
+- **`POST /api/field/observations/{dataset_id}`**: Ingest a field observation (e.g. `ROAD_BLOCKED`, `SITE_INACCESSIBLE`) and immediately trigger a deterministic recalculation of risk and relocation strategies.
+- **`POST /api/field/decisions/{dataset_id}`**: Record a formal Authority Decision (`PROPOSED`, `ACCEPTED`, `REJECTED`) confirming or overriding the system's algorithmic allocation.
+
+## AI Integration (Phase 6)
+- **`GET /api/ai/narrative/{habitation_id}`**: Wraps the deterministic output into a generative situation report. Guaranteed to return `{"methodology": "AI-ASSISTED"}` and `{"underlying_data": "DETERMINISTIC"}` strictly separating reasoning.

@@ -25,8 +25,11 @@ def get_sites(
     total = query.count()
     items = query.offset((page - 1) * page_size).limit(page_size).all()
     
+    data = [item.__dict__ for item in items]
+    for d in data:
+        d.pop("_sa_instance_state", None)
     return {
-        "data": items,
+        "data": data,
         "pagination": {
             "page": page,
             "page_size": page_size,
@@ -69,8 +72,11 @@ def get_recommendations(
     total = query.count()
     items = query.offset((page - 1) * page_size).limit(page_size).all()
     
+    data = [item.__dict__ for item in items]
+    for d in data:
+        d.pop("_sa_instance_state", None)
     return {
-        "data": items,
+        "data": data,
         "pagination": {
             "page": page,
             "page_size": page_size,
@@ -92,8 +98,11 @@ def get_priorities(
     total = query.count()
     items = query.offset((page - 1) * page_size).limit(page_size).all()
     
+    data = [item.__dict__ for item in items]
+    for d in data:
+        d.pop("_sa_instance_state", None)
     return {
-        "data": items,
+        "data": data,
         "pagination": {
             "page": page,
             "page_size": page_size,
@@ -133,8 +142,11 @@ def get_allocations(
     total = query.count()
     items = query.offset((page - 1) * page_size).limit(page_size).all()
     
+    data = [item.__dict__ for item in items]
+    for d in data:
+        d.pop("_sa_instance_state", None)
     return {
-        "data": items,
+        "data": data,
         "pagination": {
             "page": page,
             "page_size": page_size,

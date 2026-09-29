@@ -22,10 +22,11 @@ def get_habitations(
     total = query.count()
     items = query.offset((page - 1) * page_size).limit(page_size).all()
     
-    # Eager load dataset or handle it
+    # Convert items to pydantic dicts to avoid serialization errors
+    data = [HabitationOut.model_validate(item).model_dump() if hasattr(HabitationOut, 'model_validate') else HabitationOut.from_orm(item).dict() for item in items]
     
     return {
-        "data": items,
+        "data": data,
         "pagination": {
             "page": page,
             "page_size": page_size,
@@ -55,8 +56,10 @@ def get_hazard_zones(
     total = query.count()
     items = query.offset((page - 1) * page_size).limit(page_size).all()
     
+    data = [HazardLayerOut.model_validate(item).model_dump() if hasattr(HazardLayerOut, 'model_validate') else HazardLayerOut.from_orm(item).dict() for item in items]
+    
     return {
-        "data": items,
+        "data": data,
         "pagination": {
             "page": page,
             "page_size": page_size,

@@ -224,3 +224,84 @@ def test_ai_narrative(client):
     data = resp.json()
     assert data["methodology"] == "AI-ASSISTED"
     assert "narrative" in data
+
+def test_end_to_end_sih26191_pipeline(client):
+    """
+    Phase 21 - The ultimate end-to-end integration test demonstrating the full SIH26191 pipeline.
+    """
+    # 1. Seed dataset
+    resp = client.post("/api/datasets/seed-demo")
+    assert resp.status_code == 200
+    dataset_id = resp.json()["dataset_id"]
+    
+    # 2. Verify habitations
+    resp = client.get("/api/risk/habitations")
+    assert resp.status_code == 200
+    habs = resp.json()["data"]
+    assert len(habs) > 0
+    hab_id = habs[0]["id"]
+    
+    # 3. Verify risk & vulnerability are calculated
+    resp = client.get(f"/api/risk/habitations/{hab_id}")
+    assert resp.status_code == 200
+    hab_detail = resp.json()
+    assert len(hab_detail["risk_assessments"]) > 0
+    risk = hab_detail["risk_assessments"][0]
+    assert "data_quality" in risk
+    assert "methodology_name" in risk["contributing_factors"]
+    
+    resp = client.get("/api/vulnerability/habitations")
+    assert resp.status_code == 200
+    vulns = resp.json()["data"]
+    assert len(vulns) > 0
+    
+    # 4. Verify Red Zone classification
+    resp = client.get("/api/red-zones")
+    assert resp.status_code == 200
+    red_zones = resp.json()["data"]
+    assert len(red_zones) > 0
+    
+    # 5. Verify Relocation Recommendations & Allocations
+    resp = client.get("/api/relocation/summary")
+    assert resp.status_code == 200
+    reloc = resp.json()
+    assert reloc["recommendations_generated"] > 0
+    
+    # 6. Create what-if scenario (disable a site)
+    scenario_payload = {
+        "disabled_site_ids": [1], # Disable the first site
+        "added_hazards": []
+    }
+    resp = client.post(f"/api/scenarios/evaluate/{dataset_id}", json=scenario_payload)
+    assert resp.status_code == 200
+    scenario_result = resp.json()
+    assert "impacted_habitations" in scenario_result
+    
+    # 7. Apply a field observation to baseline
+    obs_payload = {
+        "target_type": "SITE",
+        "target_id": 1,
+        "observation_type": "SITE_INACCESSIBLE",
+        "details": {"reason": "Road blocked by landslide"},
+        "source": "Field App"
+    }
+    resp = client.post(f"/api/field/observations/{dataset_id}", json=obs_payload)
+    assert resp.status_code == 200
+    
+    # 8. Record Authority Decision
+    dec_payload = {
+        "habitation_id": hab_id,
+        "recommended_site_id": 2,
+        "status": "ACCEPTED",
+        "actor": "District Magistrate",
+        "rationale": "Proceeding with alternative site due to landslide"
+    }
+    resp = client.post(f"/api/field/decisions/{dataset_id}", json=dec_payload)
+    assert resp.status_code == 200
+    
+    # 9. Verify AI Narrative
+    resp = client.get(f"/api/ai/narrative/{hab_id}")
+    assert resp.status_code == 200
+    ai_data = resp.json()
+    assert ai_data["methodology"] == "AI-ASSISTED"
+    assert "narrative" in ai_data

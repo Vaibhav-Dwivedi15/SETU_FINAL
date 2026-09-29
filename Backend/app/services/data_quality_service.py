@@ -1,6 +1,7 @@
 from sqlalchemy.orm import Session
 from datetime import datetime, timedelta, timezone
 from app.models.gis_models import Habitation, Dataset, HazardLayer
+from app.core import methodology_config as mconf
 
 def evaluate_habitation_quality(db: Session, habitation: Habitation) -> tuple[str, list[str]]:
     """
@@ -24,7 +25,7 @@ def evaluate_habitation_quality(db: Session, habitation: Habitation) -> tuple[st
     dataset = db.query(Dataset).filter(Dataset.id == habitation.dataset_id).first()
     if dataset and dataset.data_timestamp:
         age_days = (datetime.now(timezone.utc) - dataset.data_timestamp.replace(tzinfo=timezone.utc)).days
-        if age_days > 365:
+        if age_days > mconf.DATA_STALE_DAYS_DATASET:
             reasons.append(f"Habitation dataset is stale ({age_days} days old)")
             status = "STALE" if status in ["VALID", "LOW_CONFIDENCE"] else status
             
@@ -40,11 +41,11 @@ def evaluate_habitation_quality(db: Session, habitation: Habitation) -> tuple[st
         for h in hazards:
             if h.created_at:
                 h_age = (datetime.now(timezone.utc) - h.created_at.replace(tzinfo=timezone.utc)).days
-                if h_age > 180: # Hazard data expires faster
+                if h_age > mconf.DATA_STALE_DAYS_HAZARD: # Hazard data expires faster
                     stale_hazards = True
         
         if stale_hazards:
-            reasons.append("Hazard layer data is older than 6 months (stale)")
+            reasons.append(f"Hazard layer data is older than {mconf.DATA_STALE_DAYS_HAZARD} days (stale)")
             status = "STALE" if status in ["VALID", "LOW_CONFIDENCE"] else status
             
     if not reasons:

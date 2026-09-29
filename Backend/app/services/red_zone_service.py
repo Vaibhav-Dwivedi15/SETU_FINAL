@@ -1,6 +1,8 @@
 from sqlalchemy.orm import Session
 from app.models.gis_models import Habitation, RiskAssessment, VulnerabilityAssessment, RedZoneAssessment
 
+from app.core import methodology_config as mconf
+
 def evaluate_red_zone(db: Session, habitation: Habitation) -> RedZoneAssessment:
     """
     Evaluates whether a habitation is a Red Zone based on:
@@ -22,7 +24,7 @@ def evaluate_red_zone(db: Session, habitation: Habitation) -> RedZoneAssessment:
             classification=classification,
             confidence=confidence,
             factors=factors,
-            methodology_version="1.0",
+            methodology_version=mconf.METHODOLOGY_VERSION,
             data_quality="INCOMPLETE",
             data_quality_reasons=["Missing risk or vulnerability assessment"],
             dataset_id=habitation.dataset_id
@@ -31,12 +33,12 @@ def evaluate_red_zone(db: Session, habitation: Habitation) -> RedZoneAssessment:
     factors["risk_level"] = risk.risk_level
     factors["risk_score"] = risk.score
     factors["vulnerability_score"] = vuln.score
+    factors["methodology_name"] = mconf.METHODOLOGY_NAME
     
     # Red Zone classification logic
-    # Using MODEL_ASSESSED_RED_ZONE as required
-    if risk.risk_level == "Critical" and vuln.score >= 50.0:
+    if risk.risk_level == mconf.RED_ZONE_RISK_REQUIREMENT and vuln.score >= mconf.RED_ZONE_VULN_REQUIREMENT:
         classification = "MODEL_ASSESSED_RED_ZONE"
-        factors["reason"] = "Critical risk and extreme vulnerability"
+        factors["reason"] = f"Critical risk and extreme vulnerability (>={mconf.RED_ZONE_VULN_REQUIREMENT})"
     elif risk.risk_level == "Critical" or (risk.risk_level == "High" and vuln.score >= 70.0):
         classification = "HIGH_RISK"
         factors["reason"] = "Critical risk or High risk + high vulnerability"
@@ -68,7 +70,7 @@ def evaluate_red_zone(db: Session, habitation: Habitation) -> RedZoneAssessment:
         classification=classification,
         confidence=confidence,
         factors=factors,
-        methodology_version="1.0",
+        methodology_version=mconf.METHODOLOGY_VERSION,
         data_quality=dq_status,
         data_quality_reasons=list(set(dq_reasons)), # remove duplicates
         dataset_id=habitation.dataset_id

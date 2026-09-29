@@ -2,6 +2,7 @@ from typing import List
 from sqlalchemy.orm import Session
 from app.models.gis_models import Habitation, RelocationSite, RelocationRecommendation, HazardLayer
 from app.services.gis_service import calculate_haversine_distance, is_point_in_geojson_polygon
+from app.core import methodology_config as mconf
 
 def generate_recommendations_for_habitation(db: Session, habitation: Habitation, sites: List[RelocationSite], hazards: List[HazardLayer], max_distance_km: float = 50.0):
     """
@@ -37,15 +38,16 @@ def generate_recommendations_for_habitation(db: Session, habitation: Habitation,
         
     if habitation.population:
         base_priority_score += min(20.0, habitation.population / 100.0)
-    
+        
     # Classify priority
     priority_class = "MONITOR"
-    if base_priority_score >= 80.0 or habitation_danger:
+    if base_priority_score >= mconf.PRIORITY_IMMEDIATE_THRESHOLD or habitation_danger:
         priority_class = "IMMEDIATE"
-    elif base_priority_score >= 50.0:
+    elif base_priority_score >= mconf.PRIORITY_SHORT_TERM_THRESHOLD:
         priority_class = "SHORT_TERM"
-    elif base_priority_score >= 20.0:
+    elif base_priority_score >= mconf.PRIORITY_MEDIUM_TERM_THRESHOLD:
         priority_class = "MEDIUM_TERM"
+
     
     for site in sites:
         reasons = []

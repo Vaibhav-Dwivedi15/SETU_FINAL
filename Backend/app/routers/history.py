@@ -23,8 +23,11 @@ def get_history(
     total = query.count()
     items = query.order_by(DisasterHistory.event_date.desc()).offset((page - 1) * page_size).limit(page_size).all()
     
+    data = [item.__dict__ for item in items]
+    for d in data:
+        d.pop("_sa_instance_state", None)
     return {
-        "data": items,
+        "data": data,
         "pagination": {
             "page": page,
             "page_size": page_size,
@@ -44,8 +47,11 @@ def get_habitation_history(
     total = query.count()
     items = query.order_by(DisasterHistory.event_date.desc()).offset((page - 1) * page_size).limit(page_size).all()
     
+    data = [item.__dict__ for item in items]
+    for d in data:
+        d.pop("_sa_instance_state", None)
     return {
-        "data": items,
+        "data": data,
         "pagination": {
             "page": page,
             "page_size": page_size,
