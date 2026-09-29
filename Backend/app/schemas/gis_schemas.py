@@ -46,6 +46,7 @@ class HabitationOut(HabitationBase):
 
 class HabitationDetailOut(HabitationOut):
     dataset: Optional[DatasetOut] = None
+    risk_assessments: List['RiskAssessmentOut'] = []
 
 class HazardLayerBase(BaseModel):
     hazard_type: str
@@ -78,6 +79,8 @@ class RiskAssessmentOut(RiskAssessmentBase):
     id: int
     habitation_id: int
     dataset_id: Optional[int]
+    data_quality: str
+    data_quality_reasons: List[str]
     calculation_timestamp: datetime
     class Config:
         from_attributes = True
@@ -87,6 +90,8 @@ class VulnerabilityAssessmentOut(BaseModel):
     habitation_id: int
     score: float
     factors: Dict[str, Any]
+    data_quality: str
+    data_quality_reasons: List[str]
     dataset_id: Optional[int]
     calculation_timestamp: datetime
     class Config:
@@ -102,6 +107,8 @@ class RedZoneAssessmentOut(RedZoneAssessmentBase):
     id: int
     habitation_id: int
     dataset_id: Optional[int]
+    data_quality: str
+    data_quality_reasons: List[str]
     assessment_timestamp: datetime
     class Config:
         from_attributes = True

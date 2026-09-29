@@ -2,12 +2,15 @@ from typing import Dict, Any, List
 from sqlalchemy.orm import Session
 from app.models.gis_models import Habitation, HazardLayer, RiskAssessment
 from app.services.gis_service import is_point_in_geojson_polygon
+from app.services.data_quality_service import evaluate_habitation_quality
 
 def calculate_habitation_risk(db: Session, habitation: Habitation, hazard_layers: List[HazardLayer]) -> RiskAssessment:
     """
     Deterministically calculates the risk for a single habitation against active hazard layers,
     incorporating historical disaster data and vulnerability.
     """
+    dq_status, dq_reasons = evaluate_habitation_quality(db, habitation)
+    
     total_score = 0.0
     factors = []
     hazard_breakdown = {}
@@ -62,9 +65,7 @@ def calculate_habitation_risk(db: Session, habitation: Habitation, hazard_layers
             "vulnerability_score": vuln.score
         })
     
-    # Data Quality placeholder (phase 2 will deepen this)
-    data_quality = "HIGH" if len(histories) > 0 else "MEDIUM"
-    
+
     # Determine risk level
     if total_score >= 15.0:
         risk_level = "Critical"
@@ -82,10 +83,11 @@ def calculate_habitation_risk(db: Session, habitation: Habitation, hazard_layers
         contributing_factors={
             "exposures": factors,
             "hazard_breakdown": hazard_breakdown,
-            "data_quality": data_quality,
             "methodology_version": "2.0",
             "formula": "Sum(active hazard weights) + Sum(history weights * 0.5) * Vulnerability multiplier"
         },
+        data_quality=dq_status,
+        data_quality_reasons=dq_reasons,
         dataset_id=habitation.dataset_id
     )
 

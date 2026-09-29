@@ -22,6 +22,13 @@
 - **Relocation Allocation Engine**: Built `allocation_service.py` to move beyond mere site recommendations into deterministic population assignment. Iterates through prioritized habitations and tracks a running tally of available capacity at relocation sites. Outputs `FEASIBLE`, `PARTIAL`, or `FAILED` allocation statuses with exact reasons based on remaining capacity.
 - **What-If Scenario Evaluation**: Added `what_if_service.py` (`POST /api/scenarios/evaluate/{id}`). It creates a full immutable in-memory clone of a dataset (`is_scenario=True`), applies user-provided modifications (e.g. disabling a relocation site or injecting a synthetic hazard), reruns the entire orchestrated dependency chain, and outputs a strict diff highlighting which habitation allocations broke or shifted (`impacted_habitations`).
 
-## Next Slices (Pending)
-- **SLICE 5**: Versioning, Auditability, Data Quality
-- **SLICE 6**: AI/ML-assisted analytics
+### SLICE 5: Data Quality Engine & Auditability
+- **Data Quality Architecture**: Implemented `data_quality_service.py` to evaluate habitation completeness and dataset staleness. It strictly grades input quality across `VALID`, `STALE`, `INCOMPLETE`, and `LOW_CONFIDENCE`.
+- **Quality Propagation**: The engine propagates these scores. If population is missing or hazard layers are older than 6 months, the underlying `RiskAssessment`, `VulnerabilityAssessment`, and `RedZoneAssessment` are explicitly tagged with `data_quality="STALE"` (or worse) alongside precise `data_quality_reasons`. This ensures analytical outputs never hide the unreliability of their inputs.
+
+### SLICE 6: AI/ML Integration (AI-Assisted Analytics)
+- **Generative Narrative Engine**: Built `ai_service.py` (`GET /api/ai/narrative/{id}`) to translate raw backend numbers into human-readable situation reports.
+- **Strict Methodology Distinctions**: The engine explicitly separates AI text generation from the deterministic math. The API outputs clearly return `"methodology": "AI-ASSISTED"` alongside `"underlying_data": "DETERMINISTIC"` with a strict warning not to use the AI for raw metric generation, strictly fulfilling the requirement to preserve the deterministic decision engine.
+
+## Status
+All phases (Slices 1 through 6) of the Next-Level Engineering Phase for SIH26191 are fully implemented and tested.

@@ -69,6 +69,8 @@ class RiskAssessment(Base):
     score = Column(Float)
     risk_level = Column(String, index=True) # Low, Medium, High, Critical
     contributing_factors = Column(JSON)
+    data_quality = Column(String, default="VALID")
+    data_quality_reasons = Column(JSON, default=list)
     dataset_id = Column(Integer, ForeignKey("datasets.id"), nullable=True)
     calculation_timestamp = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
@@ -82,6 +84,8 @@ class VulnerabilityAssessment(Base):
     habitation_id = Column(Integer, ForeignKey("habitations.id"), index=True)
     score = Column(Float)
     factors = Column(JSON)
+    data_quality = Column(String, default="VALID")
+    data_quality_reasons = Column(JSON, default=list)
     dataset_id = Column(Integer, ForeignKey("datasets.id"), nullable=True)
     calculation_timestamp = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
@@ -97,6 +101,8 @@ class RedZoneAssessment(Base):
     confidence = Column(String)  # LOW, MEDIUM, HIGH
     factors = Column(JSON)
     methodology_version = Column(String)
+    data_quality = Column(String, default="VALID")
+    data_quality_reasons = Column(JSON, default=list)
     dataset_id = Column(Integer, ForeignKey("datasets.id"), nullable=True)
     assessment_timestamp = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 

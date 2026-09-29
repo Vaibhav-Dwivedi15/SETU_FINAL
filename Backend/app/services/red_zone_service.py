@@ -23,6 +23,8 @@ def evaluate_red_zone(db: Session, habitation: Habitation) -> RedZoneAssessment:
             confidence=confidence,
             factors=factors,
             methodology_version="1.0",
+            data_quality="INCOMPLETE",
+            data_quality_reasons=["Missing risk or vulnerability assessment"],
             dataset_id=habitation.dataset_id
         )
         
@@ -45,12 +47,30 @@ def evaluate_red_zone(db: Session, habitation: Habitation) -> RedZoneAssessment:
         classification = "GREEN"
         factors["reason"] = "Low/acceptable risk profile"
         
+    # Evaluate Data Quality for Red Zone
+    dq_status = "VALID"
+    dq_reasons = []
+    
+    if risk:
+        if risk.data_quality != "VALID":
+            dq_status = risk.data_quality
+            dq_reasons.extend([f"Risk Assessment: {r}" for r in risk.data_quality_reasons])
+    if vuln:
+        if vuln.data_quality != "VALID":
+            dq_status = vuln.data_quality if dq_status == "VALID" else dq_status # Keeps worst, but simplistic
+            dq_reasons.extend([f"Vulnerability Assessment: {r}" for r in vuln.data_quality_reasons])
+            
+    if not dq_reasons:
+        dq_reasons.append("Inputs are VALID")
+        
     return RedZoneAssessment(
         habitation_id=habitation.id,
         classification=classification,
         confidence=confidence,
         factors=factors,
         methodology_version="1.0",
+        data_quality=dq_status,
+        data_quality_reasons=list(set(dq_reasons)), # remove duplicates
         dataset_id=habitation.dataset_id
     )
 

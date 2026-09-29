@@ -75,6 +75,12 @@ def test_risk_calculation(client):
     
     resp = client.get(f"/api/risk/habitations/{hab.id}")
     assert resp.status_code == 200
+    data = resp.json()
+    assert "risk_assessments" in data
+    assert len(data["risk_assessments"]) > 0
+    risk = data["risk_assessments"][0]
+    assert "data_quality" in risk
+    assert "data_quality_reasons" in risk
     
 def test_relocation_recommendations(client):
     """
@@ -202,3 +208,19 @@ def test_allocations_and_scenarios(client):
     data = resp.json()
     assert "scenario_dataset_id" in data
     assert "impacted_habitations_count" in data
+
+def test_ai_narrative(client):
+    """
+    Check if AI narrative generation works properly.
+    """
+    resp = client.get("/api/risk/habitations")
+    habs = resp.json()["data"]
+    if not habs:
+        return
+        
+    hab_id = habs[0]["id"]
+    resp = client.get(f"/api/ai/narrative/{hab_id}")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["methodology"] == "AI-ASSISTED"
+    assert "narrative" in data
