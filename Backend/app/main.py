@@ -78,13 +78,14 @@ app.include_router(voice.router)
 app.include_router(government.router)
 
 # GIS and Data Infrastructure (SIH26191)
-from app.routers import risk, vulnerability, relocation, datasets, history, red_zones
+from app.routers import risk, vulnerability, relocation, datasets, history, red_zones, scenarios
 app.include_router(datasets.router)
 app.include_router(history.router)
 app.include_router(red_zones.router)
 app.include_router(risk.router)
 app.include_router(vulnerability.router)
 app.include_router(relocation.router)
+app.include_router(scenarios.router)
 
 
 @app.get("/")

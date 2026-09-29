@@ -18,7 +18,10 @@
 - **Carrying Capacity**: Transformed `calculate_capacity` into a constrained resource calculator factoring physical bounds, water constraints (liters/day/person), sanitation (toilets), and healthcare limits to find the absolute `bottleneck` resource that strictly caps the `effective_capacity`.
 - **Relocation Priority**: Prioritizes source habitations into explicit `IMMEDIATE`, `SHORT_TERM`, `MEDIUM_TERM`, and `MONITOR` categorizations based on aggregated risk multipliers, vulnerability metrics, and extreme Red Zone presence.
 
+### SLICE 4: Relocation Allocation & What-If Scenarios
+- **Relocation Allocation Engine**: Built `allocation_service.py` to move beyond mere site recommendations into deterministic population assignment. Iterates through prioritized habitations and tracks a running tally of available capacity at relocation sites. Outputs `FEASIBLE`, `PARTIAL`, or `FAILED` allocation statuses with exact reasons based on remaining capacity.
+- **What-If Scenario Evaluation**: Added `what_if_service.py` (`POST /api/scenarios/evaluate/{id}`). It creates a full immutable in-memory clone of a dataset (`is_scenario=True`), applies user-provided modifications (e.g. disabling a relocation site or injecting a synthetic hazard), reruns the entire orchestrated dependency chain, and outputs a strict diff highlighting which habitation allocations broke or shifted (`impacted_habitations`).
+
 ## Next Slices (Pending)
-- **SLICE 4**: Relocation Allocation, What-if Scenarios
 - **SLICE 5**: Versioning, Auditability, Data Quality
 - **SLICE 6**: AI/ML-assisted analytics

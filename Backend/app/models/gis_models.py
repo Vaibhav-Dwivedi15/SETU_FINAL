@@ -9,6 +9,7 @@ class Dataset(Base):
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String, index=True)
     is_demo = Column(Boolean, default=False, index=True)
+    is_scenario = Column(Boolean, default=False, index=True)
     source = Column(String)
     data_timestamp = Column(DateTime, nullable=True)
     geographic_coverage = Column(String, nullable=True)
@@ -163,6 +164,24 @@ class RelocationRecommendation(Base):
     dataset_id = Column(Integer, ForeignKey("datasets.id"), nullable=True)
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
+    habitation = relationship("Habitation")
+    site = relationship("RelocationSite")
+    dataset = relationship("Dataset")
+
+class RelocationAllocation(Base):
+    __tablename__ = "relocation_allocations"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    habitation_id = Column(Integer, ForeignKey("habitations.id"), index=True)
+    site_id = Column(Integer, ForeignKey("relocation_sites.id"), index=True)
+    
+    allocated_population = Column(Integer)
+    allocation_status = Column(String, index=True) # FEASIBLE, PARTIAL, FAILED
+    reasons = Column(JSON)
+    
+    dataset_id = Column(Integer, ForeignKey("datasets.id"), nullable=True)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    
     habitation = relationship("Habitation")
     site = relationship("RelocationSite")
     dataset = relationship("Dataset")

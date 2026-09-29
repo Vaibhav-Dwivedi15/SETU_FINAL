@@ -174,3 +174,31 @@ def test_red_zones(client):
     data = resp.json()
     assert "data" in data
     assert isinstance(data["data"], list)
+
+def test_allocations_and_scenarios(client):
+    """
+    Check that allocations are generated and what-if scenarios evaluate successfully.
+    """
+    # Verify allocations route
+    resp = client.get("/api/relocation/allocations")
+    assert resp.status_code == 200
+    
+    # We need a dataset ID to test what-if
+    # Creating a quick dataset directly
+    db = TestingSessionLocal()
+    from app.models.gis_models import Dataset
+    dataset = Dataset(name="WhatIfBase", is_demo=True)
+    db.add(dataset)
+    db.commit()
+    dataset_id = dataset.id
+    
+    # Test scenario evaluation
+    scenario_payload = {
+        "disabled_site_ids": [1],
+        "added_hazards": []
+    }
+    resp = client.post(f"/api/scenarios/evaluate/{dataset_id}", json=scenario_payload)
+    assert resp.status_code == 200
+    data = resp.json()
+    assert "scenario_dataset_id" in data
+    assert "impacted_habitations_count" in data

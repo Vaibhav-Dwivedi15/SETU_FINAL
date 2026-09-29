@@ -120,3 +120,25 @@ def get_relocation_summary(db: Session = Depends(get_db)):
         "remaining_capacity": remaining_capacity,
         "recommendations_generated": total_recommendations
     }
+
+@router.get("/allocations", response_model=PaginatedResponse)
+def get_allocations(
+    page: int = Query(1, ge=1),
+    page_size: int = Query(20, ge=1, le=100),
+    db: Session = Depends(get_db)
+):
+    from app.models.gis_models import RelocationAllocation
+    query = db.query(RelocationAllocation)
+    
+    total = query.count()
+    items = query.offset((page - 1) * page_size).limit(page_size).all()
+    
+    return {
+        "data": items,
+        "pagination": {
+            "page": page,
+            "page_size": page_size,
+            "total": total,
+            "total_pages": (total + page_size - 1) // page_size
+        }
+    }

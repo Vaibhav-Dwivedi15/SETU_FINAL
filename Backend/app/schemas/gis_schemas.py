@@ -5,6 +5,7 @@ from datetime import datetime
 class DatasetBase(BaseModel):
     name: str
     is_demo: bool = False
+    is_scenario: bool = False
     source: Optional[str] = None
     data_timestamp: Optional[datetime] = None
     geographic_coverage: Optional[str] = None
@@ -162,6 +163,18 @@ class RelocationRecommendationOut(BaseModel):
     reasons: List[str]
     priority_score: float
     priority_classification: Optional[str] = None
+    dataset_id: Optional[int]
+    created_at: datetime
+    class Config:
+        from_attributes = True
+
+class RelocationAllocationOut(BaseModel):
+    id: int
+    habitation_id: int
+    site_id: Optional[int]
+    allocated_population: int
+    allocation_status: str
+    reasons: List[str]
     dataset_id: Optional[int]
     created_at: datetime
     class Config:
