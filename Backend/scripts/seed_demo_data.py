@@ -16,6 +16,8 @@ def seed_data():
     db = SessionLocal()
     
     # 1. Create Demo Dataset
+    from app.db.init_db import init_db
+    init_db()
     existing_dataset = db.query(Dataset).filter(Dataset.name == "SETU Demo Dataset").first()
     if existing_dataset:
         print("Demo dataset already exists, deleting old data...")

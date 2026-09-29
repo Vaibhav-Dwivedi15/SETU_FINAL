@@ -54,6 +54,22 @@ def generate_recommendations_for_habitation(db: Session, habitation: Habitation,
         if site.services.get("medical_access") == True or site.services.get("hospital") == True:
             priority_score += 3.0
             
+        # Factor in habitation's risk/vulnerability to prioritize people in highest danger
+        if suitable:
+            from app.models.gis_models import RiskAssessment, VulnerabilityAssessment
+            risk_assmnt = db.query(RiskAssessment).filter(RiskAssessment.habitation_id == habitation.id).first()
+            if risk_assmnt:
+                if risk_assmnt.risk_level.lower() == 'critical': priority_score += 20.0
+                elif risk_assmnt.risk_level.lower() == 'high': priority_score += 15.0
+                elif risk_assmnt.risk_level.lower() == 'medium': priority_score += 5.0
+            
+            vuln_assmnt = db.query(VulnerabilityAssessment).filter(VulnerabilityAssessment.habitation_id == habitation.id).first()
+            if vuln_assmnt:
+                priority_score += (vuln_assmnt.score * 0.1)  # assuming score is 0-100
+                
+            if habitation.population:
+                priority_score += min(10.0, habitation.population / 100.0)
+            
         rec = RelocationRecommendation(
             habitation_id=habitation.id,
             site_id=site.id,

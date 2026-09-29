@@ -10,6 +10,9 @@ class Dataset(Base):
     name = Column(String, index=True)
     is_demo = Column(Boolean, default=False, index=True)
     source = Column(String)
+    data_timestamp = Column(DateTime, nullable=True)
+    geographic_coverage = Column(String, nullable=True)
+    data_type = Column(String, nullable=True)
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
 class Habitation(Base):

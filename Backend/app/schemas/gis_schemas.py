@@ -6,6 +6,12 @@ class DatasetBase(BaseModel):
     name: str
     is_demo: bool = False
     source: Optional[str] = None
+    data_timestamp: Optional[datetime] = None
+    geographic_coverage: Optional[str] = None
+    data_type: Optional[str] = None
+
+class DatasetCreate(DatasetBase):
+    pass
 
 class DatasetOut(DatasetBase):
     id: int
@@ -21,6 +27,9 @@ class HabitationBase(BaseModel):
     latitude: float = Field(..., ge=-90, le=90)
     longitude: float = Field(..., ge=-180, le=180)
     boundary_geometry: Optional[Dict[str, Any]] = None
+
+class HabitationCreate(HabitationBase):
+    pass
 
 class HabitationOut(HabitationBase):
     id: int
@@ -40,6 +49,9 @@ class HazardLayerBase(BaseModel):
     source: Optional[str] = None
     geographic_coverage: Optional[str] = None
     data_type: Optional[str] = None
+
+class HazardLayerCreate(HazardLayerBase):
+    pass
 
 class HazardLayerOut(HazardLayerBase):
     id: int
@@ -86,12 +98,15 @@ class RelocationSiteBase(BaseModel):
     infrastructure: Dict[str, Any]
     services: Dict[str, Any]
     current_occupancy: int = 0
-    estimated_capacity: int
-    remaining_capacity: int
     source: Optional[str] = None
+
+class RelocationSiteCreate(RelocationSiteBase):
+    pass
 
 class RelocationSiteOut(RelocationSiteBase):
     id: int
+    estimated_capacity: int
+    remaining_capacity: int
     dataset_id: Optional[int]
     created_at: datetime
     updated_at: datetime

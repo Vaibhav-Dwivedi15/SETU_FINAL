@@ -42,6 +42,18 @@ def get_site(id: int, db: Session = Depends(get_db)):
         raise HTTPException(status_code=404, detail={"code": "NOT_FOUND", "message": "Relocation site not found."})
     return site
 
+@router.get("/sites/{id}/capacity")
+def get_site_capacity(id: int, db: Session = Depends(get_db)):
+    site = db.query(RelocationSite).filter(RelocationSite.id == id).first()
+    if not site:
+        raise HTTPException(status_code=404, detail={"code": "NOT_FOUND", "message": "Relocation site not found."})
+    
+    from app.services.capacity_service import calculate_capacity
+    return calculate_capacity(
+        usable_area_sqm=site.usable_area_sqm,
+        occupancy=site.current_occupancy
+    )
+
 @router.get("/recommendations/{habitation_id}", response_model=PaginatedResponse)
 def get_recommendations(
     habitation_id: int,

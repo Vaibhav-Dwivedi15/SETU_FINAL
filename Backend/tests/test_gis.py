@@ -88,3 +88,48 @@ def test_vulnerability(client):
     """
     resp = client.get("/api/vulnerability/summary")
     assert resp.status_code == 200
+
+def test_ingestion_and_capacity(client):
+    """
+    Check that ingestion endpoints work and capacity calculation is exposed.
+    """
+    # Create dataset
+    resp = client.post("/api/datasets", json={"name": "Test Ingestion", "data_type": "official"})
+    assert resp.status_code == 200
+    dataset_id = resp.json()["id"]
+    
+    # Create habitation
+    hab_payload = {
+        "name": "Ingested Hab",
+        "district": "Ingest District",
+        "state": "State",
+        "latitude": 10.0,
+        "longitude": 20.0
+    }
+    resp = client.post(f"/api/datasets/{dataset_id}/habitations", json=hab_payload)
+    assert resp.status_code == 200
+    
+    # Create relocation site
+    site_payload = {
+        "name": "Ingested Site",
+        "district": "Ingest District",
+        "state": "State",
+        "latitude": 11.0,
+        "longitude": 21.0,
+        "usable_area_sqm": 5000.0,
+        "infrastructure": {},
+        "services": {},
+        "current_occupancy": 100
+    }
+    resp = client.post(f"/api/datasets/{dataset_id}/relocation-sites", json=site_payload)
+    assert resp.status_code == 200
+    site_id = resp.json()["id"]
+    
+    # Check capacity endpoint
+    resp = client.get(f"/api/relocation/sites/{site_id}/capacity")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert "assumptions" in data
+    assert "estimated_capacity" in data
+    assert data["estimated_capacity"] > 0
+    assert data["remaining_capacity"] == data["estimated_capacity"] - 100
