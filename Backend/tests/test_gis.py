@@ -82,6 +82,15 @@ def test_relocation_recommendations(client):
     """
     resp = client.get("/api/relocation/summary")
     assert resp.status_code == 200
+    
+    resp = client.get("/api/relocation/priorities")
+    assert resp.status_code == 200
+    data = resp.json()
+    if data["data"]:
+        rec = data["data"][0]
+        assert "priority_classification" in rec
+        assert "priority_score" in rec
+        assert "reasons" in rec
 
 def test_vulnerability(client):
     """

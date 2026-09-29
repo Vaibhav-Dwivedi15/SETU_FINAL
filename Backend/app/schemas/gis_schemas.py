@@ -161,6 +161,7 @@ class RelocationRecommendationOut(BaseModel):
     suitable: bool
     reasons: List[str]
     priority_score: float
+    priority_classification: Optional[str] = None
     dataset_id: Optional[int]
     created_at: datetime
     class Config:

@@ -51,7 +51,9 @@ def get_site_capacity(id: int, db: Session = Depends(get_db)):
     from app.services.capacity_service import calculate_capacity
     return calculate_capacity(
         usable_area_sqm=site.usable_area_sqm,
-        occupancy=site.current_occupancy
+        occupancy=site.current_occupancy,
+        infrastructure=site.infrastructure,
+        services=site.services
     )
 
 @router.get("/recommendations/{habitation_id}", response_model=PaginatedResponse)

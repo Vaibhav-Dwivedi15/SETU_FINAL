@@ -128,7 +128,19 @@ def seed_data():
         lon = base_lon + (i * 0.02) - 0.05
         usable_area = 10000.0 + (i * 5000)
         
-        cap = calculate_capacity(usable_area, occupancy=i*100)
+        infra = {
+            "road_access": True, 
+            "electricity": (i % 2 == 0),
+            "water_lpd": 50000 + (i * 10000), # 50k liters/day
+            "toilets": 50 + (i * 10)
+        }
+        
+        servs = {
+            "school": True,
+            "healthcare_capacity_persons": 1000 + (i * 500) if (i % 3 == 0) else 0
+        }
+        
+        cap = calculate_capacity(usable_area, occupancy=i*100, infrastructure=infra, services=servs)
         
         site = RelocationSite(
             name=f"Safe Zone {i+1}",
@@ -137,8 +149,8 @@ def seed_data():
             latitude=lat,
             longitude=lon,
             usable_area_sqm=usable_area,
-            infrastructure={"road_access": True, "water": True, "electricity": (i % 2 == 0)},
-            services={"hospital": (i % 3 == 0), "school": True},
+            infrastructure=infra,
+            services=servs,
             current_occupancy=cap["current_occupancy"],
             estimated_capacity=cap["estimated_capacity"],
             remaining_capacity=cap["remaining_capacity"],

@@ -158,6 +158,7 @@ class RelocationRecommendation(Base):
     suitable = Column(Boolean, index=True)
     reasons = Column(JSON)
     priority_score = Column(Float, index=True)
+    priority_classification = Column(String, index=True) # IMMEDIATE, SHORT_TERM, MEDIUM_TERM, MONITOR
     
     dataset_id = Column(Integer, ForeignKey("datasets.id"), nullable=True)
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))

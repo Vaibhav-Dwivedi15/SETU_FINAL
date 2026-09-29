@@ -98,7 +98,12 @@ def add_relocation_site(id: int, site: RelocationSiteCreate, db: Session = Depen
     if not dataset:
         raise HTTPException(status_code=404, detail="Dataset not found")
         
-    capacity_info = calculate_capacity(site.usable_area_sqm, site.current_occupancy)
+    capacity_info = calculate_capacity(
+        site.usable_area_sqm, 
+        site.current_occupancy,
+        infrastructure=site.infrastructure,
+        services=site.services
+    )
     
     db_site = RelocationSite(
         **site.dict(),
