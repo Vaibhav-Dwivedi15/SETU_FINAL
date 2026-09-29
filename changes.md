@@ -35,3 +35,10 @@ The original project codebase contained several broken tests and missing constra
 
 ## 6. Version Control Sync
 Committed all changes using `git commit` so the local branch is fully up-to-date and tracks all modified/created files securely.
+
+## 7. Final Engineering Audit Pass (Completion)
+During the final verification pass, the following strict architectural requirements were enforced:
+- **Dataset Metadata & Ingestion**: Added `data_timestamp`, `geographic_coverage`, and `data_type` directly to the `Dataset` model. Created full generalized ingestion endpoints (`POST /api/datasets`, `POST /api/datasets/{id}/habitations`, `POST /api/datasets/{id}/hazard-layers`, `POST /api/datasets/{id}/relocation-sites`).
+- **Explicit Capacity API**: Added `GET /api/relocation/sites/{id}/capacity` to directly expose the capacity math and assumptions for transparency. Server-side calculations are now strictly enforced before database commits.
+- **Priority Engine Upgrade**: Upgraded the priority calculation in `generate_recommendations_for_habitation` to correctly factor in the habitation's `RiskAssessment` (e.g., critical = +20 priority), `VulnerabilityAssessment`, and exposed population, rather than relying solely on destination metrics.
+- **Test Coverage & Docs**: Appended `test_ingestion_and_capacity` to explicitly assert the new ingestion flows. All 100 tests pass successfully. Created and verified `docs/API_HANDOFF_GIS.md`.
