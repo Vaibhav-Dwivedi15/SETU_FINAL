@@ -9,13 +9,11 @@ are tracked and reversible instead of just re-run each time.
 """
 
 from app.db.base import Base, engine
-from app.models import RawPacket, Incident, UserProfile, ResponderProfile  # noqa: F401  (import registers tables)
-
+import app.models  # noqa: F401  (import registers tables)
 
 def init_db() -> None:
     Base.metadata.create_all(bind=engine)
-    print("Tables created: raw_packets, incidents, user_profiles, responder_profiles")
-
+    print("Tables created successfully.")
 
 if __name__ == "__main__":
     init_db()

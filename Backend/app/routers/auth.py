@@ -48,7 +48,9 @@ VERIFY_FAILURE_DETAIL = {
 }
 
 
-@router.post("/auth/request-otp", response_model=OtpRequestOut)
+from app.core.rate_limit import enforce_auth_rate_limit
+
+@router.post("/auth/request-otp", response_model=OtpRequestOut, dependencies=[Depends(enforce_auth_rate_limit)])
 def request_email_otp(payload: OtpRequestIn, db: Session = Depends(get_db)):
     """
     DEMO MODE: generates a 6-digit code, stores only its hash, and returns

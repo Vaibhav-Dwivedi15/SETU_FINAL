@@ -6,3 +6,7 @@ from app.models.audit_log import IncidentAuditLog
 from app.models.government_notification import GovernmentNotificationLog
 from app.models.community_response import CommunityResponse
 from app.models.email_otp import EmailOtp
+from app.models.gis_models import (
+    Dataset, Habitation, HazardLayer, RiskAssessment,
+    VulnerabilityAssessment, RelocationSite, RelocationRecommendation
+)

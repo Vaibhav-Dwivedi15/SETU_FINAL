@@ -347,6 +347,7 @@ def test_request_otp_gets_rate_limited_after_the_configured_max(http_client, mon
         "/auth/request-otp", json={"email": "one-too-many@example.com"}
     )
     assert blocked.status_code == 429
+    auth_rate_limiter.reset()
     assert "Retry-After" in blocked.headers
 
 

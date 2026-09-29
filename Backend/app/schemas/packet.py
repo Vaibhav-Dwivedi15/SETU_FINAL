@@ -15,7 +15,7 @@ this before dedup runs.
 """
 from enum import Enum
 from typing import Optional, List, Dict, Any
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 
 class IncidentType(str, Enum):
@@ -56,19 +56,19 @@ class PacketIn(BaseModel):
     """
     # --- Common fields (every packet type) ---
     packet_id: str
-    sender_id: str
+    sender_id: str = Field(..., max_length=256)
     type: PacketType
     timestamp: str  # ISO 8601, e.g. "2026-08-01T12:00:00.000Z"
     nonce: str
     ttl: int = Field(..., ge=0, le=5)  # frozen spec: default/max = 5
-    hop_count: int = Field(..., ge=0)
+    hop_count: int = Field(..., ge=0, le=1000)
     protocol_version: int = Field(..., ge=1)
     signature: str
     # --- EmergencyPacket-only fields ---
     emergency_id: Optional[str] = None
-    latitude: Optional[float] = None  # 0.0 fallback if GPS unavailable, per spec
-    longitude: Optional[float] = None
-    message: Optional[str] = None
+    latitude: Optional[float] = Field(None, ge=-90.0, le=90.0)
+    longitude: Optional[float] = Field(None, ge=-180.0, le=180.0)
+    message: Optional[str] = Field(None, max_length=2000)
     priority: Optional[PriorityLevel] = None
     # NOT part of the frozen mesh spec -- mesh devices do not send this.
     # Kept optional for internal/testing use and possible future AI
@@ -84,7 +84,16 @@ class PacketIn(BaseModel):
     responder_id: Optional[str] = None
     # Not part of the frozen spec's sample packet, but harmless to accept
     # if a future mesh version starts sending it.
-    relay_path: Optional[List[str]] = None
+    relay_path: Optional[List[str]] = Field(None, max_length=32)
+
+    @field_validator('relay_path')
+    @classmethod
+    def validate_relay_path(cls, v: Optional[List[str]]) -> Optional[List[str]]:
+        if v is not None:
+            for node in v:
+                if len(node) > 256:
+                    raise ValueError("Relay path entry too long")
+        return v
 
 
 class PacketBatchIn(BaseModel):
@@ -103,4 +112,4 @@ class PacketBatchIn(BaseModel):
     inside ingest_packets(), so a bad packet is rejected on its own and
     the other nine still process normally.
     """
-    packets: List[Dict[str, Any]]
+    packets: List[Dict[str, Any]] = Field(..., max_length=500)

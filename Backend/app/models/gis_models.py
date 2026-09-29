@@ -1,0 +1,126 @@
+from sqlalchemy import Column, Integer, String, Float, Boolean, DateTime, ForeignKey, JSON
+from sqlalchemy.orm import relationship
+from datetime import datetime, timezone
+from app.db.base import Base
+
+class Dataset(Base):
+    __tablename__ = "datasets"
+
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String, index=True)
+    is_demo = Column(Boolean, default=False, index=True)
+    source = Column(String)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+
+class Habitation(Base):
+    __tablename__ = "habitations"
+
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String, index=True)
+    district = Column(String, index=True)
+    state = Column(String, index=True)
+    population = Column(Integer)
+    latitude = Column(Float, index=True)
+    longitude = Column(Float, index=True)
+    boundary_geometry = Column(JSON, nullable=True)  # GeoJSON
+    dataset_id = Column(Integer, ForeignKey("datasets.id"), nullable=True)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
+
+    dataset = relationship("Dataset")
+    risk_assessments = relationship("RiskAssessment", back_populates="habitation")
+    vulnerability_assessments = relationship("VulnerabilityAssessment", back_populates="habitation")
+
+class HazardLayer(Base):
+    __tablename__ = "hazard_layers"
+
+    id = Column(Integer, primary_key=True, index=True)
+    hazard_type = Column(String, index=True)  # flood, landslide, etc
+    severity = Column(String, index=True) # low, medium, high, critical
+    geometry = Column(JSON)  # GeoJSON polygon
+    
+    # Bounding box for fast spatial filtering
+    min_lat = Column(Float, index=True)
+    max_lat = Column(Float, index=True)
+    min_lon = Column(Float, index=True)
+    max_lon = Column(Float, index=True)
+    
+    source = Column(String)
+    geographic_coverage = Column(String)
+    data_type = Column(String)
+    dataset_id = Column(Integer, ForeignKey("datasets.id"), nullable=True)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+
+    dataset = relationship("Dataset")
+
+class RiskAssessment(Base):
+    __tablename__ = "risk_assessments"
+
+    id = Column(Integer, primary_key=True, index=True)
+    habitation_id = Column(Integer, ForeignKey("habitations.id"), index=True)
+    score = Column(Float)
+    risk_level = Column(String, index=True) # Low, Medium, High, Critical
+    contributing_factors = Column(JSON)
+    dataset_id = Column(Integer, ForeignKey("datasets.id"), nullable=True)
+    calculation_timestamp = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+
+    habitation = relationship("Habitation", back_populates="risk_assessments")
+    dataset = relationship("Dataset")
+
+class VulnerabilityAssessment(Base):
+    __tablename__ = "vulnerability_assessments"
+
+    id = Column(Integer, primary_key=True, index=True)
+    habitation_id = Column(Integer, ForeignKey("habitations.id"), index=True)
+    score = Column(Float)
+    factors = Column(JSON)
+    dataset_id = Column(Integer, ForeignKey("datasets.id"), nullable=True)
+    calculation_timestamp = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+
+    habitation = relationship("Habitation", back_populates="vulnerability_assessments")
+    dataset = relationship("Dataset")
+
+class RelocationSite(Base):
+    __tablename__ = "relocation_sites"
+
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String, index=True)
+    district = Column(String, index=True)
+    state = Column(String)
+    latitude = Column(Float, index=True)
+    longitude = Column(Float, index=True)
+    geometry = Column(JSON, nullable=True)
+    usable_area_sqm = Column(Float)
+    infrastructure = Column(JSON)
+    services = Column(JSON)
+    
+    current_occupancy = Column(Integer, default=0)
+    estimated_capacity = Column(Integer)
+    remaining_capacity = Column(Integer, index=True)
+    
+    source = Column(String)
+    dataset_id = Column(Integer, ForeignKey("datasets.id"), nullable=True)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
+
+    dataset = relationship("Dataset")
+
+class RelocationRecommendation(Base):
+    __tablename__ = "relocation_recommendations"
+
+    id = Column(Integer, primary_key=True, index=True)
+    habitation_id = Column(Integer, ForeignKey("habitations.id"), index=True)
+    site_id = Column(Integer, ForeignKey("relocation_sites.id"), index=True)
+    
+    distance_km = Column(Float)
+    remaining_capacity = Column(Integer)
+    suitable = Column(Boolean, index=True)
+    reasons = Column(JSON)
+    priority_score = Column(Float, index=True)
+    
+    dataset_id = Column(Integer, ForeignKey("datasets.id"), nullable=True)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+
+    habitation = relationship("Habitation")
+    site = relationship("RelocationSite")
+    dataset = relationship("Dataset")

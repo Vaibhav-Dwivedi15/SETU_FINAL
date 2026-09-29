@@ -44,6 +44,19 @@ app = FastAPI(
 # anything. settings.cors_allowed_origins (see core/config.py) now
 # actually parses it, with a safe default covering the known production
 # dashboard + local dev ports so this never silently breaks again.
+MAX_REQUEST_BODY_BYTES = 10_000_000
+from starlette.requests import Request
+from starlette.responses import JSONResponse
+
+@app.middleware("http")
+async def limit_upload_size(request: Request, call_next):
+    if request.headers.get("content-length"):
+        length = int(request.headers["content-length"])
+        if length > MAX_REQUEST_BODY_BYTES:
+            return JSONResponse({"detail": "Payload too large"}, status_code=413)
+    response = await call_next(request)
+    return response
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_allowed_origins,
@@ -62,8 +75,14 @@ app.include_router(alerts.router)
 app.include_router(auth.router)
 # Voice SOS ingest -- spoken distress reports, transcribed via Whisper.
 app.include_router(voice.router)
-# Government notification adapter log (mock adapter -- see routers/government.py).
 app.include_router(government.router)
+
+# GIS and Data Infrastructure (SIH26191)
+from app.routers import risk, vulnerability, relocation, datasets
+app.include_router(datasets.router)
+app.include_router(risk.router)
+app.include_router(vulnerability.router)
+app.include_router(relocation.router)
 
 
 @app.get("/")
