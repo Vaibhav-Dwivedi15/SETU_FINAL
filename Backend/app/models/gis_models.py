@@ -23,6 +23,10 @@ class Habitation(Base):
     district = Column(String, index=True)
     state = Column(String, index=True)
     population = Column(Integer)
+    vulnerable_population_count = Column(Integer, default=0) # elderly, children, disabled
+    infrastructure_score = Column(Float, default=1.0) # 0-1, lower is worse
+    healthcare_accessibility = Column(Boolean, default=True)
+    road_accessibility = Column(Boolean, default=True)
     latitude = Column(Float, index=True)
     longitude = Column(Float, index=True)
     boundary_geometry = Column(JSON, nullable=True)  # GeoJSON
@@ -81,6 +85,40 @@ class VulnerabilityAssessment(Base):
     calculation_timestamp = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
     habitation = relationship("Habitation", back_populates="vulnerability_assessments")
+    dataset = relationship("Dataset")
+
+class RedZoneAssessment(Base):
+    __tablename__ = "red_zone_assessments"
+
+    id = Column(Integer, primary_key=True, index=True)
+    habitation_id = Column(Integer, ForeignKey("habitations.id"), index=True)
+    classification = Column(String, index=True)  # GREEN, WATCH, HIGH_RISK, MODEL_ASSESSED_RED_ZONE
+    confidence = Column(String)  # LOW, MEDIUM, HIGH
+    factors = Column(JSON)
+    methodology_version = Column(String)
+    dataset_id = Column(Integer, ForeignKey("datasets.id"), nullable=True)
+    assessment_timestamp = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+
+    habitation = relationship("Habitation")
+    dataset = relationship("Dataset")
+
+class DisasterHistory(Base):
+    __tablename__ = "disaster_history"
+
+    id = Column(Integer, primary_key=True, index=True)
+    habitation_id = Column(Integer, ForeignKey("habitations.id"), index=True)
+    hazard_type = Column(String, index=True)
+    event_date = Column(DateTime)
+    intensity = Column(String)  # LOW, MODERATE, HIGH, CRITICAL
+    affected_population = Column(Integer, nullable=True)
+    infrastructure_impact = Column(String, nullable=True)
+    duration_days = Column(Integer, nullable=True)
+    source = Column(String, nullable=True)
+    confidence = Column(String, default="HIGH")  # Data quality label
+    dataset_id = Column(Integer, ForeignKey("datasets.id"), nullable=True)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+
+    habitation = relationship("Habitation")
     dataset = relationship("Dataset")
 
 class RelocationSite(Base):

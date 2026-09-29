@@ -24,6 +24,10 @@ class HabitationBase(BaseModel):
     district: str
     state: str
     population: Optional[int] = None
+    vulnerable_population_count: int = 0
+    infrastructure_score: float = 1.0
+    healthcare_accessibility: bool = True
+    road_accessibility: bool = True
     latitude: float = Field(..., ge=-90, le=90)
     longitude: float = Field(..., ge=-180, le=180)
     boundary_geometry: Optional[Dict[str, Any]] = None
@@ -84,6 +88,41 @@ class VulnerabilityAssessmentOut(BaseModel):
     factors: Dict[str, Any]
     dataset_id: Optional[int]
     calculation_timestamp: datetime
+    class Config:
+        from_attributes = True
+
+class RedZoneAssessmentBase(BaseModel):
+    classification: str
+    confidence: str
+    factors: Dict[str, Any]
+    methodology_version: str
+
+class RedZoneAssessmentOut(RedZoneAssessmentBase):
+    id: int
+    habitation_id: int
+    dataset_id: Optional[int]
+    assessment_timestamp: datetime
+    class Config:
+        from_attributes = True
+
+class DisasterHistoryBase(BaseModel):
+    habitation_id: int
+    hazard_type: str
+    event_date: datetime
+    intensity: str
+    affected_population: Optional[int] = None
+    infrastructure_impact: Optional[str] = None
+    duration_days: Optional[int] = None
+    source: Optional[str] = None
+    confidence: str = "HIGH"
+
+class DisasterHistoryCreate(DisasterHistoryBase):
+    pass
+
+class DisasterHistoryOut(DisasterHistoryBase):
+    id: int
+    dataset_id: Optional[int]
+    created_at: datetime
     class Config:
         from_attributes = True
 

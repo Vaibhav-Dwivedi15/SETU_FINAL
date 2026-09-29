@@ -64,7 +64,8 @@ def test_risk_calculation(client):
     db.add(hl)
     db.commit()
     
-    recalculate_all_risks(db, dataset.id)
+    from app.services.recalculation_service import trigger_full_recalculation
+    trigger_full_recalculation(db, dataset.id)
     
     resp = client.get("/api/risk/summary")
     assert resp.status_code == 200
@@ -133,3 +134,34 @@ def test_ingestion_and_capacity(client):
     assert "estimated_capacity" in data
     assert data["estimated_capacity"] > 0
     assert data["remaining_capacity"] == data["estimated_capacity"] - 100
+
+def test_disaster_history(client):
+    """
+    Check that history endpoints return expected derived indicators.
+    """
+    resp = client.get("/api/history/summary")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert "total_events" in data
+    assert "recency_days" in data
+    assert "repeated_exposure" in data
+    assert "event_frequency" in data
+    
+    resp = client.get("/api/history")
+    assert resp.status_code == 200
+
+def test_red_zones(client):
+    """
+    Check that Red Zone classification endpoints return expected data.
+    """
+    resp = client.get("/api/red-zones/summary")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert "total" in data
+    assert "breakdown" in data
+    
+    resp = client.get("/api/red-zones")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert "data" in data
+    assert isinstance(data["data"], list)

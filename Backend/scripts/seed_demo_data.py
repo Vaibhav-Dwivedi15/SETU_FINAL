@@ -150,12 +150,46 @@ def seed_data():
     db.add_all(sites)
     db.commit()
 
-    print("Data inserted. Running Risk, Vulnerability and Relocation engines...")
+    # Create Disaster History
+    print("Creating disaster history...")
+    from app.models.gis_models import DisasterHistory
+    from datetime import datetime, timedelta, timezone
+    
+    histories = []
+    for i, hab in enumerate(habitations):
+        if i % 3 == 0:
+            histories.append(DisasterHistory(
+                habitation_id=hab.id,
+                hazard_type="flood",
+                event_date=datetime.now(timezone.utc) - timedelta(days=365*2),
+                intensity="HIGH",
+                affected_population=hab.population,
+                infrastructure_impact="Road washed away",
+                duration_days=5,
+                source="Demo History Database",
+                dataset_id=dataset_id
+            ))
+        if i % 5 == 0:
+            histories.append(DisasterHistory(
+                habitation_id=hab.id,
+                hazard_type="landslide",
+                event_date=datetime.now(timezone.utc) - timedelta(days=365*5),
+                intensity="MODERATE",
+                affected_population=int((hab.population or 0) * 0.1),
+                infrastructure_impact="Minor blockages",
+                duration_days=2,
+                source="Demo History Database",
+                dataset_id=dataset_id
+            ))
+            
+    db.add_all(histories)
+    db.commit()
 
-    # 5. Calculate engines
-    recalculate_all_vulnerabilities(db, dataset_id)
-    recalculate_all_risks(db, dataset_id)
-    recalculate_all_recommendations(db, dataset_id)
+    print("Data inserted. Running Dependency Chain (Vulnerability, Risk, Red Zones, Relocation)...")
+
+    # 5. Calculate engines via orchestrated chain
+    from app.services.recalculation_service import trigger_full_recalculation
+    trigger_full_recalculation(db, dataset_id)
 
     print("Demo dataset seeded successfully!")
 

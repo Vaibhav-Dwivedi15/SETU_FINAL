@@ -77,6 +77,21 @@ def add_hazard_layer(id: int, layer: HazardLayerCreate, db: Session = Depends(ge
     db.refresh(db_layer)
     return db_layer
 
+from app.schemas.gis_schemas import DisasterHistoryCreate, DisasterHistoryOut
+from app.models.gis_models import DisasterHistory
+
+@router.post("/{id}/disaster-history", response_model=DisasterHistoryOut)
+def add_disaster_history(id: int, history: DisasterHistoryCreate, db: Session = Depends(get_db)):
+    dataset = db.query(Dataset).filter(Dataset.id == id).first()
+    if not dataset:
+        raise HTTPException(status_code=404, detail="Dataset not found")
+        
+    db_history = DisasterHistory(**history.dict(), dataset_id=id)
+    db.add(db_history)
+    db.commit()
+    db.refresh(db_history)
+    return db_history
+
 @router.post("/{id}/relocation-sites", response_model=RelocationSiteOut)
 def add_relocation_site(id: int, site: RelocationSiteCreate, db: Session = Depends(get_db)):
     dataset = db.query(Dataset).filter(Dataset.id == id).first()
