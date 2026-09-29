@@ -22,8 +22,8 @@ def generate_allocations(db: Session, dataset_id: int):
         
         hab_priorities[hab.id] = max_rec.priority_score if max_rec else 0.0
         
-    # Sort habitations by priority score descending
-    sorted_habs = sorted(habitations, key=lambda h: hab_priorities.get(h.id, 0.0), reverse=True)
+    # Sort habitations by priority score descending, then by habitation id ascending for deterministic tie-breaking
+    sorted_habs = sorted(habitations, key=lambda h: (hab_priorities.get(h.id, 0.0), -h.id), reverse=True)
     
     # Track available capacity in memory to avoid constant DB queries during allocation loop
     sites = db.query(RelocationSite).filter(RelocationSite.dataset_id == dataset_id).all()

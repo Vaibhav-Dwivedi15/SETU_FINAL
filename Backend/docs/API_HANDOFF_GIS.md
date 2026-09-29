@@ -174,3 +174,86 @@ Lists top recommended relocation actions across the dataset.
   "recommendations_generated": 200
 }
 ```
+
+## 5. What-If Scenarios
+
+### POST `/api/scenarios/evaluate/{base_dataset_id}`
+Creates a temporary clone of the base dataset, applies modifications, and calculates the resulting relocation allocation difference.
+**Request Body:**
+```json
+{
+  "disabled_site_ids": [1],
+  "added_hazards": []
+}
+```
+**Returns:**
+```json
+{
+  "scenario_dataset_id": 2,
+  "impacted_habitations_count": 1,
+  "impacted_habitations": [
+    {
+      "habitation_id": 5,
+      "baseline_site_id": 1,
+      "scenario_site_id": 2,
+      "baseline_status": "FEASIBLE",
+      "scenario_status": "PARTIAL",
+      "reasoning": [
+        "Partially allocated 100 people to Safe Zone 2 (Site reached maximum capacity)."
+      ]
+    }
+  ],
+  "recommended_actions": [
+    "Review 1 allocation changes."
+  ]
+}
+```
+
+## 6. Red Zones
+
+### GET `/api/red-zones`
+Returns the model-assessed Red Zone classifications for habitations.
+
+### GET `/api/red-zones/summary`
+Returns the aggregated breakdown of Red Zones.
+
+## 7. Field Observations & Decisions
+
+### POST `/api/field/observations/{dataset_id}`
+Simulates receiving a field observation (e.g. from the offline mesh) and triggers a deterministic recalculation of site capacities or habitation metadata.
+**Request Body Example:**
+```json
+{
+  "target_type": "SITE",
+  "target_id": 1,
+  "observation_type": "SITE_INACCESSIBLE",
+  "details": {"reason": "Road blocked by landslide"},
+  "source": "Field App"
+}
+```
+
+### POST `/api/field/decisions/{dataset_id}`
+Records an official authority decision against a relocation recommendation.
+**Request Body Example:**
+```json
+{
+  "habitation_id": 5,
+  "recommended_site_id": 2,
+  "status": "ACCEPTED",
+  "actor": "District Magistrate",
+  "rationale": "Proceeding with alternative site due to landslide"
+}
+```
+
+## 8. AI Narrative
+
+### GET `/api/ai/narrative/{habitation_id}`
+Returns an AI-assisted text narrative explaining the deterministically calculated risk, vulnerability, and relocation recommendations.
+**Returns:**
+```json
+{
+  "methodology": "AI-ASSISTED",
+  "narrative": "Based on the deterministic SETU models, Demo Village 1 has a Critical risk score of 22.0. This is driven primarily by exposure to critical flooding (10.0) and amplified by historical disasters (2.0)...",
+  "confidence": "HIGH"
+}
+```
